@@ -30,13 +30,13 @@ Rustプロジェクトの初期化とCLI基盤の構築
   - Dialectの型定義（PostgreSQL, MySQL, SQLite）
   - _Requirements: 1_
 
-- [ ] 5. Migrationドメインモデルの実装 (P)
+- [x] 5. Migrationドメインモデルの実装 (P)
   - Migration構造体の定義（version, timestamp, checksum）
   - MigrationStatus列挙型の定義
   - マイグレーション履歴を表す型の定義
   - _Requirements: 3, 4, 5, 7_
 
-- [ ] 6. エラー型の定義と実装 (P)
+- [x] 6. エラー型の定義と実装 (P)
   - thiserrorを使用したカスタムエラー型の定義
   - エラーカテゴリ（ValidationError, DatabaseError, IoError）の実装
   - エラーメッセージの日本語対応
