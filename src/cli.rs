@@ -1,0 +1,143 @@
+// CLI Layer
+// ユーザー入力の受付とコマンドルーティング
+
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+/// Stratum - Database Schema Management CLI
+///
+/// Infrastructure as Code for database schemas.
+/// Manage database schema definitions as code with version control.
+#[derive(Parser, Debug)]
+#[command(name = "stratum")]
+#[command(author = "Stratum Contributors")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(about = "Database schema management CLI tool", long_about = None)]
+#[command(propagate_version = true)]
+pub struct Cli {
+    /// Path to configuration file
+    #[arg(short, long, global = true, value_name = "FILE")]
+    pub config: Option<PathBuf>,
+
+    /// Enable verbose output
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
+
+    /// Disable colored output
+    #[arg(long, global = true)]
+    pub no_color: bool,
+
+    /// Subcommand to execute
+    #[command(subcommand)]
+    pub command: Commands,
+}
+
+/// Available subcommands
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Initialize a new schema management project
+    ///
+    /// Creates the necessary directory structure and configuration files
+    /// for managing database schemas with Stratum.
+    Init {
+        /// Database dialect (postgresql, mysql, sqlite)
+        #[arg(short, long, value_name = "DIALECT")]
+        dialect: Option<String>,
+
+        /// Force initialization even if config exists
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Generate migration files from schema changes
+    ///
+    /// Compares the current schema definition with the previous snapshot
+    /// and generates migration files (up and down scripts) for any detected changes.
+    Generate {
+        /// Description for the migration
+        #[arg(short, long, value_name = "DESCRIPTION")]
+        description: Option<String>,
+    },
+
+    /// Apply pending migrations to the database
+    ///
+    /// Executes all unapplied migrations in order, updating the database
+    /// schema to match the current schema definition.
+    Apply {
+        /// Dry run - show SQL without executing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Target environment (development, staging, production)
+        #[arg(short, long, value_name = "ENV", default_value = "development")]
+        env: String,
+
+        /// Timeout for database operations (in seconds)
+        #[arg(long, value_name = "SECONDS")]
+        timeout: Option<u64>,
+    },
+
+    /// Rollback applied migrations
+    ///
+    /// Reverts the most recently applied migration(s) by executing
+    /// the down scripts.
+    Rollback {
+        /// Number of migrations to rollback
+        #[arg(long, value_name = "N")]
+        steps: Option<u32>,
+
+        /// Target environment
+        #[arg(short, long, value_name = "ENV", default_value = "development")]
+        env: String,
+    },
+
+    /// Validate schema definitions
+    ///
+    /// Checks schema definition files for syntax errors, referential integrity,
+    /// naming convention violations, and other potential issues.
+    Validate {
+        /// Path to schema directory
+        #[arg(short, long, value_name = "DIR")]
+        schema_dir: Option<PathBuf>,
+    },
+
+    /// Show migration status
+    ///
+    /// Displays information about applied and pending migrations,
+    /// current schema version, and any drift between the schema
+    /// definition and the actual database.
+    Status {
+        /// Target environment
+        #[arg(short, long, value_name = "ENV", default_value = "development")]
+        env: String,
+    },
+
+    /// Export existing database schema to code
+    ///
+    /// Reads the current database schema structure and generates
+    /// schema definition files in YAML format.
+    Export {
+        /// Output directory for schema files
+        #[arg(short, long, value_name = "DIR")]
+        output: Option<PathBuf>,
+
+        /// Target environment
+        #[arg(short, long, value_name = "ENV", default_value = "development")]
+        env: String,
+
+        /// Overwrite existing files without confirmation
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_cli() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+}

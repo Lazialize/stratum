@@ -9,13 +9,13 @@ Rustプロジェクトの初期化とCLI基盤の構築
   - ワークスペース構成の設定（必要に応じて）
   - _Requirements: 10_
 
-- [ ] 2. CLIエントリーポイントの実装 (P)
+- [x] 2. CLIエントリーポイントの実装 (P)
   - clapのderive APIを使用したCLI構造の定義
   - サブコマンド（init, generate, apply, rollback, validate, status, export）の宣言
   - グローバルオプション（--config, --verbose）の定義
   - _Requirements: 10_
 
-- [ ] 3. 設定ファイル管理機能の実装 (P)
+- [x] 3. 設定ファイル管理機能の実装 (P)
   - Config構造体の定義（dialect, connection settings）
   - 設定ファイルの読み込み機能（YAML形式）
   - 設定ファイルのバリデーション
@@ -24,7 +24,7 @@ Rustプロジェクトの初期化とCLI基盤の構築
 ## 2. コア型定義とドメインモデルの実装
 スキーマ定義を表現する型システムの構築
 
-- [ ] 4. スキーマドメインモデルの実装 (P)
+- [x] 4. スキーマドメインモデルの実装 (P)
   - Schema, Table, Column, Index, Constraint, ForeignKey構造体の定義
   - serde Deserialize/Serializeトレイトの実装
   - Dialectの型定義（PostgreSQL, MySQL, SQLite）
