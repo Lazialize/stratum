@@ -5,3 +5,4 @@ pub mod config;
 pub mod error;
 pub mod migration;
 pub mod schema;
+pub mod schema_diff;

@@ -255,7 +255,7 @@ impl Index {
 /// 制約定義
 ///
 /// テーブルの制約（PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK）を表現します。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[allow(non_camel_case_types)]
 pub enum Constraint {
