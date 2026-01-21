@@ -1,6 +1,8 @@
 // CLI Layer
 // ユーザー入力の受付とコマンドルーティング
 
+pub mod commands;
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
