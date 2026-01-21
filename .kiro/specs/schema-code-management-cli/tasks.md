@@ -45,7 +45,7 @@ Rustプロジェクトの初期化とCLI基盤の構築
 ## 3. YAMLスキーマ解析機能の実装
 スキーマ定義ファイルの読み込みと検証
 
-- [ ] 7. SchemaParserServiceの実装
+- [x] 7. SchemaParserServiceの実装
   - スキーマディレクトリのスキャン機能
   - YAML解析（serde-saphyr）の実装
   - スキーマファイルのマージ処理
