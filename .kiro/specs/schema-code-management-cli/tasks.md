@@ -66,13 +66,13 @@ Rustプロジェクトの初期化とCLI基盤の構築
 ## 4. データベース接続管理の実装
 SQLxを使用した統一データベースアクセス層
 
-- [ ] 10. DatabaseConnectionServiceの実装
+- [x] 10. DatabaseConnectionServiceの実装
   - SQLxプールの初期化（PostgreSQL/MySQL/SQLite）
   - 接続テスト機能の実装
   - 接続エラーハンドリング
   - _Requirements: 8_
 
-- [ ] 11. DatabaseMigratorServiceの実装
+- [x] 11. DatabaseMigratorServiceの実装
   - マイグレーション履歴テーブルの作成（schema_migrations）
   - トランザクション制御の実装
   - データベース固有のSQL構文の抽象化
