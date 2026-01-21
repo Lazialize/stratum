@@ -1,6 +1,7 @@
 // Services Layer
 // ドメインロジックを実行するサービス層
 
+pub mod migration_generator;
 pub mod schema_checksum;
 pub mod schema_diff_detector;
 pub mod schema_parser;
