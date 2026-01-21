@@ -93,7 +93,7 @@ SQLxを使用した統一データベースアクセス層
   - ALTER TABLE（制約追加）の生成
   - _Requirements: 3, 8_
 
-- [ ] 14. SQLite用SQLジェネレーターの実装
+- [x] 14. SQLite用SQLジェネレーターの実装
   - CREATE TABLE文の生成（SQLiteの型マッピング）
   - CREATE INDEX文の生成
   - ALTER TABLEの制限事項への対応

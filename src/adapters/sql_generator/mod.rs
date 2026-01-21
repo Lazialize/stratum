@@ -4,6 +4,7 @@
 
 pub mod mysql;
 pub mod postgres;
+pub mod sqlite;
 
 use crate::core::schema::{Index, Table};
 
