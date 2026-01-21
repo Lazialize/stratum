@@ -1,0 +1,52 @@
+[package]
+name = "stratum"
+version = "0.1.0"
+edition = "2021"
+authors = ["Stratum Contributors"]
+description = "Database schema management CLI tool - Infrastructure as Code for database schemas"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Lazialize/stratum"
+readme = "README.md"
+keywords = ["database", "schema", "migration", "cli", "devops"]
+categories = ["command-line-utilities", "database"]
+rust-version = "1.92"
+
+[dependencies]
+# CLI Framework (2026年1月時点の最新安定版)
+clap = { version = "4.5", features = ["derive"] }  # コマンドライン引数パーサー
+colored = "3.1"                                     # ターミナルカラー出力
+indicatif = "0.18"                                  # プログレスバー表示
+
+# Async Runtime (2026年1月時点の最新安定版)
+tokio = { version = "1.49", features = ["full"] }  # 非同期ランタイム
+
+# Data Parsing & Serialization (2026年1月時点の最新安定版)
+serde = { version = "1", features = ["derive"] }   # シリアライゼーションフレームワーク
+serde-saphyr = "0.0.16"                            # YAMLパーサー（パニックフリー）
+
+# Database (2026年1月時点の最新安定版 - 0.8.6)
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "mysql", "sqlite"] }
+
+# Hashing
+sha2 = "0.10"                                      # SHA-256ハッシュ計算
+
+# Error Handling (2026年1月時点の最新安定版)
+anyhow = "1"                                       # アプリケーションレベルエラー
+thiserror = "2"                                    # ライブラリレベルエラー定義
+
+# Additional utilities
+chrono = { version = "0.4", features = ["serde"] } # 日時処理
+regex = "1"                                        # 正規表現
+async-trait = "0.1"                                # 非同期トレイト定義
+
+[dev-dependencies]
+# Testing utilities
+tokio-test = "0.4"
+
+# リリースビルドの最適化設定
+[profile.release]
+opt-level = 3        # 最大の最適化
+lto = true           # Link Time Optimization を有効化
+codegen-units = 1    # 単一コード生成ユニットで最適化
+strip = true         # シンボル情報を削除してバイナリサイズを削減
+panic = "abort"      # パニック時にスタック巻き戻しをせず即座にアボート

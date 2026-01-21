@@ -1,0 +1,24 @@
+# Rust Build Artifacts
+/target
+Cargo.lock
+
+# IDE & Editor Files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test & Coverage
+*.profraw
+*.profdata
+
+# Runtime Files
+*.log
+.env
+.env.local
+
+# Stratum specific
+.stratum/logs/
+.stratum/snapshots/
