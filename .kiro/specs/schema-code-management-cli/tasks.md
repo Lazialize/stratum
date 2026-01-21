@@ -81,7 +81,7 @@ SQLxを使用した統一データベースアクセス層
 ## 5. SQL生成機能の実装
 スキーマ定義からDDL文を生成
 
-- [ ] 12. PostgreSQL用SQLジェネレーターの実装
+- [x] 12. PostgreSQL用SQLジェネレーターの実装
   - CREATE TABLE文の生成
   - CREATE INDEX文の生成
   - ALTER TABLE（制約追加）の生成
