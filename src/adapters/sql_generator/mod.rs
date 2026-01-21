@@ -2,6 +2,7 @@
 //
 // スキーマ定義から各データベース方言用のDDL文を生成するアダプター層。
 
+pub mod mysql;
 pub mod postgres;
 
 use crate::core::schema::{Index, Table};

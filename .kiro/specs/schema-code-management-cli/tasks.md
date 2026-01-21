@@ -87,7 +87,7 @@ SQLxを使用した統一データベースアクセス層
   - ALTER TABLE（制約追加）の生成
   - _Requirements: 3, 8_
 
-- [ ] 13. MySQL用SQLジェネレーターの実装
+- [x] 13. MySQL用SQLジェネレーターの実装
   - CREATE TABLE文の生成（MySQLの型マッピング）
   - CREATE INDEX文の生成
   - ALTER TABLE（制約追加）の生成
