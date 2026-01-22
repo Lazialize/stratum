@@ -13,6 +13,7 @@ This file captures potential future features and improvements. Items are not in 
 - Support environment overrides in config (e.g., `.stratum.yaml` + `.stratum.<env>.yaml`).
 - Provide clearer error messages with actionable suggestions.
 - Add interactive prompts for initialization and dangerous operations.
+- Add a VS Code Language Server for YAML schema files (completion, diagnostics, go-to-definition).
 
 ## Migration Planning
 - Generate a migration plan graph with dependencies.
