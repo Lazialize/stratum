@@ -1,0 +1,546 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Lazialize/stratum/schemas/stratum-schema.json",
+  "title": "Stratum Schema Definition",
+  "description": "JSON Schema for Stratum database schema YAML files with IDE completion support",
+  "type": "object",
+  "required": ["version", "tables"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema definition version"
+    },
+    "tables": {
+      "type": "object",
+      "description": "Database tables definition",
+      "additionalProperties": {
+        "$ref": "#/$defs/table"
+      }
+    }
+  },
+  "$defs": {
+    "table": {
+      "type": "object",
+      "required": ["name", "columns"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Table name"
+        },
+        "columns": {
+          "type": "array",
+          "description": "Table columns",
+          "items": {
+            "$ref": "#/$defs/column"
+          },
+          "minItems": 1
+        },
+        "indexes": {
+          "type": "array",
+          "description": "Table indexes",
+          "items": {
+            "$ref": "#/$defs/index"
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "description": "Table constraints",
+          "items": {
+            "$ref": "#/$defs/constraint"
+          }
+        }
+      }
+    },
+    "column": {
+      "type": "object",
+      "required": ["name", "type", "nullable"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Column name"
+        },
+        "type": {
+          "$ref": "#/$defs/columnType"
+        },
+        "nullable": {
+          "type": "boolean",
+          "description": "Whether the column can be null"
+        },
+        "default_value": {
+          "type": ["string", "null"],
+          "description": "Default value for the column"
+        },
+        "auto_increment": {
+          "type": ["boolean", "null"],
+          "description": "Whether the column auto-increments"
+        }
+      }
+    },
+    "columnType": {
+      "description": "Column type definition (common types or dialect-specific types)",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "INTEGER",
+              "description": "Integer type"
+            },
+            "precision": {
+              "type": ["integer", "null"],
+              "description": "Optional bit size (16, 32, 64)"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "length"],
+          "properties": {
+            "kind": {
+              "const": "VARCHAR",
+              "description": "Variable-length string"
+            },
+            "length": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum length"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "TEXT",
+              "description": "Long text type"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "BOOLEAN",
+              "description": "Boolean type (true/false)"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "TIMESTAMP",
+              "description": "Date and time"
+            },
+            "with_time_zone": {
+              "type": ["boolean", "null"],
+              "description": "Whether to include timezone"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "JSON",
+              "description": "JSON data type"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "precision", "scale"],
+          "properties": {
+            "kind": {
+              "const": "DECIMAL",
+              "description": "Fixed-point decimal number"
+            },
+            "precision": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Total number of digits"
+            },
+            "scale": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of decimal places"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "FLOAT",
+              "description": "Single-precision floating-point number"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "DOUBLE",
+              "description": "Double-precision floating-point number"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "length"],
+          "properties": {
+            "kind": {
+              "const": "CHAR",
+              "description": "Fixed-length string"
+            },
+            "length": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255,
+              "description": "Fixed length (1-255)"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "DATE",
+              "description": "Date only (no time)"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "TIME",
+              "description": "Time only (no date)"
+            },
+            "with_time_zone": {
+              "type": ["boolean", "null"],
+              "description": "Whether to include timezone"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "BLOB",
+              "description": "Binary large object"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "UUID",
+              "description": "Universally unique identifier"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "JSONB",
+              "description": "Binary JSON (PostgreSQL optimized)"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/postgresqlDialectSpecificType"
+        },
+        {
+          "$ref": "#/$defs/mysqlDialectSpecificType"
+        }
+      ]
+    },
+    "postgresqlDialectSpecificType": {
+      "description": "PostgreSQL-specific column types",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "SERIAL",
+              "description": "PostgreSQL auto-incrementing integer (equivalent to INTEGER + SEQUENCE)"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "BIGSERIAL",
+              "description": "PostgreSQL auto-incrementing big integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "SMALLSERIAL",
+              "description": "PostgreSQL auto-incrementing small integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "INT2",
+              "description": "PostgreSQL 2-byte integer (-32768 to 32767)"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "INT4",
+              "description": "PostgreSQL 4-byte integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "INT8",
+              "description": "PostgreSQL 8-byte integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "VARBIT",
+              "description": "PostgreSQL variable-length bit string"
+            },
+            "length": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum length in bits"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "INET",
+              "description": "PostgreSQL IPv4 or IPv6 network address"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "CIDR",
+              "description": "PostgreSQL IPv4 or IPv6 network specification"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "ARRAY",
+              "description": "PostgreSQL array type"
+            },
+            "element_type": {
+              "type": "string",
+              "description": "Element type of the array (e.g., 'INTEGER', 'TEXT')"
+            }
+          }
+        }
+      ]
+    },
+    "mysqlDialectSpecificType": {
+      "description": "MySQL-specific column types",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "TINYINT",
+              "description": "MySQL very small integer (-128 to 127 or 0 to 255)"
+            },
+            "unsigned": {
+              "type": "boolean",
+              "description": "If true, range is 0 to 255"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "MEDIUMINT",
+              "description": "MySQL medium-sized integer"
+            },
+            "unsigned": {
+              "type": "boolean",
+              "description": "If true, uses unsigned range"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "values"],
+          "properties": {
+            "kind": {
+              "const": "ENUM",
+              "description": "MySQL string object with a value chosen from a list"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "description": "List of allowed values"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "values"],
+          "properties": {
+            "kind": {
+              "const": "SET",
+              "description": "MySQL set of string values"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "description": "List of possible set members"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "YEAR",
+              "description": "MySQL year in 4-digit format"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "index": {
+      "type": "object",
+      "required": ["name", "columns", "unique"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Index name"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Columns included in the index"
+        },
+        "unique": {
+          "type": "boolean",
+          "description": "Whether this is a unique index"
+        }
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["PRIMARY_KEY", "FOREIGN_KEY", "UNIQUE"],
+          "description": "Constraint type"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Columns involved in the constraint"
+        },
+        "referenced_table": {
+          "type": "string",
+          "description": "Referenced table (for FOREIGN_KEY)"
+        },
+        "referenced_columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Referenced columns (for FOREIGN_KEY)"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,96 @@
+version: "1.0"
+tables:
+  # PostgreSQL-specific types example
+  postgres_specific:
+    name: postgres_specific
+    columns:
+      # SERIAL type (auto-incrementing integer)
+      - name: id
+        type:
+          kind: SERIAL
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # INET type (IP address)
+      - name: ip_address
+        type:
+          kind: INET
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # VARBIT type with length parameter
+      - name: flags
+        type:
+          kind: VARBIT
+          length: 16
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # Common VARCHAR type (works on all databases)
+      - name: username
+        type:
+          kind: VARCHAR
+          length: 50
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id
+
+  # MySQL-specific types example
+  mysql_specific:
+    name: mysql_specific
+    columns:
+      # Common INTEGER type
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        default_value: null
+        auto_increment: true
+
+      # ENUM type with values
+      - name: status
+        type:
+          kind: ENUM
+          values: ["active", "inactive", "pending"]
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # TINYINT type
+      - name: age
+        type:
+          kind: TINYINT
+          unsigned: true
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # SET type with values
+      - name: permissions
+        type:
+          kind: SET
+          values: ["read", "write", "execute"]
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # Common TEXT type (works on all databases)
+      - name: description
+        type:
+          kind: TEXT
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id

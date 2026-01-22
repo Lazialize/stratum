@@ -788,4 +788,163 @@ mod tests {
             .message
             .contains("will be stored as JSON in MySQL"));
     }
+
+    #[test]
+    fn test_validate_dialect_specific_type_skip_validation() {
+        // DialectSpecific バリアントは検証をスキップする（データベースに委譲）
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+
+        // PostgreSQL SERIAL型（方言固有型）
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "SERIAL".to_string(),
+                params: serde_json::Value::Null,
+            },
+            false,
+        ));
+
+        // プライマリキーを追加（必須）
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        // DialectSpecific型は検証エラーを生成しない
+        assert!(result.is_valid());
+        assert_eq!(result.error_count(), 0);
+    }
+
+    #[test]
+    fn test_validate_dialect_specific_type_with_params() {
+        // パラメータ付きDialectSpecific型（MySQL ENUM）も検証スキップ
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+
+        // MySQL ENUM型（パラメータ付き方言固有型）
+        table.add_column(Column::new(
+            "status".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "ENUM".to_string(),
+                params: serde_json::json!({
+                    "values": ["active", "inactive", "pending"]
+                }),
+            },
+            false,
+        ));
+
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        // DialectSpecific型は検証エラーを生成しない
+        assert!(result.is_valid());
+        assert_eq!(result.error_count(), 0);
+    }
+
+    #[test]
+    fn test_validate_dialect_specific_type_invalid_kind() {
+        // 無効な型名（INVALID_TYPE）でも検証をスキップ
+        // データベース実行時にエラーが検出される
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "INVALID_TYPE".to_string(), // 存在しない型
+                params: serde_json::Value::Null,
+            },
+            false,
+        ));
+
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        // Stratum内部では検証しない（データベースに委譲）
+        assert!(result.is_valid());
+        assert_eq!(result.error_count(), 0);
+    }
+
+    #[test]
+    fn test_validate_mixed_common_and_dialect_specific_types() {
+        // 共通型と方言固有型の混在スキーマ
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+
+        // 方言固有型（PostgreSQL SERIAL）
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "SERIAL".to_string(),
+                params: serde_json::Value::Null,
+            },
+            false,
+        ));
+
+        // 共通型（VARCHAR）
+        table.add_column(Column::new(
+            "username".to_string(),
+            ColumnType::VARCHAR { length: 50 },
+            false,
+        ));
+
+        // 方言固有型（PostgreSQL INET）
+        table.add_column(Column::new(
+            "ip_address".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "INET".to_string(),
+                params: serde_json::Value::Null,
+            },
+            true,
+        ));
+
+        // 共通型（TIMESTAMP）
+        table.add_column(Column::new(
+            "created_at".to_string(),
+            ColumnType::TIMESTAMP {
+                with_time_zone: Some(true),
+            },
+            false,
+        ));
+
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        // 混在スキーマも有効
+        assert!(result.is_valid());
+        assert_eq!(result.error_count(), 0);
+    }
 }

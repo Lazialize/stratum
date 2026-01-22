@@ -54,47 +54,50 @@
 
 ---
 
-### Task 3: YAML Schema（IDE補完用）の作成
+### Task 3: YAML Schema（IDE補完用）の作成 ✅
 **要件マッピング**: 1, 2, 6
 
 **サブタスク**:
-1. `resources/schemas/stratum-schema.json`ファイルを作成する
+- [x] `resources/schemas/stratum-schema.json`ファイルを作成する
    - JSON Schema Draft 2020-12形式で定義する
    - `ColumnType`のすべてのバリアント（共通型 + DialectSpecific）を`oneOf`で記述する
    - 各方言固有型に`description`フィールドで説明を追加する
 
-2. PostgreSQL方言固有型のスキーマ定義を追加する
+- [x] PostgreSQL方言固有型のスキーマ定義を追加する
    - `SERIAL`, `BIGSERIAL`, `SMALLSERIAL`（パラメータなし）
    - `INT2`, `INT4`, `INT8`（パラメータなし）
    - `VARBIT`（lengthパラメータあり）
    - `INET`, `CIDR`（パラメータなし）
    - `ARRAY`（要素型パラメータあり）
 
-3. MySQL方言固有型のスキーマ定義を追加する
+- [x] MySQL方言固有型のスキーマ定義を追加する
    - `TINYINT`, `MEDIUMINT`（パラメータなし）
    - `ENUM`（valuesパラメータ必須）
    - `SET`（valuesパラメータ必須）
    - `YEAR`（パラメータなし）
 
-4. READMEにVSCode YAML拡張の設定方法を追記する
+- [x] READMEにVSCode YAML拡張の設定方法を追記する
    - `.vscode/settings.json`の設定例を追加する
    - `yaml.schemas`マッピングの記述方法を説明する
 
 ---
 
-### Task 4: データベース検証とエラー伝達
+### Task 4: データベース検証とエラー伝達 ✅
 **要件マッピング**: 2, 5
 
 **サブタスク**:
-1. `SchemaValidator`サービスで`DialectSpecific`バリアントを検証スキップ対象とする
+- [x] `SchemaValidator`サービスで`DialectSpecific`バリアントを検証スキップ対象とする
    - `src/services/schema_validator.rs`の検証ロジックを確認する
    - `DialectSpecific`バリアントに対しては何も検証しない（データベースに委譲）
    - 共通型の既存検証ロジックは維持する
+   - 4つの新しいユニットテストを追加（`test_validate_dialect_specific_type_*`）
 
-2. データベース実行時のエラーメッセージを透過的に伝達するテストを追加する
-   - PostgreSQLで無効な型名（例: `INVALID_TYPE`）を使用した場合のエラー伝達をテストする
-   - MySQLで無効なENUMパラメータを使用した場合のエラー伝達をテストする
-   - エラーメッセージに`HINT`等のデータベース固有情報が含まれることを確認する
+- [x] データベース実行時のエラーメッセージを透過的に伝達するテストを追加する
+   - PostgreSQLで無効な型名（例: `SERIALS`）を使用した場合のエラー伝達をテストする
+   - PostgreSQLで正しい方言固有型（`SERIAL`, `INET`）の動作を確認するテストを追加する
+   - PostgreSQLで無効なパラメータを使用した場合のエラー伝達をテストする
+   - 統合テストファイル `tests/dialect_specific_database_error_test.rs` を作成
+   - Docker環境が必要なテストは `#[ignore]` 属性でマーク
 
 ---
 

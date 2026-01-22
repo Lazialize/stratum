@@ -312,6 +312,103 @@ environments:
 
 Stratum uses YAML for schema definitions. Each table is defined with its columns, indexes, and constraints.
 
+### IDE Setup for YAML Completion
+
+For better development experience with IDE auto-completion, configure your editor to use the Stratum YAML schema:
+
+#### VSCode
+
+Install the [YAML extension by Red Hat](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml), then add the following to your `.vscode/settings.json`:
+
+```json
+{
+  "yaml.schemas": {
+    "./resources/schemas/stratum-schema.json": "schema/**/*.yaml"
+  }
+}
+```
+
+This enables:
+- Auto-completion for column types (common and dialect-specific)
+- Validation of schema structure
+- Inline documentation for type properties
+
+#### IntelliJ IDEA / WebStorm
+
+1. Open Settings → Languages & Frameworks → Schemas and DTDs → JSON Schema Mappings
+2. Add a new mapping:
+   - Name: `Stratum Schema`
+   - Schema file: `resources/schemas/stratum-schema.json`
+   - Schema version: `JSON Schema version 2020-12`
+   - File path pattern: `schema/**/*.yaml`
+
+### Dialect-Specific Column Types
+
+In addition to common column types that work across all databases, Stratum supports dialect-specific types that leverage database-specific features:
+
+#### PostgreSQL-Specific Types
+
+- `SERIAL` - Auto-incrementing integer (equivalent to INTEGER + SEQUENCE)
+- `BIGSERIAL` - Auto-incrementing big integer
+- `SMALLSERIAL` - Auto-incrementing small integer
+- `INT2` - 2-byte integer (-32768 to 32767)
+- `INT4` - 4-byte integer
+- `INT8` - 8-byte integer
+- `VARBIT` - Variable-length bit string (with optional `length` parameter)
+- `INET` - IPv4 or IPv6 network address
+- `CIDR` - IPv4 or IPv6 network specification
+- `ARRAY` - Array type (with `element_type` parameter)
+
+Example:
+```yaml
+- name: id
+  type:
+    kind: SERIAL
+  nullable: false
+
+- name: ip_address
+  type:
+    kind: INET
+  nullable: true
+
+- name: flags
+  type:
+    kind: VARBIT
+    length: 16
+  nullable: true
+```
+
+#### MySQL-Specific Types
+
+- `TINYINT` - Very small integer (-128 to 127, or 0 to 255 if unsigned)
+- `MEDIUMINT` - Medium-sized integer
+- `ENUM` - String object with a value chosen from a list (requires `values` parameter)
+- `SET` - Set of string values (requires `values` parameter)
+- `YEAR` - Year in 4-digit format
+
+Example:
+```yaml
+- name: age
+  type:
+    kind: TINYINT
+    unsigned: true
+  nullable: false
+
+- name: status
+  type:
+    kind: ENUM
+    values: ["active", "inactive", "pending"]
+  nullable: false
+
+- name: permissions
+  type:
+    kind: SET
+    values: ["read", "write", "execute"]
+  nullable: true
+```
+
+**Note:** Dialect-specific types are validated at database execution time. If you use a type that doesn't exist in your target database, you'll receive a clear error message from the database engine.
+
 ### Column Types
 
 Supported column types:
