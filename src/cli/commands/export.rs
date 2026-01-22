@@ -1,0 +1,560 @@
+// exportコマンドハンドラー
+//
+// スキーマのエクスポート機能を実装します。
+// - データベースからのスキーマ情報取得（INFORMATION_SCHEMA）
+// - スキーマ定義のYAML形式への変換
+// - ファイルへの出力または標準出力への表示
+// - ダイアレクト固有の型の正規化
+
+use crate::adapters::database::DatabaseConnectionService;
+use crate::core::config::Config;
+use crate::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
+use anyhow::{anyhow, Context, Result};
+use sqlx::{AnyPool, Row};
+use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
+
+/// exportコマンドの入力パラメータ
+#[derive(Debug, Clone)]
+pub struct ExportCommand {
+    /// プロジェクトのルートパス
+    pub project_path: PathBuf,
+    /// 環境名
+    pub env: String,
+    /// 出力先ディレクトリ（Noneの場合は標準出力）
+    pub output_dir: Option<PathBuf>,
+}
+
+/// exportコマンドハンドラー
+#[derive(Debug, Clone)]
+pub struct ExportCommandHandler {}
+
+impl ExportCommandHandler {
+    /// 新しいExportCommandHandlerを作成
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// exportコマンドを実行
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - exportコマンドのパラメータ
+    ///
+    /// # Returns
+    ///
+    /// 成功時はエクスポート結果のサマリー（または標準出力用のYAML）、失敗時はエラーメッセージ
+    pub async fn execute(&self, command: &ExportCommand) -> Result<String> {
+        // 設定ファイルを読み込む
+        let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
+        if !config_path.exists() {
+            return Err(anyhow!(
+                "設定ファイルが見つかりません: {:?}。まず `init` コマンドでプロジェクトを初期化してください。",
+                config_path
+            ));
+        }
+
+        let config = Config::from_file(&config_path)
+            .with_context(|| "設定ファイルの読み込みに失敗しました")?;
+
+        // データベースに接続
+        let db_config = config
+            .get_database_config(&command.env)
+            .with_context(|| format!("環境 '{}' の設定が見つかりません", command.env))?;
+
+        let db_service = DatabaseConnectionService::new();
+        let pool = db_service
+            .create_pool(config.dialect, &db_config)
+            .await
+            .with_context(|| "データベース接続に失敗しました")?;
+
+        // データベースからスキーマ情報を取得
+        let schema = self
+            .extract_schema_from_database(&pool, config.dialect)
+            .await
+            .with_context(|| "スキーマ情報の取得に失敗しました")?;
+
+        // テーブル名のリストを取得
+        let table_names: Vec<String> = schema.tables.keys().cloned().collect();
+
+        // YAML形式にシリアライズ
+        let yaml_content = serde_saphyr::to_string(&schema)
+            .with_context(|| "スキーマのYAMLシリアライズに失敗しました")?;
+
+        // 出力先に応じて処理
+        if let Some(output_dir) = &command.output_dir {
+            // ディレクトリに出力
+            fs::create_dir_all(output_dir)
+                .with_context(|| format!("出力ディレクトリの作成に失敗: {:?}", output_dir))?;
+
+            let output_file = output_dir.join("schema.yaml");
+            fs::write(&output_file, yaml_content)
+                .with_context(|| format!("スキーマファイルの書き込みに失敗: {:?}", output_file))?;
+
+            Ok(self.format_export_summary(&table_names, Some(output_dir)))
+        } else {
+            // 標準出力に出力（YAMLをそのまま返す）
+            Ok(yaml_content)
+        }
+    }
+
+    /// データベースからスキーマ情報を抽出
+    async fn extract_schema_from_database(
+        &self,
+        pool: &AnyPool,
+        dialect: crate::core::config::Dialect,
+    ) -> Result<Schema> {
+        let mut schema = Schema::new("1.0".to_string());
+
+        // テーブル一覧を取得
+        let table_names = self.get_table_names(pool, dialect).await?;
+
+        for table_name in table_names {
+            let mut table = Table::new(table_name.clone());
+
+            // カラム情報を取得
+            let columns = self.get_columns(pool, &table_name, dialect).await?;
+            for column in columns {
+                table.add_column(column);
+            }
+
+            // インデックス情報を取得
+            let indexes = self.get_indexes(pool, &table_name, dialect).await?;
+            for index in indexes {
+                table.add_index(index);
+            }
+
+            // 制約情報を取得
+            let constraints = self.get_constraints(pool, &table_name, dialect).await?;
+            for constraint in constraints {
+                table.add_constraint(constraint);
+            }
+
+            schema.add_table(table);
+        }
+
+        Ok(schema)
+    }
+
+    /// テーブル名の一覧を取得
+    async fn get_table_names(
+        &self,
+        pool: &AnyPool,
+        dialect: crate::core::config::Dialect,
+    ) -> Result<Vec<String>> {
+        let sql = match dialect {
+            crate::core::config::Dialect::PostgreSQL => {
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
+            }
+            crate::core::config::Dialect::MySQL => {
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name"
+            }
+            crate::core::config::Dialect::SQLite => {
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations' ORDER BY name"
+            }
+        };
+
+        let rows = sqlx::query(sql).fetch_all(pool).await?;
+
+        let table_names = rows.iter().map(|row| row.get::<String, _>(0)).collect();
+
+        Ok(table_names)
+    }
+
+    /// カラム情報を取得
+    async fn get_columns(
+        &self,
+        pool: &AnyPool,
+        table_name: &str,
+        dialect: crate::core::config::Dialect,
+    ) -> Result<Vec<Column>> {
+        match dialect {
+            crate::core::config::Dialect::SQLite => {
+                self.get_columns_sqlite(pool, table_name).await
+            }
+            crate::core::config::Dialect::PostgreSQL => {
+                self.get_columns_postgres(pool, table_name).await
+            }
+            crate::core::config::Dialect::MySQL => {
+                self.get_columns_mysql(pool, table_name).await
+            }
+        }
+    }
+
+    /// SQLiteのカラム情報を取得
+    async fn get_columns_sqlite(&self, pool: &AnyPool, table_name: &str) -> Result<Vec<Column>> {
+        let sql = format!("PRAGMA table_info({})", table_name);
+        let rows = sqlx::query(&sql).fetch_all(pool).await?;
+
+        let mut columns = Vec::new();
+
+        for row in rows {
+            let name: String = row.get(1);
+            let type_str: String = row.get(2);
+            let not_null: i32 = row.get(3);
+            let default_value: Option<String> = row.get(4);
+
+            let column_type = self.parse_sqlite_type(&type_str);
+            let nullable = not_null == 0;
+
+            let mut column = Column::new(name, column_type, nullable);
+            column.default_value = default_value;
+
+            columns.push(column);
+        }
+
+        Ok(columns)
+    }
+
+    /// PostgreSQLのカラム情報を取得
+    async fn get_columns_postgres(
+        &self,
+        pool: &AnyPool,
+        table_name: &str,
+    ) -> Result<Vec<Column>> {
+        let sql = r#"
+            SELECT column_name, data_type, is_nullable, column_default, character_maximum_length, numeric_precision
+            FROM information_schema.columns
+            WHERE table_name = $1 AND table_schema = 'public'
+            ORDER BY ordinal_position
+        "#;
+
+        let rows = sqlx::query(sql).bind(table_name).fetch_all(pool).await?;
+
+        let mut columns = Vec::new();
+
+        for row in rows {
+            let name: String = row.get(0);
+            let data_type: String = row.get(1);
+            let is_nullable: String = row.get(2);
+            let default_value: Option<String> = row.get(3);
+            let char_max_length: Option<i32> = row.get(4);
+            let numeric_precision: Option<i32> = row.get(5);
+
+            let column_type = self.parse_postgres_type(&data_type, char_max_length, numeric_precision);
+            let nullable = is_nullable == "YES";
+
+            let mut column = Column::new(name, column_type, nullable);
+            column.default_value = default_value;
+
+            columns.push(column);
+        }
+
+        Ok(columns)
+    }
+
+    /// MySQLのカラム情報を取得
+    async fn get_columns_mysql(&self, pool: &AnyPool, table_name: &str) -> Result<Vec<Column>> {
+        let sql = r#"
+            SELECT column_name, data_type, is_nullable, column_default, character_maximum_length, numeric_precision
+            FROM information_schema.columns
+            WHERE table_name = ? AND table_schema = DATABASE()
+            ORDER BY ordinal_position
+        "#;
+
+        let rows = sqlx::query(sql).bind(table_name).fetch_all(pool).await?;
+
+        let mut columns = Vec::new();
+
+        for row in rows {
+            let name: String = row.get(0);
+            let data_type: String = row.get(1);
+            let is_nullable: String = row.get(2);
+            let default_value: Option<String> = row.get(3);
+            let char_max_length: Option<i32> = row.get(4);
+            let numeric_precision: Option<i32> = row.get(5);
+
+            let column_type = self.parse_mysql_type(&data_type, char_max_length, numeric_precision);
+            let nullable = is_nullable == "YES";
+
+            let mut column = Column::new(name, column_type, nullable);
+            column.default_value = default_value;
+
+            columns.push(column);
+        }
+
+        Ok(columns)
+    }
+
+    /// SQLiteの型をパース
+    fn parse_sqlite_type(&self, type_str: &str) -> ColumnType {
+        let upper = type_str.to_uppercase();
+
+        if upper.contains("INT") {
+            ColumnType::INTEGER { precision: None }
+        } else if upper.contains("CHAR") {
+            // VARCHAR(255) のような形式から長さを抽出
+            if let Some(start) = type_str.find('(') {
+                if let Some(end) = type_str.find(')') {
+                    if let Ok(length) = type_str[start + 1..end].parse::<u32>() {
+                        return ColumnType::VARCHAR { length };
+                    }
+                }
+            }
+            ColumnType::VARCHAR { length: 255 }
+        } else {
+            // TEXT, REAL, BLOB, その他の型はすべてTEXTとして扱う
+            ColumnType::TEXT
+        }
+    }
+
+    /// PostgreSQLの型をパース
+    fn parse_postgres_type(
+        &self,
+        data_type: &str,
+        char_max_length: Option<i32>,
+        numeric_precision: Option<i32>,
+    ) -> ColumnType {
+        match data_type {
+            "integer" | "smallint" | "bigint" => ColumnType::INTEGER {
+                precision: numeric_precision.map(|p| p as u32),
+            },
+            "character varying" | "varchar" => ColumnType::VARCHAR {
+                length: char_max_length.unwrap_or(255) as u32,
+            },
+            "text" => ColumnType::TEXT,
+            "boolean" => ColumnType::BOOLEAN,
+            "timestamp with time zone" => ColumnType::TIMESTAMP {
+                with_time_zone: Some(true),
+            },
+            "timestamp without time zone" => ColumnType::TIMESTAMP {
+                with_time_zone: Some(false),
+            },
+            "json" | "jsonb" => ColumnType::JSON,
+            _ => ColumnType::TEXT,
+        }
+    }
+
+    /// MySQLの型をパース
+    fn parse_mysql_type(
+        &self,
+        data_type: &str,
+        char_max_length: Option<i32>,
+        numeric_precision: Option<i32>,
+    ) -> ColumnType {
+        match data_type {
+            "int" | "smallint" | "bigint" | "tinyint" => ColumnType::INTEGER {
+                precision: numeric_precision.map(|p| p as u32),
+            },
+            "varchar" => ColumnType::VARCHAR {
+                length: char_max_length.unwrap_or(255) as u32,
+            },
+            "text" | "longtext" | "mediumtext" => ColumnType::TEXT,
+            "tinyint(1)" => ColumnType::BOOLEAN,
+            "datetime" | "timestamp" => ColumnType::TIMESTAMP {
+                with_time_zone: None,
+            },
+            "json" => ColumnType::JSON,
+            _ => ColumnType::TEXT,
+        }
+    }
+
+    /// インデックス情報を取得
+    async fn get_indexes(
+        &self,
+        pool: &AnyPool,
+        table_name: &str,
+        dialect: crate::core::config::Dialect,
+    ) -> Result<Vec<Index>> {
+        match dialect {
+            crate::core::config::Dialect::SQLite => {
+                self.get_indexes_sqlite(pool, table_name).await
+            }
+            _ => Ok(Vec::new()), // PostgreSQLとMySQLは後で実装
+        }
+    }
+
+    /// SQLiteのインデックス情報を取得
+    async fn get_indexes_sqlite(&self, pool: &AnyPool, table_name: &str) -> Result<Vec<Index>> {
+        let sql = format!("PRAGMA index_list({})", table_name);
+        let rows = sqlx::query(&sql).fetch_all(pool).await?;
+
+        let mut indexes = Vec::new();
+
+        for row in rows {
+            let index_name: String = row.get(1);
+            let is_unique: i32 = row.get(2);
+
+            // システムインデックスをスキップ
+            if index_name.starts_with("sqlite_") {
+                continue;
+            }
+
+            // インデックスのカラムを取得
+            let info_sql = format!("PRAGMA index_info({})", index_name);
+            let info_rows = sqlx::query(&info_sql).fetch_all(pool).await?;
+
+            let columns: Vec<String> = info_rows.iter().map(|r| r.get::<String, _>(2)).collect();
+
+            let index = Index {
+                name: index_name,
+                columns,
+                unique: is_unique == 1,
+            };
+
+            indexes.push(index);
+        }
+
+        Ok(indexes)
+    }
+
+    /// 制約情報を取得
+    async fn get_constraints(
+        &self,
+        pool: &AnyPool,
+        table_name: &str,
+        dialect: crate::core::config::Dialect,
+    ) -> Result<Vec<Constraint>> {
+        match dialect {
+            crate::core::config::Dialect::SQLite => {
+                self.get_constraints_sqlite(pool, table_name).await
+            }
+            _ => Ok(Vec::new()), // PostgreSQLとMySQLは後で実装
+        }
+    }
+
+    /// SQLiteの制約情報を取得
+    async fn get_constraints_sqlite(
+        &self,
+        pool: &AnyPool,
+        table_name: &str,
+    ) -> Result<Vec<Constraint>> {
+        let mut constraints = Vec::new();
+
+        // PRIMARY KEY制約を取得
+        let table_info_sql = format!("PRAGMA table_info({})", table_name);
+        let rows = sqlx::query(&table_info_sql).fetch_all(pool).await?;
+
+        let pk_columns: Vec<String> = rows
+            .iter()
+            .filter(|row| row.get::<i32, _>(5) > 0) // pk列が0より大きい
+            .map(|row| row.get::<String, _>(1))
+            .collect();
+
+        if !pk_columns.is_empty() {
+            constraints.push(Constraint::PRIMARY_KEY {
+                columns: pk_columns,
+            });
+        }
+
+        // FOREIGN KEY制約を取得
+        let fk_sql = format!("PRAGMA foreign_key_list({})", table_name);
+        let fk_rows = sqlx::query(&fk_sql).fetch_all(pool).await?;
+
+        let mut fk_map: HashMap<i32, (String, Vec<String>, Vec<String>)> = HashMap::new();
+
+        for row in fk_rows {
+            let id: i32 = row.get(0);
+            let ref_table: String = row.get(2);
+            let from_col: String = row.get(3);
+            let to_col: String = row.get(4);
+
+            let entry = fk_map.entry(id).or_insert_with(|| {
+                (ref_table.clone(), Vec::new(), Vec::new())
+            });
+
+            entry.1.push(from_col);
+            entry.2.push(to_col);
+        }
+
+        for (_id, (ref_table, from_cols, to_cols)) in fk_map {
+            constraints.push(Constraint::FOREIGN_KEY {
+                columns: from_cols,
+                referenced_table: ref_table,
+                referenced_columns: to_cols,
+            });
+        }
+
+        Ok(constraints)
+    }
+
+    /// エクスポート結果のサマリーをフォーマット
+    pub fn format_export_summary(
+        &self,
+        table_names: &[String],
+        output_dir: Option<&PathBuf>,
+    ) -> String {
+        let mut output = String::new();
+
+        output.push_str("=== スキーマエクスポート完了 ===\n\n");
+
+        output.push_str(&format!(
+            "エクスポートされたテーブル: {} 個\n\n",
+            table_names.len()
+        ));
+
+        for table_name in table_names {
+            output.push_str(&format!("  - {}\n", table_name));
+        }
+
+        output.push('\n');
+
+        if let Some(dir) = output_dir {
+            output.push_str(&format!("出力先: {:?}\n", dir.join("schema.yaml")));
+        } else {
+            output.push_str("出力先: 標準出力\n");
+        }
+
+        output
+    }
+}
+
+impl Default for ExportCommandHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_handler() {
+        let handler = ExportCommandHandler::new();
+        assert!(format!("{:?}", handler).contains("ExportCommandHandler"));
+    }
+
+    #[test]
+    fn test_parse_sqlite_type() {
+        let handler = ExportCommandHandler::new();
+
+        assert!(matches!(
+            handler.parse_sqlite_type("INTEGER"),
+            ColumnType::INTEGER { .. }
+        ));
+        assert!(matches!(
+            handler.parse_sqlite_type("TEXT"),
+            ColumnType::TEXT
+        ));
+        assert!(matches!(
+            handler.parse_sqlite_type("VARCHAR(255)"),
+            ColumnType::VARCHAR { length: 255 }
+        ));
+        // REAL and BLOB are mapped to TEXT in the current schema
+        assert!(matches!(
+            handler.parse_sqlite_type("REAL"),
+            ColumnType::TEXT
+        ));
+        assert!(matches!(
+            handler.parse_sqlite_type("BLOB"),
+            ColumnType::TEXT
+        ));
+    }
+
+    #[test]
+    fn test_format_export_summary() {
+        let handler = ExportCommandHandler::new();
+
+        let table_names = vec!["users".to_string(), "posts".to_string()];
+        let output_path = Some(PathBuf::from("/test/output"));
+
+        let summary = handler.format_export_summary(&table_names, output_path.as_ref());
+
+        assert!(summary.contains("エクスポート完了"));
+        assert!(summary.contains("2 個"));
+        assert!(summary.contains("users"));
+        assert!(summary.contains("posts"));
+    }
+}
