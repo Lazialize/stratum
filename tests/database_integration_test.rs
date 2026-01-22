@@ -11,14 +11,14 @@
 
 #[cfg(test)]
 mod database_integration_tests {
-    use sqlx::any::AnyPoolOptions;
+    use sqlx::postgres::PgPoolOptions;
     use sqlx::sqlite::SqlitePoolOptions;
-    use sqlx::{Any, Row};
+    use sqlx::{Postgres, Row};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
     use testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt};
-    use testcontainers_modules::postgres::Postgres;
+    use testcontainers_modules::postgres::Postgres as PostgresImage;
 
     /// テストプロジェクト構造の検証テスト（Docker不要）
     #[test]
@@ -115,9 +115,9 @@ tables:
 
     /// PostgreSQLコンテナを起動して接続プールを作成
     async fn setup_postgres_container(
-    ) -> Result<(ContainerAsync<Postgres>, sqlx::Pool<Any>), Box<dyn std::error::Error>> {
+    ) -> Result<(ContainerAsync<PostgresImage>, sqlx::Pool<Postgres>), Box<dyn std::error::Error>> {
         // PostgreSQLコンテナを起動
-        let container = Postgres::default().with_tag("16-alpine").start().await?;
+        let container = PostgresImage::default().with_tag("16-alpine").start().await?;
 
         // 接続文字列を構築
         let host = container.get_host().await?;
@@ -125,7 +125,7 @@ tables:
         let connection_string = format!("postgres://postgres:postgres@{}:{}/postgres", host, port);
 
         // 接続プールを作成
-        let pool = AnyPoolOptions::new()
+        let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect(&connection_string)
             .await?;
