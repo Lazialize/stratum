@@ -1,0 +1,12 @@
+version: "1.0"
+dialect: sqlite
+schema_dir: schema
+migrations_dir: migrations
+environments:
+  development:
+    host: localhost
+    port: 0
+    database: sqlite_db
+    user: null
+    password: null
+    timeout: 30

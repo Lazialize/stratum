@@ -1,0 +1,42 @@
+version: "1.0"
+tables:
+  users:
+    name: users
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+          precision: null
+        nullable: false
+        default_value: null
+        auto_increment: true
+      - name: name
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: false
+        default_value: null
+        auto_increment: null
+      - name: email
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: false
+        default_value: null
+        auto_increment: null
+      - name: created_at
+        type:
+          kind: TIMESTAMP
+          with_time_zone: null
+        nullable: true
+        default_value: CURRENT_TIMESTAMP
+        auto_increment: null
+    indexes:
+      - name: idx_users_email
+        columns:
+          - email
+        unique: true
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id

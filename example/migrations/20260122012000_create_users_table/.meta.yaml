@@ -1,0 +1,4 @@
+version: 20260122012000
+description: create_users_table
+dialect: SQLite
+checksum: da63553bded417e6bc5136be5892d8f90bc04141ba246ab2bd79671a90ecc045
