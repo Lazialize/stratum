@@ -16,12 +16,13 @@
 | Phase 2 | Task 2.1: PostgreSQL拡張 | ✅ 完了 | 2026-01-22 |
 | Phase 2 | Task 2.2: MySQL拡張 | ✅ 完了 | 2026-01-22 |
 | Phase 2 | Task 2.3: SQLite拡張 | ✅ 完了 | 2026-01-22 |
-| Phase 3 | Task 3.1, 3.2 | ⏸️ 未開始 | - |
+| Phase 3 | Task 3.1: 型固有バリデーション | ✅ 完了 | 2026-01-22 |
+| Phase 3 | Task 3.2: 方言固有警告機能 | ✅ 完了 | 2026-01-22 |
 | Phase 4 | Task 4.1-4.6 | ⏸️ 未開始 | - |
 | Phase 5 | Task 5.1-5.2 | ⏸️ 未開始 | - |
 | Phase 6 | Task 6.1-6.2 | ⏸️ 未開始 | - |
 
-**完了率**: 33% (6/18タスク)
+**完了率**: 44% (8/18タスク)
 
 ---
 
@@ -191,6 +192,96 @@ test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 ---
 
+## Phase 3: バリデーション実装 ✅
+
+### 実装サマリー
+
+#### Task 3.1: 型固有バリデーションルール実装
+**ファイル**: [src/services/schema_validator.rs](../../../src/services/schema_validator.rs)
+
+- `validate_column_type()` メソッドを新規追加
+- カラム型の制約検証を実装:
+  
+**DECIMAL型のバリデーション**:
+- `scale <= precision` の検証（scale が precision を超えるとエラー）
+- `precision` の範囲チェック（MySQL互換性のため最大65）
+- `precision > 0` の検証（0は不正値）
+
+**CHAR型のバリデーション**:
+- `length >= 1` の検証（0は不正値）
+- `length <= 255` の検証（最大値を超えるとエラー）
+
+- `validate()` メソッドから各カラムに対して `validate_column_type()` を呼び出し
+
+#### Task 3.2: 方言固有警告機能実装
+**ファイル**: 
+- [src/core/error.rs](../../../src/core/error.rs) - ValidationWarning構造体追加
+- [src/services/schema_validator.rs](../../../src/services/schema_validator.rs) - 警告生成ロジック
+
+**ValidationWarning 構造体**:
+- 警告メッセージ、位置情報、警告種別（DialectSpecific, PrecisionLoss, Compatibility）を含む
+- エラーとは独立して扱われる（is_valid()には影響しない）
+
+**ValidationResult 拡張**:
+- `warnings` フィールド追加
+- `add_warning()` メソッド追加
+- `warning_count()` メソッド追加
+
+**generate_dialect_warnings() メソッド実装**:
+方言固有の型マッピングに関する警告を生成:
+
+| 型 | 方言 | 警告内容 |
+|---|---|---|
+| DECIMAL | SQLite | TEXT型として保存され、数値演算が期待通り動作しない可能性 |
+| UUID | MySQL | CHAR(36)として保存（ネイティブUUID型なし） |
+| UUID | SQLite | TEXT型として保存（ネイティブUUID型なし） |
+| JSONB | MySQL | JSON型として保存（バイナリ最適化なし） |
+| JSONB | SQLite | TEXT型として保存（ネイティブJSON/JSONB型なし） |
+| TIME (with TZ) | MySQL | タイムゾーン情報が失われる |
+| TIME (with TZ) | SQLite | タイムゾーン情報が失われる |
+| DATE | SQLite | TEXT型として保存（ネイティブDATE型なし） |
+
+### テスト実装
+
+**追加したテスト** (8個):
+1. `test_validate_decimal_type_invalid_scale` - scale > precision のエラー検証
+2. `test_validate_decimal_type_zero_precision` - precision = 0 のエラー検証
+3. `test_validate_decimal_type_excessive_precision` - precision > 65 のエラー検証
+4. `test_validate_char_type_zero_length` - length = 0 のエラー検証
+5. `test_validate_char_type_excessive_length` - length > 255 のエラー検証
+6. `test_generate_dialect_warnings_sqlite_decimal` - SQLite DECIMAL警告検証
+7. `test_generate_dialect_warnings_mysql_uuid` - MySQL UUID警告検証
+8. `test_generate_dialect_warnings_mysql_jsonb` - MySQL JSONB警告検証
+
+**テスト結果**: ✅ 13個のschema_validatorテスト全て成功（既存5個 + 新規8個）
+
+---
+
+## ビルド＆テスト結果（Phase 3更新）
+
+### ビルド状態
+```bash
+$ cargo build
+   Compiling stratum v0.1.0
+warning: unused import: `Duration`
+  --> src/cli/commands/apply.rs:15:14
+
+warning: 1 warning emitted
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.31s
+```
+
+**ステータス**: ✅ ビルド成功
+
+### 全テスト結果
+```bash
+$ cargo test
+test result: ok. 152 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**ステータス**: ✅ 全テスト成功（Phase 1-3の実装が既存機能に影響なし）
+
+---
+
 ## 次のステップ
 
 ### Phase 3: バリデーション実装（推定1.5時間）
@@ -279,8 +370,12 @@ test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 - **[IMPL]** Phase 2: Extend MySQL SQL generator with new type mappings
 - **[IMPL]** Phase 2: Extend SQLite SQL generator with new type mappings
 - **[REFACTOR]** Unify type mapping logic in migration_generator.rs using to_sql_type()
+- **[IMPL]** Phase 3: Add validate_column_type() method for DECIMAL and CHAR validation
+- **[IMPL]** Phase 3: Add ValidationWarning structure and dialect-specific warning system
+- **[IMPL]** Phase 3: Add generate_dialect_warnings() for database compatibility warnings
+- **[TEST]** Phase 3: Add 8 new tests for validation and warning functionality
 
 ---
 
-**ステータス**: Phase 1 & Phase 2 完了 ✅  
-**次のマイルストーン**: Phase 3 バリデーション実装
+**ステータス**: Phase 1, Phase 2 & Phase 3 完了 ✅  
+**次のマイルストーン**: Phase 4 テスト実装

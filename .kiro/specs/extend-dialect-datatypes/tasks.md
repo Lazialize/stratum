@@ -175,29 +175,47 @@
 
 ## Phase 3: バリデーション実装
 
-### Task 3.1: 型固有バリデーションルール実装
+### Task 3.1: 型固有バリデーションルール実装 ✅
 **要件**: REQ-9  
 **ファイル**: `src/services/schema_validator.rs`  
 **優先度**: High  
-**推定時間**: 45分
+**推定時間**: 45分  
+**完了日**: 2026-01-22
 
 **作業内容**:
-- [ ] `validate_column_type()` メソッドを新規追加
-- [ ] DECIMALバリデーション実装:
+- [x] `validate_column_type()` メソッドを新規追加
+- [x] DECIMALバリデーション実装:
   - `scale <= precision` の検証
   - `precision <= 65`（MySQL）/ `precision <= 1000`（PostgreSQL）の検証
-- [ ] CHARバリデーション実装:
+- [x] CHARバリデーション実装:
   - `length >= 1 && length <= 255` の検証
-- [ ] `validate()` メソッドから `validate_column_type()` を呼び出し
+- [x] `validate()` メソッドから `validate_column_type()` を呼び出し
 
 **受け入れ条件**:
-- [ ] 不正なDECIMAL定義でエラーが返される
-- [ ] 不正なCHAR定義でエラーが返される
+- [x] 不正なDECIMAL定義でエラーが返される（テスト実装済み）
+- [x] 不正なCHAR定義でエラーが返される（テスト実装済み）
 
 ---
 
-### Task 3.2: 方言固有警告機能実装
+### Task 3.2: 方言固有警告機能実装 ✅
 **要件**: REQ-9  
+**ファイル**: `src/services/schema_validator.rs`, `src/core/error.rs`  
+**優先度**: Medium  
+**推定時間**: 45分  
+**完了日**: 2026-01-22
+
+**作業内容**:
+- [x] `ValidationWarning` 構造体を追加（`src/core/error.rs`）
+- [x] `ValidationResult` に `warnings` フィールドと `add_warning()` メソッドを追加
+- [x] `generate_dialect_warnings()` メソッドを新規追加
+- [x] 方言固有の警告ロジック実装:
+  - MySQL: UUID→CHAR(36), JSONB→JSON
+  - SQLite: DECIMAL→TEXT, UUID→TEXT, JSONB→TEXT, DATE→TEXT
+  - MySQL/SQLite: TIME WITH TIME ZONEのタイムゾーン情報損失
+
+**受け入れ条件**:
+- [x] 方言ごとに適切な警告が生成される（テスト実装済み）
+- [x] 警告はエラーとは異なる扱い（ValidationResult.is_valid()に影響しない）
 **ファイル**: `src/services/schema_validator.rs`, `src/core/error.rs`  
 **優先度**: Medium  
 **推定時間**: 45分

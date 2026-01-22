@@ -79,6 +79,61 @@ impl ValidationError {
     }
 }
 
+/// バリデーション警告
+///
+/// スキーマ定義の検証時に発生する警告を表現します。
+/// エラーではないが、ユーザーに注意を促すべき事項を表します。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValidationWarning {
+    /// 警告メッセージ
+    pub message: String,
+    /// 警告発生位置
+    pub location: Option<ErrorLocation>,
+    /// 警告の種類
+    pub kind: WarningKind,
+}
+
+/// 警告の種類
+#[derive(Debug, Clone, PartialEq)]
+pub enum WarningKind {
+    /// 方言固有の機能に関する警告（フォールバックなど）
+    DialectSpecific,
+    /// 精度損失の可能性に関する警告
+    PrecisionLoss,
+    /// 互換性に関する警告
+    Compatibility,
+}
+
+impl ValidationWarning {
+    /// 新しい警告を作成
+    pub fn new(message: String, location: Option<ErrorLocation>, kind: WarningKind) -> Self {
+        Self {
+            message,
+            location,
+            kind,
+        }
+    }
+
+    /// 方言固有の警告を作成
+    pub fn dialect_specific(message: String, location: Option<ErrorLocation>) -> Self {
+        Self::new(message, location, WarningKind::DialectSpecific)
+    }
+
+    /// 精度損失の警告を作成
+    pub fn precision_loss(message: String, location: Option<ErrorLocation>) -> Self {
+        Self::new(message, location, WarningKind::PrecisionLoss)
+    }
+
+    /// 位置情報をフォーマット
+    pub fn format(&self) -> String {
+        let location_str = self
+            .location
+            .as_ref()
+            .map_or(String::new(), |loc| loc.format());
+        format!("Warning: {}{}", self.message, location_str)
+    }
+}
+
 /// エラー発生位置
 ///
 /// スキーマファイル内のエラー発生位置を表現します。
@@ -151,12 +206,17 @@ fn format_location_opt(location: &Option<ErrorLocation>) -> String {
 pub struct ValidationResult {
     /// エラーのリスト
     pub errors: Vec<ValidationError>,
+    /// 警告のリスト
+    pub warnings: Vec<ValidationWarning>,
 }
 
 impl ValidationResult {
     /// 新しいバリデーション結果を作成
     pub fn new() -> Self {
-        Self { errors: Vec::new() }
+        Self {
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
     }
 
     /// エラーを追加
@@ -164,7 +224,12 @@ impl ValidationResult {
         self.errors.push(error);
     }
 
-    /// 検証が成功したかどうか
+    /// 警告を追加
+    pub fn add_warning(&mut self, warning: ValidationWarning) {
+        self.warnings.push(warning);
+    }
+
+    /// 検証が成功したかどうか（エラーがない場合は成功）
     pub fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
@@ -174,9 +239,15 @@ impl ValidationResult {
         self.errors.len()
     }
 
+    /// 警告の数を取得
+    pub fn warning_count(&self) -> usize {
+        self.warnings.len()
+    }
+
     /// 他のバリデーション結果をマージ
     pub fn merge(&mut self, other: ValidationResult) {
         self.errors.extend(other.errors);
+        self.warnings.extend(other.warnings);
     }
 }
 
