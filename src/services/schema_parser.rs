@@ -230,6 +230,7 @@ mod tests {
 
         // 空のディレクトリからは空のスキーマが返される
         assert_eq!(schema.tables.len(), 0);
+        assert_eq!(schema.enums.len(), 0);
         assert_eq!(schema.version, "1.0");
     }
 
@@ -240,6 +241,10 @@ mod tests {
 
         let schema_content = r#"
 version: "1.0"
+enums:
+  status:
+    name: status
+    values: ["active", "inactive"]
 tables:
   users:
     name: users
@@ -251,6 +256,11 @@ tables:
         nullable: false
         default_value: null
         auto_increment: true
+      - name: status
+        type:
+          kind: ENUM
+          name: status
+        nullable: false
     indexes: []
     constraints: []
 "#;
@@ -261,6 +271,7 @@ tables:
 
         assert_eq!(schema.version, "1.0");
         assert_eq!(schema.tables.len(), 1);
+        assert_eq!(schema.enums.len(), 1);
         assert!(schema.has_table("users"));
     }
 }

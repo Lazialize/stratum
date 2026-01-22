@@ -6,13 +6,25 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-use crate::core::schema::{Column, Constraint, Index, Table};
+use crate::core::schema::{Column, Constraint, EnumDefinition, Index, Table};
 
 /// スキーマ差分
 ///
 /// 2つのスキーマ間の差分を表現します。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SchemaDiff {
+    /// ENUM再作成の許可フラグ
+    pub enum_recreate_allowed: bool,
+
+    /// 追加されたENUM定義
+    pub added_enums: Vec<EnumDefinition>,
+
+    /// 削除されたENUM定義
+    pub removed_enums: Vec<String>,
+
+    /// 変更されたENUM定義
+    pub modified_enums: Vec<EnumDiff>,
+
     /// 追加されたテーブル
     pub added_tables: Vec<Table>,
 
@@ -27,6 +39,10 @@ impl SchemaDiff {
     /// 新しいスキーマ差分を作成
     pub fn new() -> Self {
         Self {
+            enum_recreate_allowed: false,
+            added_enums: Vec::new(),
+            removed_enums: Vec::new(),
+            modified_enums: Vec::new(),
             added_tables: Vec::new(),
             removed_tables: Vec::new(),
             modified_tables: Vec::new(),
@@ -35,14 +51,22 @@ impl SchemaDiff {
 
     /// 差分が空かどうか
     pub fn is_empty(&self) -> bool {
-        self.added_tables.is_empty()
+        self.added_enums.is_empty()
+            && self.removed_enums.is_empty()
+            && self.modified_enums.is_empty()
+            && self.added_tables.is_empty()
             && self.removed_tables.is_empty()
             && self.modified_tables.is_empty()
     }
 
     /// 差分の項目数を取得
     pub fn count(&self) -> usize {
-        self.added_tables.len() + self.removed_tables.len() + self.modified_tables.len()
+        self.added_enums.len()
+            + self.removed_enums.len()
+            + self.modified_enums.len()
+            + self.added_tables.len()
+            + self.removed_tables.len()
+            + self.modified_tables.len()
     }
 
     /// 外部キー制約による依存関係を考慮して、追加テーブルをトポロジカルソート
@@ -318,6 +342,47 @@ pub struct ColumnDiff {
 
     /// 変更された属性
     pub changes: Vec<ColumnChange>,
+}
+
+/// ENUM差分
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnumDiff {
+    /// ENUM名
+    pub enum_name: String,
+
+    /// 変更前の値
+    pub old_values: Vec<String>,
+
+    /// 変更後の値
+    pub new_values: Vec<String>,
+
+    /// 追加された値
+    pub added_values: Vec<String>,
+
+    /// 削除された値
+    pub removed_values: Vec<String>,
+
+    /// 変更種別
+    pub change_kind: EnumChangeKind,
+
+    /// 参照カラム
+    pub columns: Vec<EnumColumnRef>,
+}
+
+/// ENUM変更種別
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EnumChangeKind {
+    /// 追加のみ
+    AddOnly,
+    /// 再作成が必要
+    Recreate,
+}
+
+/// ENUM参照カラム
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnumColumnRef {
+    pub table_name: String,
+    pub column_name: String,
 }
 
 impl ColumnDiff {

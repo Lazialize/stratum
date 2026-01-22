@@ -71,6 +71,7 @@ impl MysqlSqlGenerator {
             ColumnType::BLOB => "BLOB".to_string(),
             ColumnType::UUID => "CHAR(36)".to_string(),
             ColumnType::JSONB => "JSON".to_string(), // JSONへフォールバック
+            ColumnType::Enum { name } => name.clone(),
             // 方言固有型はformat_dialect_specific_typeでフォーマット
             ColumnType::DialectSpecific { kind, params } => {
                 self.format_dialect_specific_type(kind, params)

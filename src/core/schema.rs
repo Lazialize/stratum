@@ -15,6 +15,14 @@ pub struct Schema {
     /// スキーマのバージョン
     pub version: String,
 
+    /// ENUM再作成の許可フラグ（デフォルト: false）
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub enum_recreate_allowed: bool,
+
+    /// ENUM定義のマップ（型名 -> EnumDefinition）
+    #[serde(default)]
+    pub enums: HashMap<String, EnumDefinition>,
+
     /// テーブル定義のマップ（テーブル名 -> Table）
     pub tables: HashMap<String, Table>,
 }
@@ -24,8 +32,31 @@ impl Schema {
     pub fn new(version: String) -> Self {
         Self {
             version,
+            enum_recreate_allowed: false,
+            enums: HashMap::new(),
             tables: HashMap::new(),
         }
+    }
+
+    /// ENUM定義を追加
+    pub fn add_enum(&mut self, enum_def: EnumDefinition) {
+        let enum_name = enum_def.name.clone();
+        self.enums.insert(enum_name, enum_def);
+    }
+
+    /// 指定されたENUM定義が存在するか確認
+    pub fn has_enum(&self, enum_name: &str) -> bool {
+        self.enums.contains_key(enum_name)
+    }
+
+    /// 指定されたENUM定義を取得
+    pub fn get_enum(&self, enum_name: &str) -> Option<&EnumDefinition> {
+        self.enums.get(enum_name)
+    }
+
+    /// ENUM定義数を取得
+    pub fn enum_count(&self) -> usize {
+        self.enums.len()
     }
 
     /// テーブルを追加
@@ -133,6 +164,18 @@ pub struct Column {
     pub auto_increment: Option<bool>,
 }
 
+/// ENUM定義
+///
+/// PostgreSQLのENUM型を表現します。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnumDefinition {
+    /// ENUM型名
+    pub name: String,
+
+    /// ENUM値（順序を保持）
+    pub values: Vec<String>,
+}
+
 impl Column {
     /// 新しいカラムを作成
     pub fn new(name: String, column_type: ColumnType, nullable: bool) -> Self {
@@ -149,6 +192,10 @@ impl Column {
     pub fn is_auto_increment(&self) -> bool {
         self.auto_increment.unwrap_or(false)
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// カラム型
@@ -221,6 +268,13 @@ pub enum ColumnType {
 
     /// バイナリJSON型 (PostgreSQL専用)
     JSONB,
+
+    /// ENUM参照型（PostgreSQL専用）
+    #[serde(rename = "ENUM")]
+    Enum {
+        /// 参照するENUM型名
+        name: String,
+    },
 
     /// 方言固有型
     ///
@@ -333,6 +387,9 @@ impl ColumnType {
             (ColumnType::JSONB, Dialect::MySQL) => "JSON".to_string(),
             (ColumnType::JSONB, Dialect::SQLite) => "TEXT".to_string(),
 
+            // ENUM
+            (ColumnType::Enum { name }, _) => name.clone(),
+
             // DialectSpecific
             // 方言固有型は`kind`をそのまま出力（Task 2で詳細実装）
             (ColumnType::DialectSpecific { kind, .. }, _) => kind.clone(),
@@ -427,7 +484,24 @@ mod tests {
     fn test_schema_new() {
         let schema = Schema::new("1.0".to_string());
         assert_eq!(schema.version, "1.0");
+        assert!(!schema.enum_recreate_allowed);
+        assert_eq!(schema.enum_count(), 0);
         assert_eq!(schema.table_count(), 0);
+    }
+
+    #[test]
+    fn test_schema_add_enum() {
+        let mut schema = Schema::new("1.0".to_string());
+        let enum_def = EnumDefinition {
+            name: "status".to_string(),
+            values: vec!["active".to_string(), "inactive".to_string()],
+        };
+
+        schema.add_enum(enum_def);
+
+        assert!(schema.has_enum("status"));
+        let stored = schema.get_enum("status").unwrap();
+        assert_eq!(stored.values.len(), 2);
     }
 
     #[test]

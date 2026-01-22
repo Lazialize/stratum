@@ -73,6 +73,7 @@ impl SqliteSqlGenerator {
             ColumnType::BLOB => "BLOB".to_string(),
             ColumnType::UUID => "TEXT".to_string(),
             ColumnType::JSONB => "TEXT".to_string(), // TEXTへフォールバック
+            ColumnType::Enum { name } => name.clone(),
             // 方言固有型はformat_dialect_specific_typeでフォーマット
             ColumnType::DialectSpecific { kind, params } => {
                 self.format_dialect_specific_type(kind, params)

@@ -31,10 +31,65 @@ impl SchemaValidatorService {
     ///
     /// 検証結果（エラーのリストを含む）
     pub fn validate(&self, schema: &Schema) -> ValidationResult {
+        self.validate_internal(schema, None)
+    }
+
+    /// スキーマ定義の全体的な検証を実行（方言指定あり）
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - 検証対象のスキーマ
+    /// * `dialect` - データベース方言
+    pub fn validate_with_dialect(&self, schema: &Schema, dialect: Dialect) -> ValidationResult {
+        self.validate_internal(schema, Some(dialect))
+    }
+
+    fn validate_internal(&self, schema: &Schema, dialect: Option<Dialect>) -> ValidationResult {
         let mut result = ValidationResult::new();
 
+        // ENUMはPostgreSQL専用
+        if let Some(dialect) = dialect {
+            if !matches!(dialect, Dialect::PostgreSQL) && !schema.enums.is_empty() {
+                result.add_error(ValidationError::Constraint {
+                    message: format!(
+                        "ENUM definitions are only supported in PostgreSQL (current: {})",
+                        dialect
+                    ),
+                    location: None,
+                    suggestion: Some("Remove ENUM definitions or switch to PostgreSQL".to_string()),
+                });
+            }
+        }
+
+        // ENUM定義の検証
+        for enum_def in schema.enums.values() {
+            if enum_def.values.is_empty() {
+                result.add_error(ValidationError::Constraint {
+                    message: format!("ENUM '{}' has no values defined", enum_def.name),
+                    location: None,
+                    suggestion: Some("Define at least one ENUM value".to_string()),
+                });
+                continue;
+            }
+
+            let mut seen = std::collections::HashSet::new();
+            for value in &enum_def.values {
+                if !seen.insert(value) {
+                    result.add_error(ValidationError::Constraint {
+                        message: format!(
+                            "ENUM '{}' has duplicate value '{}'",
+                            enum_def.name, value
+                        ),
+                        location: None,
+                        suggestion: Some("Remove duplicate values".to_string()),
+                    });
+                    break;
+                }
+            }
+        }
+
         // 空のスキーマは有効
-        if schema.table_count() == 0 {
+        if schema.table_count() == 0 && schema.enums.is_empty() {
             return result;
         }
 
@@ -57,6 +112,26 @@ impl SchemaValidatorService {
                     &column.name,
                     &mut result,
                 );
+
+                if let ColumnType::Enum { name } = &column.column_type {
+                    if !schema.enums.contains_key(name) {
+                        result.add_error(ValidationError::Reference {
+                            message: format!(
+                                "Column '{}.{}' references undefined ENUM '{}'",
+                                table_name, column.name, name
+                            ),
+                            location: Some(ErrorLocation {
+                                table: Some(table_name.clone()),
+                                column: Some(column.name.clone()),
+                                line: None,
+                            }),
+                            suggestion: Some(format!(
+                                "Define ENUM '{}' in the schema enums section",
+                                name
+                            )),
+                        });
+                    }
+                }
             }
 
             // プライマリキーの存在確認
@@ -530,7 +605,7 @@ impl Default for SchemaValidatorService {
 mod tests {
     use super::*;
     use crate::core::config::Dialect;
-    use crate::core::schema::{Column, ColumnType, Table};
+    use crate::core::schema::{Column, ColumnType, EnumDefinition, Table};
 
     #[test]
     fn test_new_service() {
@@ -601,6 +676,149 @@ mod tests {
 
         assert!(result.is_valid());
         assert_eq!(result.error_count(), 0);
+    }
+
+    #[test]
+    fn test_validate_enum_empty_values() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        schema.add_enum(EnumDefinition {
+            name: "status".to_string(),
+            values: vec![],
+        });
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "status".to_string(),
+            ColumnType::Enum {
+                name: "status".to_string(),
+            },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("ENUM") && e.to_string().contains("no values")));
+    }
+
+    #[test]
+    fn test_validate_enum_duplicate_values() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        schema.add_enum(EnumDefinition {
+            name: "status".to_string(),
+            values: vec!["active".to_string(), "active".to_string()],
+        });
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "status".to_string(),
+            ColumnType::Enum {
+                name: "status".to_string(),
+            },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("ENUM") && e.to_string().contains("duplicate")));
+    }
+
+    #[test]
+    fn test_validate_enum_reference_missing() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "status".to_string(),
+            ColumnType::Enum {
+                name: "status".to_string(),
+            },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("undefined ENUM")));
+    }
+
+    #[test]
+    fn test_validate_enum_non_postgres_dialect() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        schema.add_enum(EnumDefinition {
+            name: "status".to_string(),
+            values: vec!["active".to_string()],
+        });
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "status".to_string(),
+            ColumnType::Enum {
+                name: "status".to_string(),
+            },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_with_dialect(&schema, Dialect::MySQL);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("PostgreSQL") && e.to_string().contains("ENUM")));
     }
 
     #[test]

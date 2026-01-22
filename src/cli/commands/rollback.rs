@@ -287,6 +287,12 @@ impl Default for RollbackCommandHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::Dialect;
+    use crate::core::migration::Migration;
+    use sqlx::any::install_default_drivers;
+    use sqlx::any::AnyPoolOptions;
+    use sqlx::Row;
+    use tempfile::TempDir;
 
     #[test]
     fn test_new_handler() {
@@ -320,5 +326,101 @@ mod tests {
         assert!(summary.contains("20260121120000"));
         assert!(summary.contains("20260121120001"));
         assert!(summary.contains("300ms")); // 100 + 200
+    }
+
+    #[tokio::test]
+    async fn test_rollback_failure_keeps_record() {
+        install_default_drivers();
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let connection_string = format!("sqlite://{}?mode=rwc", db_path.to_str().unwrap());
+        let pool = AnyPoolOptions::new()
+            .max_connections(1)
+            .connect(&connection_string)
+            .await
+            .unwrap();
+
+        let migrator = DatabaseMigratorService::new();
+        migrator
+            .create_migration_table(&pool, Dialect::SQLite)
+            .await
+            .unwrap();
+
+        let migration = Migration::new(
+            "20260122120001".to_string(),
+            "create_users".to_string(),
+            "checksum".to_string(),
+        );
+        let record_sql = migrator.generate_record_migration_sql(&migration);
+        sqlx::query(&record_sql).execute(&pool).await.unwrap();
+
+        let handler = RollbackCommandHandler::new();
+        let result = handler
+            .rollback_migration_with_transaction(
+                &pool,
+                &migrator,
+                "20260122120001",
+                "INVALID SQL",
+            )
+            .await;
+
+        assert!(result.is_err());
+
+        let row = sqlx::query("SELECT COUNT(*) FROM schema_migrations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let count: i64 = row.get(0);
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_rollback_success_removes_record() {
+        install_default_drivers();
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let connection_string = format!("sqlite://{}?mode=rwc", db_path.to_str().unwrap());
+        let pool = AnyPoolOptions::new()
+            .max_connections(1)
+            .connect(&connection_string)
+            .await
+            .unwrap();
+
+        let migrator = DatabaseMigratorService::new();
+        migrator
+            .create_migration_table(&pool, Dialect::SQLite)
+            .await
+            .unwrap();
+
+        sqlx::query("CREATE TABLE users (id INTEGER PRIMARY KEY)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let migration = Migration::new(
+            "20260122120002".to_string(),
+            "create_users".to_string(),
+            "checksum".to_string(),
+        );
+        let record_sql = migrator.generate_record_migration_sql(&migration);
+        sqlx::query(&record_sql).execute(&pool).await.unwrap();
+
+        let handler = RollbackCommandHandler::new();
+        handler
+            .rollback_migration_with_transaction(
+                &pool,
+                &migrator,
+                "20260122120002",
+                "DROP TABLE users",
+            )
+            .await
+            .unwrap();
+
+        let row = sqlx::query("SELECT COUNT(*) FROM schema_migrations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let count: i64 = row.get(0);
+        assert_eq!(count, 0);
     }
 }

@@ -7,7 +7,7 @@ use crate::adapters::sql_generator::postgres::PostgresSqlGenerator;
 use crate::adapters::sql_generator::sqlite::SqliteSqlGenerator;
 use crate::adapters::sql_generator::SqlGenerator;
 use crate::core::config::Dialect;
-use crate::core::schema_diff::SchemaDiff;
+use crate::core::schema_diff::{EnumChangeKind, EnumDiff, SchemaDiff};
 use chrono::Utc;
 
 /// マイグレーションファイル生成サービス
@@ -93,6 +93,10 @@ impl MigrationGenerator {
             Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
         };
 
+        if matches!(dialect, Dialect::PostgreSQL) {
+            self.append_enum_statements_pre_table(diff, &mut statements)?;
+        }
+
         // 外部キー依存関係を考慮してテーブルをソート
         let sorted_tables = diff.sort_added_tables_by_dependency()?;
 
@@ -141,9 +145,17 @@ impl MigrationGenerator {
             }
         }
 
+        if matches!(dialect, Dialect::PostgreSQL) {
+            self.append_enum_statements_post_table(diff, &mut statements)?;
+        }
+
         // 削除されたテーブルのDROP TABLE文を生成
         for table_name in &diff.removed_tables {
             statements.push(format!("DROP TABLE {}", table_name));
+        }
+
+        if matches!(dialect, Dialect::PostgreSQL) {
+            self.append_enum_drop_statements(diff, &mut statements)?;
         }
 
         Ok(statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" })
@@ -238,6 +250,115 @@ impl MigrationGenerator {
         // ColumnType の to_sql_type メソッドを使用
         column.column_type.to_sql_type(&dialect)
     }
+
+    fn append_enum_statements_pre_table(
+        &self,
+        diff: &SchemaDiff,
+        statements: &mut Vec<String>,
+    ) -> Result<(), String> {
+        if (!diff.removed_enums.is_empty()
+            || diff
+                .modified_enums
+                .iter()
+                .any(|e| matches!(e.change_kind, EnumChangeKind::Recreate)))
+            && !diff.enum_recreate_allowed
+        {
+            return Err(
+                "Enum recreation is required but not allowed. Enable enum_recreate_allowed to proceed."
+                    .to_string(),
+            );
+        }
+
+        for enum_def in &diff.added_enums {
+            let values = self.format_enum_values(&enum_def.values);
+            statements.push(format!(
+                "CREATE TYPE {} AS ENUM ({})",
+                enum_def.name, values
+            ));
+        }
+
+        for enum_diff in &diff.modified_enums {
+            if matches!(enum_diff.change_kind, EnumChangeKind::AddOnly) {
+                for value in &enum_diff.added_values {
+                    statements.push(format!(
+                        "ALTER TYPE {} ADD VALUE '{}'",
+                        enum_diff.enum_name,
+                        self.escape_enum_value(value)
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn append_enum_statements_post_table(
+        &self,
+        diff: &SchemaDiff,
+        statements: &mut Vec<String>,
+    ) -> Result<(), String> {
+        for enum_diff in &diff.modified_enums {
+            if matches!(enum_diff.change_kind, EnumChangeKind::Recreate) {
+                statements.extend(self.generate_enum_recreate_statements(enum_diff));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn append_enum_drop_statements(
+        &self,
+        diff: &SchemaDiff,
+        statements: &mut Vec<String>,
+    ) -> Result<(), String> {
+        for enum_name in &diff.removed_enums {
+            statements.push(format!("DROP TYPE {}", enum_name));
+        }
+
+        Ok(())
+    }
+
+    fn generate_enum_recreate_statements(&self, enum_diff: &EnumDiff) -> Vec<String> {
+        let old_name = format!("{}_old", enum_diff.enum_name);
+        let values = self.format_enum_values(&enum_diff.new_values);
+        let mut statements = Vec::new();
+
+        statements.push(format!(
+            "ALTER TYPE {} RENAME TO {}",
+            enum_diff.enum_name, old_name
+        ));
+        statements.push(format!(
+            "CREATE TYPE {} AS ENUM ({})",
+            enum_diff.enum_name, values
+        ));
+
+        for column in &enum_diff.columns {
+            statements.push(format!(
+                "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::text::{}",
+                column.table_name,
+                column.column_name,
+                enum_diff.enum_name,
+                column.column_name,
+                enum_diff.enum_name
+            ));
+        }
+
+        statements.push(format!("DROP TYPE {}", old_name));
+
+        statements
+    }
+
+    fn format_enum_values(&self, values: &[String]) -> String {
+        values
+            .iter()
+            .map(|value| format!("'{}'", self.escape_enum_value(value)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn escape_enum_value(&self, value: &str) -> String {
+        value.replace('\'', "''")
+    }
 }
 
 impl Default for MigrationGenerator {
@@ -249,6 +370,8 @@ impl Default for MigrationGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::schema::EnumDefinition;
+    use crate::core::schema_diff::{EnumChangeKind, EnumColumnRef, EnumDiff};
 
     #[test]
     fn test_new_service() {
@@ -295,5 +418,96 @@ mod tests {
 
         assert!(metadata.contains("version: 20260122120000"));
         assert!(metadata.contains("description: create_users"));
+    }
+
+    #[test]
+    fn test_generate_up_sql_enum_create() {
+        let generator = MigrationGenerator::new();
+        let mut diff = SchemaDiff::new();
+        diff.added_enums.push(EnumDefinition {
+            name: "status".to_string(),
+            values: vec!["active".to_string(), "inactive".to_string()],
+        });
+
+        let sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
+
+        assert!(sql.contains("CREATE TYPE status AS ENUM ('active', 'inactive')"));
+    }
+
+    #[test]
+    fn test_generate_up_sql_enum_add_value() {
+        let generator = MigrationGenerator::new();
+        let mut diff = SchemaDiff::new();
+        diff.modified_enums.push(EnumDiff {
+            enum_name: "status".to_string(),
+            old_values: vec!["active".to_string()],
+            new_values: vec!["active".to_string(), "inactive".to_string()],
+            added_values: vec!["inactive".to_string()],
+            removed_values: Vec::new(),
+            change_kind: EnumChangeKind::AddOnly,
+            columns: Vec::new(),
+        });
+
+        let sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
+
+        assert!(sql.contains("ALTER TYPE status ADD VALUE 'inactive'"));
+    }
+
+    #[test]
+    fn test_generate_up_sql_enum_recreate_requires_opt_in() {
+        let generator = MigrationGenerator::new();
+        let mut diff = SchemaDiff::new();
+        diff.modified_enums.push(EnumDiff {
+            enum_name: "status".to_string(),
+            old_values: vec!["active".to_string(), "inactive".to_string()],
+            new_values: vec!["inactive".to_string(), "active".to_string()],
+            added_values: Vec::new(),
+            removed_values: Vec::new(),
+            change_kind: EnumChangeKind::Recreate,
+            columns: Vec::new(),
+        });
+
+        let result = generator.generate_up_sql(&diff, Dialect::PostgreSQL);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_generate_up_sql_enum_recreate_with_opt_in() {
+        let generator = MigrationGenerator::new();
+        let mut diff = SchemaDiff::new();
+        diff.enum_recreate_allowed = true;
+        diff.modified_enums.push(EnumDiff {
+            enum_name: "status".to_string(),
+            old_values: vec!["active".to_string(), "inactive".to_string()],
+            new_values: vec!["inactive".to_string(), "active".to_string()],
+            added_values: Vec::new(),
+            removed_values: Vec::new(),
+            change_kind: EnumChangeKind::Recreate,
+            columns: vec![EnumColumnRef {
+                table_name: "users".to_string(),
+                column_name: "status".to_string(),
+            }],
+        });
+
+        let sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
+
+        assert!(sql.contains("ALTER TYPE status RENAME TO status_old"));
+        assert!(sql.contains("CREATE TYPE status AS ENUM ('inactive', 'active')"));
+        assert!(sql.contains(
+            "ALTER TABLE users ALTER COLUMN status TYPE status USING status::text::status"
+        ));
+        assert!(sql.contains("DROP TYPE status_old"));
+    }
+
+    #[test]
+    fn test_generate_up_sql_enum_drop_requires_opt_in() {
+        let generator = MigrationGenerator::new();
+        let mut diff = SchemaDiff::new();
+        diff.removed_enums.push("status".to_string());
+
+        let result = generator.generate_up_sql(&diff, Dialect::PostgreSQL);
+
+        assert!(result.is_err());
     }
 }

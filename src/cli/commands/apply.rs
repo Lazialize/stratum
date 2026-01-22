@@ -322,6 +322,11 @@ impl Default for ApplyCommandHandler {
 mod tests {
     use super::*;
     use chrono::Duration;
+    use crate::core::config::Dialect;
+    use sqlx::any::install_default_drivers;
+    use sqlx::any::AnyPoolOptions;
+    use sqlx::Row;
+    use tempfile::TempDir;
 
     #[test]
     fn test_new_handler() {
@@ -353,5 +358,45 @@ mod tests {
         assert!(summary.contains("20260121120000"));
         assert!(summary.contains("20260121120001"));
         assert!(summary.contains("300ms")); // 100 + 200
+    }
+
+    #[tokio::test]
+    async fn test_apply_migration_failure_does_not_record() {
+        install_default_drivers();
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let connection_string = format!("sqlite://{}?mode=rwc", db_path.to_str().unwrap());
+        let pool = AnyPoolOptions::new()
+            .max_connections(1)
+            .connect(&connection_string)
+            .await
+            .unwrap();
+
+        let migrator = DatabaseMigratorService::new();
+        migrator
+            .create_migration_table(&pool, Dialect::SQLite)
+            .await
+            .unwrap();
+
+        let handler = ApplyCommandHandler::new();
+        let result = handler
+            .apply_migration_with_transaction(
+                &pool,
+                &migrator,
+                "20260122120000",
+                "invalid_sql",
+                "INVALID SQL",
+                "checksum",
+            )
+            .await;
+
+        assert!(result.is_err());
+
+        let row = sqlx::query("SELECT COUNT(*) FROM schema_migrations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let count: i64 = row.get(0);
+        assert_eq!(count, 0);
     }
 }

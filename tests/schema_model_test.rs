@@ -264,6 +264,8 @@ check_expression: "age >= 0"
 
         let schema = Schema {
             version: "1.0".to_string(),
+            enum_recreate_allowed: false,
+            enums: HashMap::new(),
             tables,
         };
 
@@ -288,6 +290,8 @@ check_expression: "age >= 0"
 
         let schema = Schema {
             version: "1.0".to_string(),
+            enum_recreate_allowed: false,
+            enums: HashMap::new(),
             tables,
         };
 

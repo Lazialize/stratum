@@ -84,7 +84,7 @@ impl ValidateCommandHandler {
 
         // スキーマを検証
         let validator = SchemaValidatorService::new();
-        let validation_result = validator.validate(&schema);
+        let validation_result = validator.validate_with_dialect(&schema, config.dialect);
 
         // 検証結果を表示用にフォーマット
         let summary = self.format_validation_result(&validation_result, &schema);

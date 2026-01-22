@@ -85,6 +85,7 @@ impl PostgresSqlGenerator {
             ColumnType::BLOB => "BYTEA".to_string(),
             ColumnType::UUID => "UUID".to_string(),
             ColumnType::JSONB => "JSONB".to_string(),
+            ColumnType::Enum { name } => name.clone(),
             // 方言固有型はformat_dialect_specific_typeでフォーマット
             ColumnType::DialectSpecific { kind, params } => {
                 self.format_dialect_specific_type(kind, params)

@@ -8,10 +8,10 @@
 
 use crate::adapters::database::DatabaseConnectionService;
 use crate::core::config::Config;
-use crate::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
+use crate::core::schema::{Column, ColumnType, Constraint, EnumDefinition, Index, Schema, Table};
 use anyhow::{anyhow, Context, Result};
 use sqlx::{AnyPool, Row};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -29,6 +29,13 @@ pub struct ExportCommand {
 /// exportコマンドハンドラー
 #[derive(Debug, Clone)]
 pub struct ExportCommandHandler {}
+
+#[derive(Debug, Clone)]
+struct EnumRow {
+    name: String,
+    value: String,
+    order: f64,
+}
 
 impl ExportCommandHandler {
     /// 新しいExportCommandHandlerを作成
@@ -107,6 +114,16 @@ impl ExportCommandHandler {
     ) -> Result<Schema> {
         let mut schema = Schema::new("1.0".to_string());
 
+        let enum_names = if matches!(dialect, crate::core::config::Dialect::PostgreSQL) {
+            let enums = self.get_enums_postgres(pool).await?;
+            for enum_def in enums {
+                schema.add_enum(enum_def);
+            }
+            Some(schema.enums.keys().cloned().collect::<HashSet<_>>())
+        } else {
+            None
+        };
+
         // テーブル一覧を取得
         let table_names = self.get_table_names(pool, dialect).await?;
 
@@ -114,7 +131,9 @@ impl ExportCommandHandler {
             let mut table = Table::new(table_name.clone());
 
             // カラム情報を取得
-            let columns = self.get_columns(pool, &table_name, dialect).await?;
+            let columns = self
+                .get_columns(pool, &table_name, dialect, enum_names.as_ref())
+                .await?;
             for column in columns {
                 table.add_column(column);
             }
@@ -168,11 +187,14 @@ impl ExportCommandHandler {
         pool: &AnyPool,
         table_name: &str,
         dialect: crate::core::config::Dialect,
+        enum_names: Option<&HashSet<String>>,
     ) -> Result<Vec<Column>> {
         match dialect {
-            crate::core::config::Dialect::SQLite => self.get_columns_sqlite(pool, table_name).await,
+            crate::core::config::Dialect::SQLite => {
+                self.get_columns_sqlite(pool, table_name).await
+            }
             crate::core::config::Dialect::PostgreSQL => {
-                self.get_columns_postgres(pool, table_name).await
+                self.get_columns_postgres(pool, table_name, enum_names).await
             }
             crate::core::config::Dialect::MySQL => self.get_columns_mysql(pool, table_name).await,
         }
@@ -204,9 +226,14 @@ impl ExportCommandHandler {
     }
 
     /// PostgreSQLのカラム情報を取得
-    async fn get_columns_postgres(&self, pool: &AnyPool, table_name: &str) -> Result<Vec<Column>> {
+    async fn get_columns_postgres(
+        &self,
+        pool: &AnyPool,
+        table_name: &str,
+        enum_names: Option<&HashSet<String>>,
+    ) -> Result<Vec<Column>> {
         let sql = r#"
-            SELECT column_name, data_type, is_nullable, column_default, character_maximum_length, numeric_precision
+            SELECT column_name, data_type, is_nullable, column_default, character_maximum_length, numeric_precision, udt_name
             FROM information_schema.columns
             WHERE table_name = $1 AND table_schema = 'public'
             ORDER BY ordinal_position
@@ -223,9 +250,15 @@ impl ExportCommandHandler {
             let default_value: Option<String> = row.get(3);
             let char_max_length: Option<i32> = row.get(4);
             let numeric_precision: Option<i32> = row.get(5);
+            let udt_name: Option<String> = row.get(6);
 
-            let column_type =
-                self.parse_postgres_type(&data_type, char_max_length, numeric_precision);
+            let column_type = self.parse_postgres_type(
+                &data_type,
+                char_max_length,
+                numeric_precision,
+                udt_name.as_deref(),
+                enum_names,
+            );
             let nullable = is_nullable == "YES";
 
             let mut column = Column::new(name, column_type, nullable);
@@ -298,6 +331,8 @@ impl ExportCommandHandler {
         data_type: &str,
         char_max_length: Option<i32>,
         numeric_precision: Option<i32>,
+        udt_name: Option<&str>,
+        enum_names: Option<&HashSet<String>>,
     ) -> ColumnType {
         match data_type {
             "integer" | "smallint" | "bigint" => ColumnType::INTEGER {
@@ -315,8 +350,81 @@ impl ExportCommandHandler {
                 with_time_zone: Some(false),
             },
             "json" | "jsonb" => ColumnType::JSON,
+            "USER-DEFINED" => {
+                if let (Some(enum_names), Some(enum_name)) = (enum_names, udt_name) {
+                    if enum_names.contains(enum_name) {
+                        return ColumnType::Enum {
+                            name: enum_name.to_string(),
+                        };
+                    }
+                }
+                ColumnType::TEXT
+            }
             _ => ColumnType::TEXT,
         }
+    }
+
+    async fn get_enums_postgres(&self, pool: &AnyPool) -> Result<Vec<EnumDefinition>> {
+        let sql = r#"
+            SELECT t.typname, e.enumlabel, e.enumsortorder
+            FROM pg_type t
+            JOIN pg_enum e ON t.oid = e.enumtypid
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE n.nspname = 'public'
+            ORDER BY t.typname, e.enumsortorder
+        "#;
+
+        let rows = sqlx::query(sql).fetch_all(pool).await?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            let name: String = row.get(0);
+            let value: String = row.get(1);
+            let order: f64 = row.get(2);
+            entries.push(EnumRow { name, value, order });
+        }
+
+        Ok(Self::build_enum_definitions(entries))
+    }
+
+    fn build_enum_definitions(mut rows: Vec<EnumRow>) -> Vec<EnumDefinition> {
+        rows.sort_by(|a, b| {
+            let name_cmp = a.name.cmp(&b.name);
+            if name_cmp == std::cmp::Ordering::Equal {
+                a.order
+                    .partial_cmp(&b.order)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                name_cmp
+            }
+        });
+
+        let mut enums = Vec::new();
+        let mut current_name: Option<String> = None;
+        let mut current_values: Vec<String> = Vec::new();
+
+        for row in rows {
+            if current_name.as_deref() != Some(&row.name) {
+                if let Some(name) = current_name.take() {
+                    enums.push(EnumDefinition {
+                        name,
+                        values: current_values,
+                    });
+                    current_values = Vec::new();
+                }
+                current_name = Some(row.name);
+            }
+            current_values.push(row.value);
+        }
+
+        if let Some(name) = current_name {
+            enums.push(EnumDefinition {
+                name,
+                values: current_values,
+            });
+        }
+
+        enums
     }
 
     /// MySQLの型をパース
@@ -528,6 +636,57 @@ mod tests {
         assert!(matches!(
             handler.parse_sqlite_type("BLOB"),
             ColumnType::TEXT
+        ));
+    }
+
+    #[test]
+    fn test_build_enum_definitions_orders_values() {
+        let rows = vec![
+            EnumRow {
+                name: "status".to_string(),
+                value: "inactive".to_string(),
+                order: 2.0,
+            },
+            EnumRow {
+                name: "status".to_string(),
+                value: "active".to_string(),
+                order: 1.0,
+            },
+            EnumRow {
+                name: "role".to_string(),
+                value: "admin".to_string(),
+                order: 1.0,
+            },
+        ];
+
+        let enums = ExportCommandHandler::build_enum_definitions(rows);
+        assert_eq!(enums.len(), 2);
+        assert_eq!(enums[0].name, "role");
+        assert_eq!(enums[0].values, vec!["admin".to_string()]);
+        assert_eq!(enums[1].name, "status");
+        assert_eq!(
+            enums[1].values,
+            vec!["active".to_string(), "inactive".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_parse_postgres_enum_type() {
+        let handler = ExportCommandHandler::new();
+        let mut enum_names = HashSet::new();
+        enum_names.insert("status".to_string());
+
+        let col_type = handler.parse_postgres_type(
+            "USER-DEFINED",
+            None,
+            None,
+            Some("status"),
+            Some(&enum_names),
+        );
+
+        assert!(matches!(
+            col_type,
+            ColumnType::Enum { name } if name == "status"
         ));
     }
 
