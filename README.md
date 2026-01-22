@@ -7,6 +7,8 @@
 
 Stratum is a modern database schema management tool that treats your database schema as code. Define your schemas in declarative YAML files, automatically generate migrations, and apply them with confidence across multiple environments.
 
+See `ROADMAP.md` for planned features and TODOs.
+
 ## Features
 
 - **📝 Schema as Code**: Define database schemas in declarative YAML files
