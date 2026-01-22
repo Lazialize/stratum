@@ -2,7 +2,7 @@
 
 > Database schema management CLI tool - Infrastructure as Code for database schemas
 
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org)
 
 Stratum is a modern database schema management tool that treats your database schema as code. Define your schemas in declarative YAML files, automatically generate migrations, and apply them with confidence across multiple environments.
@@ -524,8 +524,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- MIT license ([LICENSE](LICENSE) or http://opensource.org/licenses/MIT)
 
 at your option.
 
