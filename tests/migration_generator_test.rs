@@ -65,7 +65,7 @@ mod migration_generator_tests {
         let generator = MigrationGenerator::new();
         let diff = SchemaDiff::new();
 
-        let up_sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL);
+        let up_sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
 
         assert!(up_sql.is_empty() || up_sql.trim().is_empty());
     }
@@ -84,7 +84,7 @@ mod migration_generator_tests {
         ));
         diff.added_tables.push(table);
 
-        let up_sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL);
+        let up_sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
 
         assert!(up_sql.contains("CREATE TABLE users"));
     }
@@ -97,7 +97,7 @@ mod migration_generator_tests {
         let mut diff = SchemaDiff::new();
         diff.removed_tables.push("users".to_string());
 
-        let down_sql = generator.generate_down_sql(&diff, Dialect::PostgreSQL);
+        let down_sql = generator.generate_down_sql(&diff, Dialect::PostgreSQL).unwrap();
 
         // removed_tablesの場合、DOWNではテーブルを再作成する必要がある
         // 現在はTODOコメントを生成
@@ -122,7 +122,7 @@ mod migration_generator_tests {
         schema2.add_table(users_table);
 
         let diff = detector.detect_diff(&schema1, &schema2);
-        let up_sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL);
+        let up_sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
 
         assert!(up_sql.contains("CREATE TABLE users"));
     }
@@ -174,13 +174,13 @@ mod migration_generator_tests {
         let diff = detector.detect_diff(&schema1, &schema2);
 
         // UP SQLの生成
-        let up_sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL);
+        let up_sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
         assert!(up_sql.contains("CREATE TABLE users"));
         assert!(up_sql.contains("id"));
         assert!(up_sql.contains("email"));
 
         // DOWN SQLの生成
-        let down_sql = generator.generate_down_sql(&diff, Dialect::PostgreSQL);
+        let down_sql = generator.generate_down_sql(&diff, Dialect::PostgreSQL).unwrap();
         // usersテーブルが追加されたので、DOWNではDROP TABLE users
         // ただし、added_tablesからDOWN SQLを生成する場合
         assert!(down_sql.contains("DROP TABLE") || down_sql.is_empty());

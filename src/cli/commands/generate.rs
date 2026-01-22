@@ -106,13 +106,15 @@ impl GenerateCommandHandler {
             .with_context(|| format!("マイグレーションディレクトリの作成に失敗しました: {:?}", migration_dir))?;
 
         // UP SQLを生成
-        let up_sql = generator.generate_up_sql(&diff, config.dialect);
+        let up_sql = generator.generate_up_sql(&diff, config.dialect)
+            .map_err(|e| anyhow::anyhow!("UP SQLの生成に失敗しました: {}", e))?;
         let up_sql_path = migration_dir.join("up.sql");
         fs::write(&up_sql_path, up_sql)
             .with_context(|| format!("up.sqlの書き込みに失敗しました: {:?}", up_sql_path))?;
 
         // DOWN SQLを生成
-        let down_sql = generator.generate_down_sql(&diff, config.dialect);
+        let down_sql = generator.generate_down_sql(&diff, config.dialect)
+            .map_err(|e| anyhow::anyhow!("DOWN SQLの生成に失敗しました: {}", e))?;
         let down_sql_path = migration_dir.join("down.sql");
         fs::write(&down_sql_path, down_sql)
             .with_context(|| format!("down.sqlの書き込みに失敗しました: {:?}", down_sql_path))?;

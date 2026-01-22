@@ -76,8 +76,8 @@ impl MigrationGenerator {
     ///
     /// # Returns
     ///
-    /// UP SQL文字列
-    pub fn generate_up_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> String {
+    /// UP SQL文字列（エラーの場合はエラーメッセージ）
+    pub fn generate_up_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> Result<String, String> {
         let mut statements = Vec::new();
 
         // データベース方言に応じたSQLジェネレーターを取得
@@ -87,8 +87,11 @@ impl MigrationGenerator {
             Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
         };
 
-        // 追加されたテーブルのCREATE TABLE文を生成
-        for table in &diff.added_tables {
+        // 外部キー依存関係を考慮してテーブルをソート
+        let sorted_tables = diff.sort_added_tables_by_dependency()?;
+
+        // 追加されたテーブルのCREATE TABLE文を生成（ソート済み）
+        for table in &sorted_tables {
             statements.push(generator.generate_create_table(table));
 
             // インデックスの作成
@@ -137,7 +140,7 @@ impl MigrationGenerator {
             statements.push(format!("DROP TABLE {}", table_name));
         }
 
-        statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" }
+        Ok(statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" })
     }
 
     /// DOWN SQLを生成
@@ -149,13 +152,16 @@ impl MigrationGenerator {
     ///
     /// # Returns
     ///
-    /// DOWN SQL文字列
-    pub fn generate_down_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> String {
+    /// DOWN SQL文字列（エラーの場合はエラーメッセージ）
+    pub fn generate_down_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> Result<String, String> {
         let mut statements = Vec::new();
 
+        // 外部キー依存関係を考慮してテーブルをソート
+        let sorted_tables = diff.sort_added_tables_by_dependency()?;
+
         // UP SQLと逆の操作を生成
-        // 追加されたテーブルを削除
-        for table in &diff.added_tables {
+        // 追加されたテーブルを削除（依存関係の逆順 = 参照元を先に削除）
+        for table in sorted_tables.iter().rev() {
             statements.push(format!("DROP TABLE {}", table.name));
         }
 
@@ -176,7 +182,7 @@ impl MigrationGenerator {
         }
 
         // 削除されたテーブルを再作成（UPで生成した分）
-        let generator: Box<dyn SqlGenerator> = match dialect {
+        let _generator: Box<dyn SqlGenerator> = match dialect {
             Dialect::PostgreSQL => Box::new(PostgresSqlGenerator::new()),
             Dialect::MySQL => Box::new(MysqlSqlGenerator::new()),
             Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
@@ -187,7 +193,7 @@ impl MigrationGenerator {
             statements.push(format!("-- TODO: Recreate table {}", table_name));
         }
 
-        statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" }
+        Ok(statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" })
     }
 
     /// マイグレーションメタデータを生成

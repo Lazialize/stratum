@@ -4,6 +4,7 @@
 // テーブル、カラム、インデックス、制約の追加、削除、変更を表現します。
 
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 use crate::core::schema::{Column, Constraint, Index, Table};
 
@@ -42,6 +43,199 @@ impl SchemaDiff {
     /// 差分の項目数を取得
     pub fn count(&self) -> usize {
         self.added_tables.len() + self.removed_tables.len() + self.modified_tables.len()
+    }
+
+    /// 外部キー制約による依存関係を考慮して、追加テーブルをトポロジカルソート
+    ///
+    /// 被参照テーブルが先に作成されるように並び替えます。
+    /// 循環参照がある場合はエラーを返します。
+    ///
+    /// # Returns
+    ///
+    /// ソートされたテーブルのリスト、または循環参照エラー
+    pub fn sort_added_tables_by_dependency(&self) -> Result<Vec<Table>, String> {
+        if self.added_tables.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // テーブル名 -> テーブルのマッピング
+        let table_map: HashMap<&str, &Table> = self
+            .added_tables
+            .iter()
+            .map(|t| (t.name.as_str(), t))
+            .collect();
+
+        // 追加されるテーブル名のセット
+        let added_table_names: HashSet<&str> = table_map.keys().copied().collect();
+
+        // 依存関係グラフを構築（テーブル名 -> このテーブルが依存している（参照している）テーブル名のリスト）
+        let mut dependencies: HashMap<&str, Vec<&str>> = HashMap::new();
+
+        for table in &self.added_tables {
+            let mut deps = Vec::new();
+            for constraint in &table.constraints {
+                if let Constraint::FOREIGN_KEY {
+                    referenced_table, ..
+                } = constraint
+                {
+                    // 参照先が追加されるテーブルに含まれる場合のみ依存関係として登録
+                    if added_table_names.contains(referenced_table.as_str()) {
+                        deps.push(referenced_table.as_str());
+                    }
+                }
+            }
+            dependencies.insert(table.name.as_str(), deps);
+        }
+
+        // トポロジカルソート（Kahnのアルゴリズム）
+        // 入次数 = このテーブルが依存しているテーブルの数
+        let mut in_degree: HashMap<&str, usize> = HashMap::new();
+        for table_name in added_table_names.iter() {
+            in_degree.insert(*table_name, 0);
+        }
+
+        // 入次数を計算（各テーブルの依存先の数）
+        for (table_name, deps) in &dependencies {
+            in_degree.insert(*table_name, deps.len());
+        }
+
+        // 入次数が0のノードをキューに追加（依存先がないテーブル = 先に作成すべきテーブル）
+        let mut queue: Vec<&str> = in_degree
+            .iter()
+            .filter(|(_, &degree)| degree == 0)
+            .map(|(&name, _)| name)
+            .collect();
+
+        // 安定したソートのためにアルファベット順にソート
+        queue.sort();
+
+        let mut sorted: Vec<Table> = Vec::new();
+
+        while let Some(table_name) = queue.pop() {
+            if let Some(table) = table_map.get(table_name) {
+                sorted.push((*table).clone());
+            }
+
+            // このテーブルを参照している（このテーブルに依存している）テーブルの入次数を減らす
+            for (other_table, deps) in &dependencies {
+                if deps.contains(&table_name) {
+                    if let Some(degree) = in_degree.get_mut(other_table) {
+                        *degree -= 1;
+                        if *degree == 0 {
+                            queue.push(other_table);
+                            // 安定したソートのために再ソート
+                            queue.sort();
+                        }
+                    }
+                }
+            }
+        }
+
+        // 循環参照のチェック
+        if sorted.len() != self.added_tables.len() {
+            let remaining: Vec<&str> = in_degree
+                .iter()
+                .filter(|(_, &degree)| degree > 0)
+                .map(|(&name, _)| name)
+                .collect();
+            return Err(format!(
+                "循環参照が検出されました。以下のテーブル間で循環参照があります: {:?}",
+                remaining
+            ));
+        }
+
+        Ok(sorted)
+    }
+
+    /// 外部キー制約による依存関係を考慮して、削除テーブルを逆順にソート
+    ///
+    /// 参照元テーブルが先に削除されるように並び替えます。
+    /// 追加テーブルの逆順になります。
+    ///
+    /// # Arguments
+    ///
+    /// * `all_tables` - 全テーブル情報（削除されるテーブルの定義を含む）
+    ///
+    /// # Returns
+    ///
+    /// ソートされたテーブル名のリスト
+    pub fn sort_removed_tables_by_dependency(
+        &self,
+        all_tables: &HashMap<String, Table>,
+    ) -> Vec<String> {
+        if self.removed_tables.is_empty() {
+            return Vec::new();
+        }
+
+        // 削除されるテーブル名のセット
+        let removed_table_names: HashSet<&str> =
+            self.removed_tables.iter().map(|s| s.as_str()).collect();
+
+        // 依存関係グラフを構築
+        let mut dependencies: HashMap<&str, Vec<&str>> = HashMap::new();
+
+        for table_name in &self.removed_tables {
+            if let Some(table) = all_tables.get(table_name) {
+                let mut deps = Vec::new();
+                for constraint in &table.constraints {
+                    if let Constraint::FOREIGN_KEY {
+                        referenced_table, ..
+                    } = constraint
+                    {
+                        // 参照先が削除されるテーブルに含まれる場合のみ
+                        if removed_table_names.contains(referenced_table.as_str()) {
+                            deps.push(referenced_table.as_str());
+                        }
+                    }
+                }
+                dependencies.insert(table_name.as_str(), deps);
+            } else {
+                dependencies.insert(table_name.as_str(), Vec::new());
+            }
+        }
+
+        // トポロジカルソート
+        let mut in_degree: HashMap<&str, usize> = HashMap::new();
+        for table_name in removed_table_names.iter() {
+            in_degree.insert(*table_name, 0);
+        }
+
+        for deps in dependencies.values() {
+            for dep in deps {
+                if let Some(degree) = in_degree.get_mut(dep) {
+                    *degree += 1;
+                }
+            }
+        }
+
+        let mut queue: Vec<&str> = in_degree
+            .iter()
+            .filter(|(_, &degree)| degree == 0)
+            .map(|(&name, _)| name)
+            .collect();
+        queue.sort();
+
+        let mut sorted: Vec<String> = Vec::new();
+
+        while let Some(table_name) = queue.pop() {
+            sorted.push(table_name.to_string());
+
+            for (dependent, deps) in &dependencies {
+                if deps.contains(&table_name) {
+                    if let Some(degree) = in_degree.get_mut(dependent) {
+                        *degree -= 1;
+                        if *degree == 0 {
+                            queue.push(dependent);
+                            queue.sort();
+                        }
+                    }
+                }
+            }
+        }
+
+        // 削除は逆順（参照元を先に削除）
+        sorted.reverse();
+        sorted
     }
 }
 
@@ -287,5 +481,132 @@ mod tests {
         let diff = ColumnDiff::new("name".to_string(), old_column, new_column);
 
         assert_eq!(diff.changes.len(), 0);
+    }
+
+    #[test]
+    fn test_sort_added_tables_no_dependencies() {
+        let mut diff = SchemaDiff::new();
+        diff.added_tables.push(Table::new("users".to_string()));
+        diff.added_tables.push(Table::new("posts".to_string()));
+
+        let sorted = diff.sort_added_tables_by_dependency().unwrap();
+
+        assert_eq!(sorted.len(), 2);
+        // 依存関係がない場合はアルファベット順
+        assert_eq!(sorted[0].name, "users");
+        assert_eq!(sorted[1].name, "posts");
+    }
+
+    #[test]
+    fn test_sort_added_tables_with_foreign_key() {
+        let mut diff = SchemaDiff::new();
+
+        // usersテーブル（参照先）
+        let users_table = Table::new("users".to_string());
+
+        // postsテーブル（usersを参照）
+        let mut posts_table = Table::new("posts".to_string());
+        posts_table.constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+
+        // postsを先に追加（依存関係解決前の順序）
+        diff.added_tables.push(posts_table);
+        diff.added_tables.push(users_table);
+
+        let sorted = diff.sort_added_tables_by_dependency().unwrap();
+
+        assert_eq!(sorted.len(), 2);
+        // usersが先に作成される必要がある
+        assert_eq!(sorted[0].name, "users");
+        assert_eq!(sorted[1].name, "posts");
+    }
+
+    #[test]
+    fn test_sort_added_tables_chain_dependency() {
+        let mut diff = SchemaDiff::new();
+
+        // A -> B -> C の依存関係（CがBを参照、BがAを参照）
+        let table_a = Table::new("a".to_string());
+
+        let mut table_b = Table::new("b".to_string());
+        table_b.constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["a_id".to_string()],
+            referenced_table: "a".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+
+        let mut table_c = Table::new("c".to_string());
+        table_c.constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["b_id".to_string()],
+            referenced_table: "b".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+
+        // 逆順で追加
+        diff.added_tables.push(table_c);
+        diff.added_tables.push(table_b);
+        diff.added_tables.push(table_a);
+
+        let sorted = diff.sort_added_tables_by_dependency().unwrap();
+
+        assert_eq!(sorted.len(), 3);
+        // A -> B -> C の順序で作成される
+        assert_eq!(sorted[0].name, "a");
+        assert_eq!(sorted[1].name, "b");
+        assert_eq!(sorted[2].name, "c");
+    }
+
+    #[test]
+    fn test_sort_added_tables_circular_dependency() {
+        let mut diff = SchemaDiff::new();
+
+        // 循環参照: A -> B -> A
+        let mut table_a = Table::new("a".to_string());
+        table_a.constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["b_id".to_string()],
+            referenced_table: "b".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+
+        let mut table_b = Table::new("b".to_string());
+        table_b.constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["a_id".to_string()],
+            referenced_table: "a".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+
+        diff.added_tables.push(table_a);
+        diff.added_tables.push(table_b);
+
+        let result = diff.sort_added_tables_by_dependency();
+
+        // 循環参照はエラーになる
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("循環参照"));
+    }
+
+    #[test]
+    fn test_sort_added_tables_external_reference() {
+        let mut diff = SchemaDiff::new();
+
+        // postsがusersを参照するが、usersは追加されるテーブルに含まれない
+        // （既存のテーブルを参照している場合）
+        let mut posts_table = Table::new("posts".to_string());
+        posts_table.constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(), // usersは追加テーブルに含まれない
+            referenced_columns: vec!["id".to_string()],
+        });
+
+        diff.added_tables.push(posts_table);
+
+        let sorted = diff.sort_added_tables_by_dependency().unwrap();
+
+        // 外部参照は依存関係として扱わないのでそのまま追加される
+        assert_eq!(sorted.len(), 1);
+        assert_eq!(sorted[0].name, "posts");
     }
 }
