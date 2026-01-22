@@ -1,0 +1,52 @@
+# Cargo configuration for cross-compilation and platform-specific settings
+
+# Target-specific linker settings for cross-compilation
+# These settings help optimize builds for different platforms
+
+[target.x86_64-unknown-linux-gnu]
+# Linux x86_64 (most common Linux distribution target)
+linker = "x86_64-linux-gnu-gcc"
+
+[target.x86_64-unknown-linux-musl]
+# Linux x86_64 with musl (static linking, no glibc dependency)
+# Useful for creating portable Linux binaries
+linker = "x86_64-linux-musl-gcc"
+
+[target.aarch64-unknown-linux-gnu]
+# Linux ARM64 (for Raspberry Pi, ARM servers, etc.)
+linker = "aarch64-linux-gnu-gcc"
+
+[target.x86_64-apple-darwin]
+# macOS x86_64 (Intel Macs)
+# No special configuration needed, macOS SDK provides linker
+
+[target.aarch64-apple-darwin]
+# macOS ARM64 (Apple Silicon Macs: M1, M2, M3, etc.)
+# No special configuration needed, macOS SDK provides linker
+
+[target.x86_64-pc-windows-gnu]
+# Windows x86_64 (MinGW)
+linker = "x86_64-w64-mingw32-gcc"
+
+[target.x86_64-pc-windows-msvc]
+# Windows x86_64 (MSVC)
+# No special configuration needed when building on Windows with Visual Studio
+
+# Build configuration
+[build]
+# Number of parallel jobs (default: number of CPUs)
+# jobs = 4
+
+# Incremental compilation for faster development builds
+# incremental = true
+
+# Profile settings
+[profile.dev]
+# Development profile optimizations
+# Keep default settings for fast compilation
+
+[profile.release-with-debug]
+# Release with debug info (useful for profiling)
+inherits = "release"
+debug = true
+strip = false

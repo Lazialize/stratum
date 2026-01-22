@@ -31,6 +31,8 @@ cargo build --release
 cargo install --path .
 ```
 
+For detailed build instructions, cross-compilation, and platform-specific guides, see [BUILDING.md](BUILDING.md).
+
 ### Using Cargo
 
 ```bash

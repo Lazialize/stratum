@@ -22,3 +22,6 @@ Cargo.lock
 # Stratum specific
 .stratum/logs/
 .stratum/snapshots/
+
+# Distribution directory
+dist/
