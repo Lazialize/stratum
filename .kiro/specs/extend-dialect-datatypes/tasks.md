@@ -22,14 +22,15 @@
 
 ## Phase 1: コアモデル拡張
 
-### Task 1.1: ColumnType enum に新規バリアント追加
+### Task 1.1: ColumnType enum に新規バリアント追加 ✅
 **要件**: REQ-1, REQ-2, REQ-3, REQ-4, REQ-5, REQ-6, REQ-7, REQ-8  
 **ファイル**: `src/core/schema.rs`  
 **優先度**: Critical  
-**推定時間**: 45分
+**推定時間**: 45分  
+**完了日**: 2026-01-22
 
 **作業内容**:
-- [ ] `ColumnType` enum に以下のバリアントを追加:
+- [x] `ColumnType` enum に以下のバリアントを追加:
   - `DECIMAL { precision: u32, scale: u32 }`
   - `FLOAT`
   - `DOUBLE`
@@ -39,25 +40,26 @@
   - `BLOB`
   - `UUID`
   - `JSONB`
-- [ ] 各バリアントにドキュメントコメント追加
-- [ ] serde属性の確認（既存の `#[serde(tag = "kind")]` で自動対応）
+- [x] 各バリアントにドキュメントコメント追加
+- [x] serde属性の確認（既存の `#[serde(tag = "kind")]` で自動対応）
 
 **受け入れ条件**:
-- [ ] コンパイルが成功する
-- [ ] 既存の6種類の型に影響がない
+- [x] コンパイルが成功する
+- [x] 既存の6種類の型に影響がない
 
 ---
 
-### Task 1.2: to_sql_type() メソッドの拡張
+### Task 1.2: to_sql_type() メソッドの拡張 ✅
 **要件**: REQ-1 ~ REQ-8  
 **ファイル**: `src/core/schema.rs`  
 **優先度**: High  
-**推定時間**: 30分
+**推定時間**: 30分  
+**完了日**: 2026-01-22
 
 **作業内容**:
-- [ ] `ColumnType::to_sql_type()` メソッドに新規型のマッピングを追加
-- [ ] 各方言（PostgreSQL, MySQL, SQLite）への適切なマッピング実装
-- [ ] マッピング表:
+- [x] `ColumnType::to_sql_type()` メソッドに新規型のマッピングを追加
+- [x] 各方言（PostgreSQL, MySQL, SQLite）への適切なマッピング実装
+- [x] マッピング表:
   | 型 | PostgreSQL | MySQL | SQLite |
   |---|---|---|---|
   | DECIMAL | NUMERIC(p,s) | DECIMAL(p,s) | TEXT |
@@ -71,37 +73,39 @@
   | JSONB | JSONB | JSON | TEXT |
 
 **受け入れ条件**:
-- [ ] すべての新規型が正しくマッピングされる
-- [ ] 既存型のマッピングに変更がない
+- [x] すべての新規型が正しくマッピングされる
+- [x] 既存型のマッピングに変更がない
 
 ---
 
-### Task 1.3: ColumnType のユニットテスト追加
+### Task 1.3: ColumnType のユニットテスト追加 ✅
 **要件**: REQ-10  
 **ファイル**: `src/core/schema.rs` (mod tests)  
 **優先度**: High  
-**推定時間**: 30分
+**推定時間**: 30分  
+**完了日**: 2026-01-22
 
 **作業内容**:
-- [ ] 新規バリアントの基本テスト追加
-- [ ] シリアライズ/デシリアライズテスト追加
-- [ ] `to_sql_type()` のテスト追加
+- [x] 新規バリアントの基本テスト追加
+- [x] シリアライズ/デシリアライズテスト追加
+- [x] `to_sql_type()` のテスト追加
 
 **受け入れ条件**:
-- [ ] `cargo test` でスキーマ関連テストがすべてパス
+- [x] `cargo test` でスキーマ関連テストがすべてパス（45個のテストが成功）
 
 ---
 
 ## Phase 2: SQLジェネレーター拡張
 
-### Task 2.1: PostgreSQL SQLジェネレーター拡張
+### Task 2.1: PostgreSQL SQLジェネレーター拡張 ✅
 **要件**: REQ-1 ~ REQ-8  
 **ファイル**: `src/adapters/sql_generator/postgres.rs`  
 **優先度**: High  
-**推定時間**: 40分
+**推定時間**: 40分  
+**完了日**: 2026-01-22
 
 **作業内容**:
-- [ ] `map_column_type()` メソッドに新規型のマッピング追加:
+- [x] `map_column_type()` メソッドに新規型のマッピング追加:
   - DECIMAL → `NUMERIC(p, s)`
   - FLOAT → `REAL`
   - DOUBLE → `DOUBLE PRECISION`
@@ -111,22 +115,23 @@
   - BLOB → `BYTEA`
   - UUID → `UUID`
   - JSONB → `JSONB`
-- [ ] 既存のmatchアームの後に新規型を追加
+- [x] 既存のmatchアームの後に新規型を追加
 
 **受け入れ条件**:
-- [ ] コンパイルが成功する
-- [ ] 既存のPostgreSQL生成に影響がない
+- [x] コンパイルが成功する
+- [x] 既存のPostgreSQL生成に影響がない（16個のテストが成功）
 
 ---
 
-### Task 2.2: MySQL SQLジェネレーター拡張
+### Task 2.2: MySQL SQLジェネレーター拡張 ✅
 **要件**: REQ-1 ~ REQ-8  
 **ファイル**: `src/adapters/sql_generator/mysql.rs`  
 **優先度**: High  
-**推定時間**: 40分
+**推定時間**: 40分  
+**完了日**: 2026-01-22
 
 **作業内容**:
-- [ ] `map_column_type()` メソッドに新規型のマッピング追加:
+- [x] `map_column_type()` メソッドに新規型のマッピング追加:
   - DECIMAL → `DECIMAL(p, s)`
   - FLOAT → `FLOAT`
   - DOUBLE → `DOUBLE`
@@ -138,19 +143,20 @@
   - JSONB → `JSON`（フォールバック）
 
 **受け入れ条件**:
-- [ ] コンパイルが成功する
-- [ ] 既存のMySQL生成に影響がない
+- [x] コンパイルが成功する
+- [x] 既存のMySQL生成に影響がない（17個のテストが成功）
 
 ---
 
-### Task 2.3: SQLite SQLジェネレーター拡張
+### Task 2.3: SQLite SQLジェネレーター拡張 ✅
 **要件**: REQ-1 ~ REQ-8  
 **ファイル**: `src/adapters/sql_generator/sqlite.rs`  
 **優先度**: High  
-**推定時間**: 40分
+**推定時間**: 40分  
+**完了日**: 2026-01-22
 
 **作業内容**:
-- [ ] `map_column_type()` メソッドに新規型のマッピング追加:
+- [x] `map_column_type()` メソッドに新規型のマッピング追加:
   - DECIMAL → `TEXT`（精度保証のため）
   - FLOAT → `REAL`
   - DOUBLE → `REAL`
@@ -162,8 +168,8 @@
   - JSONB → `TEXT`（フォールバック）
 
 **受け入れ条件**:
-- [ ] コンパイルが成功する
-- [ ] 既存のSQLite生成に影響がない
+- [x] コンパイルが成功する
+- [x] 既存のSQLite生成に影響がない（17個のテストが成功）
 
 ---
 

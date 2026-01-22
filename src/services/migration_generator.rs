@@ -227,52 +227,8 @@ impl MigrationGenerator {
         column: &crate::core::schema::Column,
         dialect: Dialect,
     ) -> String {
-        let generator: Box<dyn SqlGenerator> = match dialect {
-            Dialect::PostgreSQL => Box::new(PostgresSqlGenerator::new()),
-            Dialect::MySQL => Box::new(MysqlSqlGenerator::new()),
-            Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
-        };
-
-        // 簡易的な型変換（実際にはジェネレーターの内部メソッドを使用すべき）
-        match &column.column_type {
-            crate::core::schema::ColumnType::INTEGER { precision } => match dialect {
-                Dialect::PostgreSQL => match precision {
-                    Some(2) => "SMALLINT".to_string(),
-                    Some(8) => "BIGINT".to_string(),
-                    _ => "INTEGER".to_string(),
-                },
-                Dialect::MySQL => match precision {
-                    Some(2) => "SMALLINT".to_string(),
-                    Some(8) => "BIGINT".to_string(),
-                    _ => "INT".to_string(),
-                },
-                Dialect::SQLite => "INTEGER".to_string(),
-            },
-            crate::core::schema::ColumnType::VARCHAR { length } => match dialect {
-                Dialect::SQLite => "TEXT".to_string(),
-                _ => format!("VARCHAR({})", length),
-            },
-            crate::core::schema::ColumnType::TEXT => "TEXT".to_string(),
-            crate::core::schema::ColumnType::BOOLEAN => match dialect {
-                Dialect::SQLite => "INTEGER".to_string(),
-                _ => "BOOLEAN".to_string(),
-            },
-            crate::core::schema::ColumnType::TIMESTAMP { with_time_zone } => match dialect {
-                Dialect::PostgreSQL => {
-                    if with_time_zone.unwrap_or(false) {
-                        "TIMESTAMP WITH TIME ZONE".to_string()
-                    } else {
-                        "TIMESTAMP".to_string()
-                    }
-                }
-                Dialect::SQLite => "TEXT".to_string(),
-                _ => "TIMESTAMP".to_string(),
-            },
-            crate::core::schema::ColumnType::JSON => match dialect {
-                Dialect::SQLite => "TEXT".to_string(),
-                _ => "JSON".to_string(),
-            },
-        }
+        // ColumnType の to_sql_type メソッドを使用
+        column.column_type.to_sql_type(&dialect)
     }
 }
 

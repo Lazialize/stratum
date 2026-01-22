@@ -182,6 +182,44 @@ pub enum ColumnType {
 
     /// JSON型
     JSON,
+
+    /// 固定小数点数型
+    DECIMAL {
+        /// 全体の桁数 (1-65 for MySQL, 1-1000 for PostgreSQL)
+        precision: u32,
+        /// 小数点以下の桁数 (0 <= scale <= precision)
+        scale: u32,
+    },
+
+    /// 単精度浮動小数点型
+    FLOAT,
+
+    /// 倍精度浮動小数点型
+    DOUBLE,
+
+    /// 固定長文字列型
+    CHAR {
+        /// 固定長 (1-255)
+        length: u32,
+    },
+
+    /// 日付型
+    DATE,
+
+    /// 時刻型
+    TIME {
+        /// タイムゾーン付きかどうか (PostgreSQL only)
+        with_time_zone: Option<bool>,
+    },
+
+    /// バイナリラージオブジェクト型
+    BLOB,
+
+    /// UUID型
+    UUID,
+
+    /// バイナリJSON型 (PostgreSQL専用)
+    JSONB,
 }
 
 impl ColumnType {
@@ -222,6 +260,65 @@ impl ColumnType {
             (ColumnType::JSON, Dialect::PostgreSQL) => "JSON".to_string(),
             (ColumnType::JSON, Dialect::MySQL) => "JSON".to_string(),
             (ColumnType::JSON, Dialect::SQLite) => "TEXT".to_string(),
+
+            // DECIMAL
+            (ColumnType::DECIMAL { precision, scale }, Dialect::PostgreSQL) => {
+                format!("NUMERIC({}, {})", precision, scale)
+            }
+            (ColumnType::DECIMAL { precision, scale }, Dialect::MySQL) => {
+                format!("DECIMAL({}, {})", precision, scale)
+            }
+            (ColumnType::DECIMAL { .. }, Dialect::SQLite) => "TEXT".to_string(),
+
+            // FLOAT
+            (ColumnType::FLOAT, Dialect::PostgreSQL) => "REAL".to_string(),
+            (ColumnType::FLOAT, Dialect::MySQL) => "FLOAT".to_string(),
+            (ColumnType::FLOAT, Dialect::SQLite) => "REAL".to_string(),
+
+            // DOUBLE
+            (ColumnType::DOUBLE, Dialect::PostgreSQL) => "DOUBLE PRECISION".to_string(),
+            (ColumnType::DOUBLE, Dialect::MySQL) => "DOUBLE".to_string(),
+            (ColumnType::DOUBLE, Dialect::SQLite) => "REAL".to_string(),
+
+            // CHAR
+            (ColumnType::CHAR { length }, Dialect::PostgreSQL) => {
+                format!("CHAR({})", length)
+            }
+            (ColumnType::CHAR { length }, Dialect::MySQL) => {
+                format!("CHAR({})", length)
+            }
+            (ColumnType::CHAR { .. }, Dialect::SQLite) => "TEXT".to_string(),
+
+            // DATE
+            (ColumnType::DATE, Dialect::PostgreSQL) => "DATE".to_string(),
+            (ColumnType::DATE, Dialect::MySQL) => "DATE".to_string(),
+            (ColumnType::DATE, Dialect::SQLite) => "TEXT".to_string(),
+
+            // TIME
+            (ColumnType::TIME { with_time_zone }, Dialect::PostgreSQL) => {
+                if with_time_zone.unwrap_or(false) {
+                    "TIME WITH TIME ZONE".to_string()
+                } else {
+                    "TIME".to_string()
+                }
+            }
+            (ColumnType::TIME { .. }, Dialect::MySQL) => "TIME".to_string(),
+            (ColumnType::TIME { .. }, Dialect::SQLite) => "TEXT".to_string(),
+
+            // BLOB
+            (ColumnType::BLOB, Dialect::PostgreSQL) => "BYTEA".to_string(),
+            (ColumnType::BLOB, Dialect::MySQL) => "BLOB".to_string(),
+            (ColumnType::BLOB, Dialect::SQLite) => "BLOB".to_string(),
+
+            // UUID
+            (ColumnType::UUID, Dialect::PostgreSQL) => "UUID".to_string(),
+            (ColumnType::UUID, Dialect::MySQL) => "CHAR(36)".to_string(),
+            (ColumnType::UUID, Dialect::SQLite) => "TEXT".to_string(),
+
+            // JSONB
+            (ColumnType::JSONB, Dialect::PostgreSQL) => "JSONB".to_string(),
+            (ColumnType::JSONB, Dialect::MySQL) => "JSON".to_string(),
+            (ColumnType::JSONB, Dialect::SQLite) => "TEXT".to_string(),
         }
     }
 }
@@ -359,5 +456,109 @@ mod tests {
             referenced_columns: vec!["id".to_string()],
         };
         assert_eq!(fk.kind(), "FOREIGN_KEY");
+    }
+
+    // 新規データ型のテスト
+    #[test]
+    fn test_decimal_type() {
+        use crate::core::config::Dialect;
+
+        let col_type = ColumnType::DECIMAL {
+            precision: 10,
+            scale: 2,
+        };
+        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "NUMERIC(10, 2)");
+        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "DECIMAL(10, 2)");
+        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
+    }
+
+    #[test]
+    fn test_float_type() {
+        use crate::core::config::Dialect;
+
+        let col_type = ColumnType::FLOAT;
+        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "REAL");
+        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "FLOAT");
+        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "REAL");
+    }
+
+    #[test]
+    fn test_double_type() {
+        use crate::core::config::Dialect;
+
+        let col_type = ColumnType::DOUBLE;
+        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "DOUBLE PRECISION");
+        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "DOUBLE");
+        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "REAL");
+    }
+
+    #[test]
+    fn test_char_type() {
+        use crate::core::config::Dialect;
+
+        let col_type = ColumnType::CHAR { length: 10 };
+        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "CHAR(10)");
+        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "CHAR(10)");
+        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
+    }
+
+    #[test]
+    fn test_date_type() {
+        use crate::core::config::Dialect;
+
+        let col_type = ColumnType::DATE;
+        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "DATE");
+        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "DATE");
+        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
+    }
+
+    #[test]
+    fn test_time_type() {
+        use crate::core::config::Dialect;
+
+        let col_type = ColumnType::TIME {
+            with_time_zone: Some(false),
+        };
+        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "TIME");
+        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "TIME");
+        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
+
+        let col_type_tz = ColumnType::TIME {
+            with_time_zone: Some(true),
+        };
+        assert_eq!(
+            col_type_tz.to_sql_type(&Dialect::PostgreSQL),
+            "TIME WITH TIME ZONE"
+        );
+    }
+
+    #[test]
+    fn test_blob_type() {
+        use crate::core::config::Dialect;
+
+        let col_type = ColumnType::BLOB;
+        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "BYTEA");
+        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "BLOB");
+        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "BLOB");
+    }
+
+    #[test]
+    fn test_uuid_type() {
+        use crate::core::config::Dialect;
+
+        let col_type = ColumnType::UUID;
+        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "UUID");
+        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "CHAR(36)");
+        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
+    }
+
+    #[test]
+    fn test_jsonb_type() {
+        use crate::core::config::Dialect;
+
+        let col_type = ColumnType::JSONB;
+        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "JSONB");
+        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "JSON");
+        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
     }
 }

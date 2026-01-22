@@ -65,6 +65,14 @@ impl SqliteSqlGenerator {
                 // SQLiteではJSONをTEXTとして保存
                 "TEXT".to_string()
             }
+            ColumnType::DECIMAL { .. } => "TEXT".to_string(), // 精度保証のためTEXTを使用
+            ColumnType::FLOAT | ColumnType::DOUBLE => "REAL".to_string(),
+            ColumnType::CHAR { .. } => "TEXT".to_string(),
+            ColumnType::DATE => "TEXT".to_string(), // ISO 8601形式
+            ColumnType::TIME { .. } => "TEXT".to_string(), // ISO 8601形式
+            ColumnType::BLOB => "BLOB".to_string(),
+            ColumnType::UUID => "TEXT".to_string(),
+            ColumnType::JSONB => "TEXT".to_string(), // TEXTへフォールバック
         }
     }
 

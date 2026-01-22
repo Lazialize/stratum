@@ -60,6 +60,17 @@ impl MysqlSqlGenerator {
                 "TIMESTAMP".to_string()
             }
             ColumnType::JSON => "JSON".to_string(),
+            ColumnType::DECIMAL { precision, scale } => {
+                format!("DECIMAL({}, {})", precision, scale)
+            }
+            ColumnType::FLOAT => "FLOAT".to_string(),
+            ColumnType::DOUBLE => "DOUBLE".to_string(),
+            ColumnType::CHAR { length } => format!("CHAR({})", length),
+            ColumnType::DATE => "DATE".to_string(),
+            ColumnType::TIME { .. } => "TIME".to_string(),
+            ColumnType::BLOB => "BLOB".to_string(),
+            ColumnType::UUID => "CHAR(36)".to_string(),
+            ColumnType::JSONB => "JSON".to_string(), // JSONへフォールバック
         }
     }
 

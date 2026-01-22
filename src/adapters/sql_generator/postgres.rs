@@ -68,6 +68,23 @@ impl PostgresSqlGenerator {
                 }
             }
             ColumnType::JSON => "JSON".to_string(),
+            ColumnType::DECIMAL { precision, scale } => {
+                format!("NUMERIC({}, {})", precision, scale)
+            }
+            ColumnType::FLOAT => "REAL".to_string(),
+            ColumnType::DOUBLE => "DOUBLE PRECISION".to_string(),
+            ColumnType::CHAR { length } => format!("CHAR({})", length),
+            ColumnType::DATE => "DATE".to_string(),
+            ColumnType::TIME { with_time_zone } => {
+                if with_time_zone.unwrap_or(false) {
+                    "TIME WITH TIME ZONE".to_string()
+                } else {
+                    "TIME".to_string()
+                }
+            }
+            ColumnType::BLOB => "BYTEA".to_string(),
+            ColumnType::UUID => "UUID".to_string(),
+            ColumnType::JSONB => "JSONB".to_string(),
         }
     }
 
