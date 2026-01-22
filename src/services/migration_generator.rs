@@ -159,7 +159,11 @@ impl MigrationGenerator {
     /// # Returns
     ///
     /// DOWN SQL文字列（エラーの場合はエラーメッセージ）
-    pub fn generate_down_sql(&self, diff: &SchemaDiff, _dialect: Dialect) -> Result<String, String> {
+    pub fn generate_down_sql(
+        &self,
+        diff: &SchemaDiff,
+        _dialect: Dialect,
+    ) -> Result<String, String> {
         let mut statements = Vec::new();
 
         // 外部キー依存関係を考慮してテーブルをソート

@@ -85,7 +85,44 @@ impl PostgresSqlGenerator {
             ColumnType::BLOB => "BYTEA".to_string(),
             ColumnType::UUID => "UUID".to_string(),
             ColumnType::JSONB => "JSONB".to_string(),
+            // 方言固有型はformat_dialect_specific_typeでフォーマット
+            ColumnType::DialectSpecific { kind, params } => {
+                self.format_dialect_specific_type(kind, params)
+            }
         }
+    }
+
+    /// 方言固有型のフォーマット（PostgreSQL）
+    ///
+    /// パラメータに応じて適切なSQL型文字列を生成します。
+    fn format_dialect_specific_type(&self, kind: &str, params: &serde_json::Value) -> String {
+        // lengthパラメータがある場合（例: VARBIT(16)）
+        if let Some(length) = params.get("length").and_then(|v| v.as_u64()) {
+            return format!("{}({})", kind, length);
+        }
+
+        // arrayパラメータがtrueの場合（例: TEXT[]）
+        if params
+            .get("array")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            return format!("{}[]", kind);
+        }
+
+        // valuesパラメータがある場合（例: ENUM('a', 'b', 'c')）
+        if let Some(values) = params.get("values").and_then(|v| v.as_array()) {
+            let values_str = values
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| format!("'{}'", s))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return format!("{}({})", kind, values_str);
+        }
+
+        // パラメータなし、またはnullの場合はkindをそのまま出力
+        kind.to_string()
     }
 
     /// 制約定義のSQL文字列を生成

@@ -9,46 +9,46 @@
 
 ## Task Breakdown
 
-### Task 1: DialectSpecificバリアントの追加
+### Task 1: DialectSpecificバリアントの追加 ✅
 **要件マッピング**: 1, 2, 4
 
 **サブタスク**:
-1. `src/core/schema.rs`の`ColumnType` enumに`DialectSpecific`バリアントを追加する
+- [x] `src/core/schema.rs`の`ColumnType` enumに`DialectSpecific`バリアントを追加する
    - `#[serde(untagged)]`属性を使用して既存のtaggedパターンと共存させる
    - `kind: String`と`params: serde_json::Value`フィールドを持つ構造にする
    - 既存の共通型バリアント（INTEGER, VARCHAR等）はそのまま維持する
 
-2. `DialectSpecific`バリアントのシリアライゼーション・デシリアライゼーションが正しく動作することを単体テストで確認する
+- [x] `DialectSpecific`バリアントのシリアライゼーション・デシリアライゼーションが正しく動作することを単体テストで確認する
    - 既存の共通型との混在パターンをテストする
    - パラメータなしの型（例: `SERIAL`）のデシリアライズをテストする
    - パラメータありの型（例: `ENUM`with`values`）のデシリアライズをテストする
 
 ---
 
-### Task 2: SQL生成ロジックの拡張
+### Task 2: SQL生成ロジックの拡張 ✅
 **要件マッピング**: 3
 
 **サブタスク**:
-1. `SqlGenerator` traitに`format_dialect_specific_type`メソッドを追加する (P)
+- [x] `SqlGenerator` traitに`format_dialect_specific_type`メソッドを追加する (P)
    - `kind: &str`と`params: &serde_json::Value`を引数に取る
    - デフォルト実装で`kind`をそのまま出力し、`params`が存在する場合は適切にフォーマットする
 
-2. PostgreSQL用の`format_dialect_specific_type`実装を追加する (P)
+- [x] PostgreSQL用の`format_dialect_specific_type`実装を追加する (P)
    - `src/adapters/sql_generator/postgres.rs`に実装する
    - `SERIAL`, `BIGSERIAL`, `ARRAY`等の頻出型のフォーマットを処理する
    - パラメータがある場合（例: `VARBIT(n)`）の括弧付き出力を処理する
 
-3. MySQL用の`format_dialect_specific_type`実装を追加する (P)
+- [x] MySQL用の`format_dialect_specific_type`実装を追加する (P)
    - `src/adapters/sql_generator/mysql.rs`に実装する
    - `ENUM(values)`, `SET(values)`, `TINYINT`等の頻出型のフォーマットを処理する
    - 配列パラメータ（例: `ENUM(['a', 'b'])`）を適切に引用符付きで出力する
 
-4. SQLite用の`format_dialect_specific_type`実装を追加する (P)
+- [x] SQLite用の`format_dialect_specific_type`実装を追加する (P)
    - `src/adapters/sql_generator/sqlite.rs`に実装する
    - SQLiteの制約された型システムに対応する（ほとんどの方言固有型は共通型で十分）
    - 必要に応じて警告メッセージを出力する
 
-5. `generate_create_table`メソッド内で`DialectSpecific`バリアントを処理するロジックを追加する
+- [x] `generate_create_table`メソッド内で`DialectSpecific`バリアントを処理するロジックを追加する
    - 既存の`match`式に`DialectSpecific`パターンを追加する
    - `format_dialect_specific_type`メソッドを呼び出す
 

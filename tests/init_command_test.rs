@@ -162,9 +162,7 @@ mod init_command_tests {
             user: Some("user".to_string()),
             password: Some("pass".to_string()),
         };
-        handler
-            .generate_config_file(project_path, params)
-            .unwrap();
+        handler.generate_config_file(project_path, params).unwrap();
 
         // 再初期化を試みる（force=false）
         let command = InitCommand {
@@ -201,9 +199,7 @@ mod init_command_tests {
             user: Some("user".to_string()),
             password: Some("pass".to_string()),
         };
-        handler
-            .generate_config_file(project_path, params)
-            .unwrap();
+        handler.generate_config_file(project_path, params).unwrap();
 
         // 再初期化を試みる（force=true）
         let command = InitCommand {
@@ -281,9 +277,7 @@ mod init_command_tests {
             user: Some("user".to_string()),
             password: Some("pass".to_string()),
         };
-        handler
-            .generate_config_file(project_path, params)
-            .unwrap();
+        handler.generate_config_file(project_path, params).unwrap();
 
         let config_path = project_path.join(".stratum.yaml");
         let config = Config::from_file(&config_path).unwrap();

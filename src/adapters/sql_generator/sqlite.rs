@@ -73,7 +73,20 @@ impl SqliteSqlGenerator {
             ColumnType::BLOB => "BLOB".to_string(),
             ColumnType::UUID => "TEXT".to_string(),
             ColumnType::JSONB => "TEXT".to_string(), // TEXTへフォールバック
+            // 方言固有型はformat_dialect_specific_typeでフォーマット
+            ColumnType::DialectSpecific { kind, params } => {
+                self.format_dialect_specific_type(kind, params)
+            }
         }
+    }
+
+    /// 方言固有型のフォーマット（SQLite）
+    ///
+    /// SQLiteは型システムが柔軟なため、基本的にkindをそのまま出力します。
+    fn format_dialect_specific_type(&self, kind: &str, _params: &serde_json::Value) -> String {
+        // SQLiteは型アフィニティによる柔軟な型システムを持つため、
+        // 方言固有型はそのまま出力（パラメータは無視）
+        kind.to_string()
     }
 
     /// 制約定義のSQL文字列を生成

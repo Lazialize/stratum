@@ -221,6 +221,20 @@ pub enum ColumnType {
 
     /// バイナリJSON型 (PostgreSQL専用)
     JSONB,
+
+    /// 方言固有型
+    ///
+    /// データベース方言固有の型を直接指定する際に使用します。
+    /// Stratum内部では検証せず、SQL生成時にそのまま出力します。
+    /// 型の妥当性はデータベース実行時に検証されます。
+    #[serde(untagged)]
+    DialectSpecific {
+        /// 型名（例: "SERIAL", "ENUM", "TINYINT"）
+        kind: String,
+        /// 型パラメータ（任意、例: ENUM の values、VARBIT の length）
+        #[serde(flatten)]
+        params: serde_json::Value,
+    },
 }
 
 impl ColumnType {
@@ -318,6 +332,10 @@ impl ColumnType {
             (ColumnType::JSONB, Dialect::PostgreSQL) => "JSONB".to_string(),
             (ColumnType::JSONB, Dialect::MySQL) => "JSON".to_string(),
             (ColumnType::JSONB, Dialect::SQLite) => "TEXT".to_string(),
+
+            // DialectSpecific
+            // 方言固有型は`kind`をそのまま出力（Task 2で詳細実装）
+            (ColumnType::DialectSpecific { kind, .. }, _) => kind.clone(),
         }
     }
 }
