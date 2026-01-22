@@ -115,9 +115,13 @@ tables:
 
     /// PostgreSQLコンテナを起動して接続プールを作成
     async fn setup_postgres_container(
-    ) -> Result<(ContainerAsync<PostgresImage>, sqlx::Pool<Postgres>), Box<dyn std::error::Error>> {
+    ) -> Result<(ContainerAsync<PostgresImage>, sqlx::Pool<Postgres>), Box<dyn std::error::Error>>
+    {
         // PostgreSQLコンテナを起動
-        let container = PostgresImage::default().with_tag("16-alpine").start().await?;
+        let container = PostgresImage::default()
+            .with_tag("16-alpine")
+            .start()
+            .await?;
 
         // 接続文字列を構築
         let host = container.get_host().await?;

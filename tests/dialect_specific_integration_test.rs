@@ -406,14 +406,16 @@ async fn test_mysql_mixed_common_and_dialect_specific_types() {
         .expect("Failed to create table with mixed types");
 
     // データを挿入して動作確認
-    sqlx::query("INSERT INTO test_mixed_table (username, status, age, description) VALUES (?, ?, ?, ?)")
-        .bind("testuser")
-        .bind("active")
-        .bind(30)
-        .bind("Test description")
-        .execute(&mut conn)
-        .await
-        .expect("Failed to insert data");
+    sqlx::query(
+        "INSERT INTO test_mixed_table (username, status, age, description) VALUES (?, ?, ?, ?)",
+    )
+    .bind("testuser")
+    .bind("active")
+    .bind(30)
+    .bind("Test description")
+    .execute(&mut conn)
+    .await
+    .expect("Failed to insert data");
 
     let result = sqlx::query("SELECT id, username, status, age, description FROM test_mixed_table")
         .fetch_one(&mut conn)

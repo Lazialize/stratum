@@ -356,12 +356,7 @@ mod tests {
 
         let handler = RollbackCommandHandler::new();
         let result = handler
-            .rollback_migration_with_transaction(
-                &pool,
-                &migrator,
-                "20260122120001",
-                "INVALID SQL",
-            )
+            .rollback_migration_with_transaction(&pool, &migrator, "20260122120001", "INVALID SQL")
             .await;
 
         assert!(result.is_err());

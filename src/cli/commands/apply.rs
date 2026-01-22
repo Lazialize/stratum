@@ -321,8 +321,8 @@ impl Default for ApplyCommandHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
     use crate::core::config::Dialect;
+    use chrono::Duration;
     use sqlx::any::install_default_drivers;
     use sqlx::any::AnyPoolOptions;
     use sqlx::Row;

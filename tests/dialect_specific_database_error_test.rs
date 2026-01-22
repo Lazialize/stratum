@@ -29,10 +29,7 @@ mod dialect_specific_database_error_tests {
             .await
             .expect("Failed to get container port");
 
-        let connection_string = format!(
-            "postgres://postgres:postgres@127.0.0.1:{}/postgres",
-            port
-        );
+        let connection_string = format!("postgres://postgres:postgres@127.0.0.1:{}/postgres", port);
 
         let mut conn = PgConnection::connect(&connection_string)
             .await
@@ -77,10 +74,7 @@ mod dialect_specific_database_error_tests {
             .await
             .expect("Failed to get container port");
 
-        let connection_string = format!(
-            "postgres://postgres:postgres@127.0.0.1:{}/postgres",
-            port
-        );
+        let connection_string = format!("postgres://postgres:postgres@127.0.0.1:{}/postgres", port);
 
         let mut conn = PgConnection::connect(&connection_string)
             .await
@@ -127,10 +121,7 @@ mod dialect_specific_database_error_tests {
             .await
             .expect("Failed to get container port");
 
-        let connection_string = format!(
-            "postgres://postgres:postgres@127.0.0.1:{}/postgres",
-            port
-        );
+        let connection_string = format!("postgres://postgres:postgres@127.0.0.1:{}/postgres", port);
 
         let mut conn = PgConnection::connect(&connection_string)
             .await
@@ -173,10 +164,7 @@ mod dialect_specific_database_error_tests {
             .await
             .expect("Failed to get container port");
 
-        let connection_string = format!(
-            "postgres://postgres:postgres@127.0.0.1:{}/postgres",
-            port
-        );
+        let connection_string = format!("postgres://postgres:postgres@127.0.0.1:{}/postgres", port);
 
         let mut conn = PgConnection::connect(&connection_string)
             .await

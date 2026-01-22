@@ -429,7 +429,9 @@ mod tests {
             values: vec!["active".to_string(), "inactive".to_string()],
         });
 
-        let sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
+        let sql = generator
+            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .unwrap();
 
         assert!(sql.contains("CREATE TYPE status AS ENUM ('active', 'inactive')"));
     }
@@ -448,7 +450,9 @@ mod tests {
             columns: Vec::new(),
         });
 
-        let sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
+        let sql = generator
+            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .unwrap();
 
         assert!(sql.contains("ALTER TYPE status ADD VALUE 'inactive'"));
     }
@@ -490,7 +494,9 @@ mod tests {
             }],
         });
 
-        let sql = generator.generate_up_sql(&diff, Dialect::PostgreSQL).unwrap();
+        let sql = generator
+            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .unwrap();
 
         assert!(sql.contains("ALTER TYPE status RENAME TO status_old"));
         assert!(sql.contains("CREATE TYPE status AS ENUM ('inactive', 'active')"));

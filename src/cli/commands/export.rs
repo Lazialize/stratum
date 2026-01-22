@@ -190,11 +190,10 @@ impl ExportCommandHandler {
         enum_names: Option<&HashSet<String>>,
     ) -> Result<Vec<Column>> {
         match dialect {
-            crate::core::config::Dialect::SQLite => {
-                self.get_columns_sqlite(pool, table_name).await
-            }
+            crate::core::config::Dialect::SQLite => self.get_columns_sqlite(pool, table_name).await,
             crate::core::config::Dialect::PostgreSQL => {
-                self.get_columns_postgres(pool, table_name, enum_names).await
+                self.get_columns_postgres(pool, table_name, enum_names)
+                    .await
             }
             crate::core::config::Dialect::MySQL => self.get_columns_mysql(pool, table_name).await,
         }
