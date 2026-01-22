@@ -32,8 +32,8 @@ mod generate_command_tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         eprintln!("Error message: {}", err_msg);
-        // 設定ファイルがないので設定に関するエラーメッセージが出るはず
-        assert!(err_msg.contains("config") || err_msg.contains("設定"));
+        // Config file missing, should get config-related error
+        assert!(err_msg.contains("Config"));
     }
 
     /// 設定ファイルが存在しない場合のエラー
@@ -54,7 +54,7 @@ mod generate_command_tests {
         let result = handler.execute(&command);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("config") || err_msg.contains("設定"));
+        assert!(err_msg.contains("Config"));
     }
 
     /// 空のスキーマディレクトリの場合は差分なし
@@ -75,7 +75,7 @@ mod generate_command_tests {
         let result = handler.execute(&command);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("差分") || err_msg.contains("changes") || err_msg.contains("スキーマ"));
+        assert!(err_msg.contains("changes") || err_msg.contains("schema"));
     }
 
     /// 新規テーブル追加のマイグレーション生成

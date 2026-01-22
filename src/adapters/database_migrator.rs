@@ -83,7 +83,7 @@ impl DatabaseMigratorService {
             .execute(pool)
             .await
             .map_err(|e| DatabaseError::Query {
-                message: format!("マイグレーション履歴テーブルの作成に失敗しました: {}", e),
+                message: format!("Failed to create migration history table: {}", e),
                 sql: Some(sql),
             })?;
 
@@ -130,7 +130,7 @@ impl DatabaseMigratorService {
             .execute(pool)
             .await
             .map_err(|e| DatabaseError::Query {
-                message: format!("マイグレーション記録の保存に失敗しました: {}", e),
+                message: format!("Failed to save migration record: {}", e),
                 sql: Some(sql),
             })?;
 
@@ -174,7 +174,7 @@ impl DatabaseMigratorService {
             .execute(pool)
             .await
             .map_err(|e| DatabaseError::Query {
-                message: format!("マイグレーション記録の削除に失敗しました: {}", e),
+                message: format!("Failed to delete migration record: {}", e),
                 sql: Some(sql),
             })?;
 
@@ -210,7 +210,7 @@ impl DatabaseMigratorService {
             .fetch_all(pool)
             .await
             .map_err(|e| DatabaseError::Query {
-                message: format!("マイグレーション履歴の取得に失敗しました: {}", e),
+                message: format!("Failed to get migration history: {}", e),
                 sql: Some(sql),
             })?;
 
@@ -274,7 +274,7 @@ impl DatabaseMigratorService {
 
         let row_result = sqlx::query(&sql).fetch_optional(pool).await.map_err(|e| {
             DatabaseError::Query {
-                message: format!("マイグレーション記録の取得に失敗しました: {}", e),
+                message: format!("Failed to get migration record: {}", e),
                 sql: Some(sql),
             }
         })?;
@@ -368,7 +368,7 @@ impl DatabaseMigratorService {
 
         let row_result = sqlx::query(&sql).fetch_optional(pool).await.map_err(|e| {
             DatabaseError::Query {
-                message: format!("マイグレーションテーブルの存在確認に失敗しました: {}", e),
+                message: format!("Failed to check migration table existence: {}", e),
                 sql: Some(sql),
             }
         })?;
@@ -395,7 +395,7 @@ impl DatabaseMigratorService {
             .execute(pool)
             .await
             .map_err(|e| DatabaseError::Query {
-                message: format!("マイグレーションSQLの実行に失敗しました: {}", e),
+                message: format!("Failed to execute migration SQL: {}", e),
                 sql: Some(sql.to_string()),
             })
     }

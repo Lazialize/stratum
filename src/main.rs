@@ -17,7 +17,7 @@ fn main() {
     let cli = Cli::parse();
 
     // 非同期ランタイムを作成して実行
-    let runtime = tokio::runtime::Runtime::new().expect("Tokioランタイムの作成に失敗しました");
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
     let result = runtime.block_on(run_command(cli));
 
@@ -28,7 +28,7 @@ fn main() {
             }
         }
         Err(e) => {
-            eprintln!("エラー: {:#}", e);
+            eprintln!("Error: {:#}", e);
             process::exit(1);
         }
     }
@@ -54,7 +54,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 password: None,
             };
             handler.execute(&command)?;
-            Ok("プロジェクトを初期化しました。".to_string())
+            Ok("Project initialized.".to_string())
         }
 
         Commands::Generate { description } => {
@@ -125,7 +125,7 @@ fn parse_dialect(dialect: Option<&str>) -> Result<Dialect> {
         Some("mysql") => Ok(Dialect::MySQL),
         Some("sqlite") => Ok(Dialect::SQLite),
         Some(other) => Err(anyhow::anyhow!(
-            "サポートされていないデータベース方言です: {}。postgresql, mysql, sqlite のいずれかを指定してください。",
+            "Unsupported database dialect: {}. Please specify one of: postgresql, mysql, sqlite.",
             other
         )),
         None => Ok(Dialect::SQLite), // デフォルトはSQLite

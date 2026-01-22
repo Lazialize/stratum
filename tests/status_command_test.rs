@@ -114,7 +114,7 @@ async fn test_status_no_config_file() {
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("設定ファイルが見つかりません"));
+        .contains("Config file not found"));
 }
 
 #[tokio::test]
@@ -135,7 +135,7 @@ async fn test_status_no_migrations_dir() {
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("マイグレーションディレクトリが見つかりません"));
+        .contains("Migrations directory not found"));
 }
 
 #[tokio::test]
@@ -152,8 +152,8 @@ async fn test_status_no_migrations() {
     assert!(result.is_ok());
 
     let summary = result.unwrap();
-    assert!(summary.contains("マイグレーション状態"));
-    assert!(summary.contains("マイグレーションが見つかりません"));
+    assert!(summary.contains("Migration Status"));
+    assert!(summary.contains("No migrations found"));
 }
 
 #[tokio::test]
@@ -199,10 +199,10 @@ async fn test_status_with_pending_migrations() {
     assert!(result.is_ok(), "Status failed: {:?}", result);
 
     let summary = result.unwrap();
-    assert!(summary.contains("マイグレーション状態"));
+    assert!(summary.contains("Migration Status"));
     assert!(summary.contains("20260121120000"));
     assert!(summary.contains("20260121120001"));
-    assert!(summary.contains("未適用") || summary.contains("Pending"));
+    assert!(summary.contains("Pending"));
 }
 
 #[tokio::test]
@@ -272,9 +272,9 @@ async fn test_status_with_applied_migrations() {
     assert!(result.is_ok(), "Status failed: {:?}", result);
 
     let summary = result.unwrap();
-    assert!(summary.contains("マイグレーション状態"));
+    assert!(summary.contains("Migration status"));
     assert!(summary.contains("20260121120000"));
-    assert!(summary.contains("適用済み") || summary.contains("Applied"));
+    assert!(summary.contains("Applied"));
 }
 
 #[test]
@@ -282,14 +282,14 @@ fn test_format_migration_status() {
     let handler = StatusCommandHandler::new();
 
     let summary = handler.format_migration_status(
-        &[("20260121120000", "create_users", "適用済み")],
+        &[("20260121120000", "create_users", "Applied")],
         1,
         0,
     );
 
-    assert!(summary.contains("マイグレーション状態"));
+    assert!(summary.contains("Migration Status"));
     assert!(summary.contains("20260121120000"));
     assert!(summary.contains("create_users"));
-    assert!(summary.contains("適用済み"));
-    assert!(summary.contains("合計: 1"));
+    assert!(summary.contains("Applied"));
+    assert!(summary.contains("Total: 1"));
 }

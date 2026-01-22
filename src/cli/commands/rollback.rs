@@ -50,19 +50,19 @@ impl RollbackCommandHandler {
         let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
         if !config_path.exists() {
             return Err(anyhow!(
-                "設定ファイルが見つかりません: {:?}。まず `init` コマンドでプロジェクトを初期化してください。",
+                "Config file not found: {:?}. Please initialize the project first with the `init` command.",
                 config_path
             ));
         }
 
         let config = Config::from_file(&config_path)
-            .with_context(|| "設定ファイルの読み込みに失敗しました")?;
+            .with_context(|| "Failed to read config file")?;
 
         // マイグレーションディレクトリのパスを解決
         let migrations_dir = command.project_path.join(&config.migrations_dir);
         if !migrations_dir.exists() {
             return Err(anyhow!(
-                "マイグレーションディレクトリが見つかりません: {:?}",
+                "Migrations directory not found: {:?}",
                 migrations_dir
             ));
         }
@@ -71,30 +71,30 @@ impl RollbackCommandHandler {
         let available_migrations = self.load_available_migrations(&migrations_dir)?;
 
         if available_migrations.is_empty() {
-            return Err(anyhow!("マイグレーションファイルが見つかりません"));
+            return Err(anyhow!("No migration files found"));
         }
 
         // データベース接続を確立
         let db_config = config
             .get_database_config(&command.env)
-            .with_context(|| format!("環境 '{}' の設定が見つかりません", command.env))?;
+            .with_context(|| format!("Config for environment '{}' not found", command.env))?;
 
         let db_service = DatabaseConnectionService::new();
         let pool = db_service
             .create_pool(config.dialect, &db_config)
             .await
-            .with_context(|| "データベース接続に失敗しました")?;
+            .with_context(|| "Failed to connect to database")?;
 
         // マイグレーション履歴テーブルが存在するか確認
         let migrator = DatabaseMigratorService::new();
         let table_exists = migrator
             .migration_table_exists(&pool, config.dialect)
             .await
-            .with_context(|| "マイグレーションテーブルの存在確認に失敗しました")?;
+            .with_context(|| "Failed to check migration table existence")?;
 
         if !table_exists {
             return Err(anyhow!(
-                "マイグレーション履歴テーブルが存在しません。まず `apply` コマンドでマイグレーションを適用してください。"
+                "Migration history table does not exist. Please apply migrations first with the `apply` command."
             ));
         }
 
@@ -102,10 +102,10 @@ impl RollbackCommandHandler {
         let applied_migrations = migrator
             .get_migrations(&pool)
             .await
-            .with_context(|| "適用済みマイグレーション履歴の取得に失敗しました")?;
+            .with_context(|| "Failed to get applied migration history")?;
 
         if applied_migrations.is_empty() {
-            return Err(anyhow!("ロールバック可能なマイグレーションがありません"));
+            return Err(anyhow!("No migrations to rollback"));
         }
 
         // ロールバックする件数を決定（デフォルトは1）
@@ -130,7 +130,7 @@ impl RollbackCommandHandler {
                 .find(|(v, _, _)| v == &record.version)
                 .ok_or_else(|| {
                     anyhow!(
-                        "マイグレーションファイルが見つかりません: {}",
+                        "Migration file not found: {}",
                         record.version
                     )
                 })?;
@@ -141,7 +141,7 @@ impl RollbackCommandHandler {
             let down_sql_path = migration_dir.join("down.sql");
             let down_sql = fs::read_to_string(&down_sql_path).with_context(|| {
                 format!(
-                    "マイグレーションファイルの読み込みに失敗しました: {:?}",
+                    "Failed to read migration file: {:?}",
                     down_sql_path
                 )
             })?;
@@ -158,7 +158,7 @@ impl RollbackCommandHandler {
 
             if let Err(e) = result {
                 return Err(anyhow!(
-                    "マイグレーション {} のロールバックに失敗しました: {}",
+                    "Failed to rollback migration {}: {}",
                     record.version,
                     e
                 ));
@@ -190,7 +190,7 @@ impl RollbackCommandHandler {
 
         let entries = fs::read_dir(migrations_dir).with_context(|| {
             format!(
-                "マイグレーションディレクトリの読み込みに失敗しました: {:?}",
+                "Failed to read migrations directory: {:?}",
                 migrations_dir
             )
         })?;
@@ -203,7 +203,7 @@ impl RollbackCommandHandler {
                 let dir_name = path
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .ok_or_else(|| anyhow!("ディレクトリ名が無効です"))?;
+                    .ok_or_else(|| anyhow!("Invalid directory name"))?;
 
                 // .で始まるディレクトリはスキップ
                 if dir_name.starts_with('.') {
@@ -239,7 +239,7 @@ impl RollbackCommandHandler {
         let mut tx = pool
             .begin()
             .await
-            .with_context(|| "トランザクションの開始に失敗しました")?;
+            .with_context(|| "Failed to start transaction")?;
 
         // マイグレーションdown SQLを実行
         sqlx::query(down_sql)
@@ -247,7 +247,7 @@ impl RollbackCommandHandler {
             .await
             .with_context(|| {
                 format!(
-                    "マイグレーションdown SQLの実行に失敗しました: {}\nSQL: {}",
+                    "Failed to execute migration down SQL: {}\nSQL: {}",
                     version, down_sql
                 )
             })?;
@@ -258,21 +258,21 @@ impl RollbackCommandHandler {
         sqlx::query(&remove_sql)
             .execute(&mut *tx)
             .await
-            .with_context(|| "マイグレーション履歴の削除に失敗しました")?;
+            .with_context(|| "Failed to remove migration history")?;
 
         // トランザクションをコミット
         tx.commit()
             .await
-            .with_context(|| "トランザクションのコミットに失敗しました")?;
+            .with_context(|| "Failed to commit transaction")?;
 
         Ok(())
     }
 
     /// ロールバック結果のサマリーを生成
     pub fn generate_summary(&self, rolled_back: &[AppliedMigration]) -> String {
-        let mut summary = String::from("=== マイグレーションロールバック完了 ===\n");
+        let mut summary = String::from("=== Migration Rollback Complete ===\n");
         summary.push_str(&format!(
-            "{} 個のマイグレーションをロールバックしました:\n\n",
+            "{} migration(s) rolled back:\n\n",
             rolled_back.len()
         ));
 
@@ -289,7 +289,7 @@ impl RollbackCommandHandler {
             .iter()
             .map(|m| m.duration.num_milliseconds())
             .sum();
-        summary.push_str(&format!("\n合計実行時間: {}ms\n", total_duration));
+        summary.push_str(&format!("\nTotal execution time: {}ms\n", total_duration));
 
         summary
     }
@@ -333,7 +333,7 @@ mod tests {
         ];
 
         let summary = handler.generate_summary(&rolled_back);
-        assert!(summary.contains("2 個のマイグレーション"));
+        assert!(summary.contains("2 migration(s) rolled back"));
         assert!(summary.contains("20260121120000"));
         assert!(summary.contains("20260121120001"));
         assert!(summary.contains("300ms")); // 100 + 200

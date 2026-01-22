@@ -42,9 +42,9 @@ impl SchemaValidatorService {
             // テーブルが少なくとも1つのカラムを持つことを検証
             if table.columns.is_empty() {
                 result.add_error(ValidationError::Constraint {
-                    message: format!("テーブル '{}' にカラムが定義されていません", table_name),
+                    message: format!("Table '{}' has no columns defined", table_name),
                     location: Some(ErrorLocation::with_table(table_name.clone())),
-                    suggestion: Some("少なくとも1つのカラムを定義してください".to_string()),
+                    suggestion: Some("Define at least one column".to_string()),
                 });
             }
 
@@ -57,11 +57,11 @@ impl SchemaValidatorService {
             if !has_primary_key && !table.columns.is_empty() {
                 result.add_error(ValidationError::Constraint {
                     message: format!(
-                        "テーブル '{}' にプライマリキーが定義されていません",
+                        "Table '{}' has no primary key defined",
                         table_name
                     ),
                     location: Some(ErrorLocation::with_table(table_name.clone())),
-                    suggestion: Some("PRIMARY KEY制約を追加してください".to_string()),
+                    suggestion: Some("Add a PRIMARY KEY constraint".to_string()),
                 });
             }
 
@@ -71,7 +71,7 @@ impl SchemaValidatorService {
                     if table.get_column(column_name).is_none() {
                         result.add_error(ValidationError::Reference {
                             message: format!(
-                                "インデックス '{}' が参照するカラム '{}' がテーブル '{}' に存在しません",
+                                "Index '{}' references column '{}' which does not exist in table '{}'",
                                 index.name, column_name, table_name
                             ),
                             location: Some(ErrorLocation {
@@ -80,7 +80,7 @@ impl SchemaValidatorService {
                                 line: None,
                             }),
                             suggestion: Some(format!(
-                                "カラム '{}' を定義するか、インデックスから削除してください",
+                                "Define column '{}' or remove it from the index",
                                 column_name
                             )),
                         });
@@ -98,7 +98,7 @@ impl SchemaValidatorService {
                             if table.get_column(column_name).is_none() {
                                 result.add_error(ValidationError::Reference {
                                     message: format!(
-                                        "制約が参照するカラム '{}' がテーブル '{}' に存在しません",
+                                        "Constraint references column '{}' which does not exist in table '{}'",
                                         column_name, table_name
                                     ),
                                     location: Some(ErrorLocation {
@@ -107,7 +107,7 @@ impl SchemaValidatorService {
                                         line: None,
                                     }),
                                     suggestion: Some(format!(
-                                        "カラム '{}' を定義してください",
+                                        "Define column '{}'",
                                         column_name
                                     )),
                                 });
@@ -124,7 +124,7 @@ impl SchemaValidatorService {
                             if table.get_column(column_name).is_none() {
                                 result.add_error(ValidationError::Reference {
                                     message: format!(
-                                        "外部キー制約が参照するカラム '{}' がテーブル '{}' に存在しません",
+                                        "Foreign key constraint references column '{}' which does not exist in table '{}'",
                                         column_name, table_name
                                     ),
                                     location: Some(ErrorLocation {
@@ -133,18 +133,18 @@ impl SchemaValidatorService {
                                         line: None,
                                     }),
                                     suggestion: Some(format!(
-                                        "カラム '{}' を定義してください",
+                                        "Define column '{}'",
                                         column_name
                                     )),
                                 });
                             }
                         }
 
-                        // 参照先テーブルの存在確認
+                        // Check if referenced table exists
                         if !schema.has_table(referenced_table) {
                             result.add_error(ValidationError::Reference {
                                 message: format!(
-                                    "外部キー制約が参照するテーブル '{}' が存在しません",
+                                    "Foreign key constraint references table '{}' which does not exist",
                                     referenced_table
                                 ),
                                 location: Some(ErrorLocation {
@@ -153,18 +153,18 @@ impl SchemaValidatorService {
                                     line: None,
                                 }),
                                 suggestion: Some(format!(
-                                    "テーブル '{}' を定義してください",
+                                    "Define table '{}'",
                                     referenced_table
                                 )),
                             });
                         } else {
-                            // 参照先カラムの存在確認
+                            // Check if referenced columns exist
                             if let Some(ref_table) = schema.get_table(referenced_table) {
                                 for ref_column_name in referenced_columns {
                                     if ref_table.get_column(ref_column_name).is_none() {
                                         result.add_error(ValidationError::Reference {
                                             message: format!(
-                                                "外部キー制約が参照するカラム '{}' がテーブル '{}' に存在しません",
+                                                "Foreign key constraint references column '{}' which does not exist in table '{}'",
                                                 ref_column_name, referenced_table
                                             ),
                                             location: Some(ErrorLocation {
@@ -173,8 +173,8 @@ impl SchemaValidatorService {
                                                 line: None,
                                             }),
                                             suggestion: Some(format!(
-                                                "テーブル '{}' にカラム '{}' を定義してください",
-                                                referenced_table, ref_column_name
+                                                "Define column '{}' in table '{}'",
+                                                ref_column_name, referenced_table
                                             )),
                                         });
                                     }
@@ -193,11 +193,11 @@ impl SchemaValidatorService {
     ///
     /// # Arguments
     ///
-    /// * `schema` - 検証対象のスキーマ
+    /// * `schema` - Schema to validate
     ///
     /// # Returns
     ///
-    /// 参照整合性エラーのリスト
+    /// List of referential integrity errors
     pub fn validate_referential_integrity(&self, schema: &Schema) -> Vec<ValidationError> {
         let mut errors = Vec::new();
 
@@ -209,26 +209,26 @@ impl SchemaValidatorService {
                     ..
                 } = constraint
                 {
-                    // 参照先テーブルの存在確認
+                    // Check if referenced table exists
                     if !schema.has_table(referenced_table) {
                         errors.push(ValidationError::Reference {
                             message: format!(
-                                "外部キー制約が参照するテーブル '{}' が存在しません",
+                                "Foreign key constraint references table '{}' which does not exist",
                                 referenced_table
                             ),
                             location: Some(ErrorLocation::with_table(table_name.clone())),
                             suggestion: Some(format!(
-                                "テーブル '{}' を定義してください",
+                                "Define table '{}'",
                                 referenced_table
                             )),
                         });
                     } else if let Some(ref_table) = schema.get_table(referenced_table) {
-                        // 参照先カラムの存在確認
+                        // Check if referenced columns exist
                         for ref_column_name in referenced_columns {
                             if ref_table.get_column(ref_column_name).is_none() {
                                 errors.push(ValidationError::Reference {
                                     message: format!(
-                                        "外部キー制約が参照するカラム '{}' がテーブル '{}' に存在しません",
+                                        "Foreign key constraint references column '{}' which does not exist in table '{}'",
                                         ref_column_name, referenced_table
                                     ),
                                     location: Some(ErrorLocation {
@@ -237,8 +237,8 @@ impl SchemaValidatorService {
                                         line: None,
                                     }),
                                     suggestion: Some(format!(
-                                        "テーブル '{}' にカラム '{}' を定義してください",
-                                        referenced_table, ref_column_name
+                                        "Define column '{}' in table '{}'",
+                                        ref_column_name, referenced_table
                                     )),
                                 });
                             }

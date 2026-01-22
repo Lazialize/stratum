@@ -78,7 +78,7 @@ async fn test_apply_command_no_config_file() {
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("設定ファイルが見つかりません"));
+        .contains("Config file not found"));
 }
 
 #[tokio::test]
@@ -110,7 +110,7 @@ async fn test_apply_command_no_pending_migrations() {
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     println!("Error: {}", error_msg);
-    assert!(error_msg.contains("マイグレーションファイルが見つかりません"));
+    assert!(error_msg.contains("No migration files found"));
 }
 
 #[tokio::test]
@@ -272,7 +272,7 @@ checksum: "test_checksum"
     assert!(result2
         .unwrap_err()
         .to_string()
-        .contains("未適用のマイグレーションがありません"));
+        .contains("No pending migrations"));
 }
 
 #[tokio::test]
@@ -399,5 +399,5 @@ checksum: "test_checksum"
 
     let result = handler.execute(&command).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("マイグレーション"));
+    assert!(result.unwrap_err().to_string().contains("migration"));
 }

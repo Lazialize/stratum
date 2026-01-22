@@ -50,7 +50,7 @@ impl SchemaParserService {
 
         if !schema_dir.is_dir() {
             return Err(anyhow::anyhow!(
-                "指定されたパスはディレクトリではありません: {}",
+                "The specified path is not a directory: {}",
                 schema_dir.display()
             ));
         }
@@ -68,7 +68,7 @@ impl SchemaParserService {
 
         for file_path in yaml_files {
             let schema = self.parse_schema_file(&file_path).with_context(|| {
-                format!("スキーマファイルの解析に失敗しました: {:?}", file_path)
+                format!("Failed to parse schema file: {:?}", file_path)
             })?;
 
             // バージョンを保持（最初に見つかったバージョンを使用）
@@ -119,7 +119,7 @@ impl SchemaParserService {
 
         // YAMLを解析
         let schema: Schema = serde_saphyr::from_str(&content)
-            .with_context(|| format!("YAMLの解析に失敗しました: {:?}", file_path))?;
+            .with_context(|| format!("Failed to parse YAML: {:?}", file_path))?;
 
         Ok(schema)
     }
@@ -224,7 +224,7 @@ mod tests {
 
         assert!(result.is_err());
         let error_message = result.unwrap_err().to_string();
-        assert!(error_message.contains("ファイルが見つかりません"));
+        assert!(error_message.contains("File not found"));
     }
 
     #[test]

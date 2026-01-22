@@ -55,7 +55,7 @@ impl InitCommandHandler {
         // 初期化済みチェック
         if self.is_already_initialized(&command.project_path) && !command.force {
             return Err(anyhow!(
-                "プロジェクトは既に初期化されています。--forceオプションで強制的に再初期化できます。"
+                "Project is already initialized. Use --force option to force re-initialization."
             ));
         }
 
@@ -99,13 +99,13 @@ impl InitCommandHandler {
         // schema/ディレクトリを作成
         let schema_dir = project_path.join("schema");
         fs::create_dir_all(&schema_dir)
-            .with_context(|| format!("schema/ディレクトリの作成に失敗しました: {:?}", schema_dir))?;
+            .with_context(|| format!("Failed to create schema/ directory: {:?}", schema_dir))?;
 
         // migrations/ディレクトリを作成
         let migrations_dir = project_path.join("migrations");
         fs::create_dir_all(&migrations_dir).with_context(|| {
             format!(
-                "migrations/ディレクトリの作成に失敗しました: {:?}",
+                "Failed to create migrations/ directory: {:?}",
                 migrations_dir
             )
         })?;
@@ -167,12 +167,12 @@ impl InitCommandHandler {
 
         // YAMLにシリアライズ
         let yaml = serde_saphyr::to_string(&config)
-            .with_context(|| "設定ファイルのシリアライズに失敗しました")?;
+            .with_context(|| "Failed to serialize config file")?;
 
         // ファイルに書き込み
         let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
         fs::write(&config_path, yaml)
-            .with_context(|| format!("設定ファイルの書き込みに失敗しました: {:?}", config_path))?;
+            .with_context(|| format!("Failed to write config file: {:?}", config_path))?;
 
         Ok(())
     }

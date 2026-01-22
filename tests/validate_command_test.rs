@@ -85,7 +85,7 @@ fn test_validate_no_config_file() {
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("設定ファイルが見つかりません"));
+        .contains("Config file not found"));
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn test_validate_no_schema_dir() {
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("スキーマディレクトリが見つかりません"));
+        .contains("Schema directory not found"));
 }
 
 #[test]
@@ -123,8 +123,8 @@ fn test_validate_empty_schema_dir() {
     assert!(result.is_ok());
 
     let summary = result.unwrap();
-    assert!(summary.contains("検証が完了しました"));
-    assert!(summary.contains("テーブル数: 0 個"));
+    assert!(summary.contains("Validation complete"));
+    assert!(summary.contains("Tables: 0"));
 }
 
 #[test]
@@ -174,9 +174,9 @@ tables:
     assert!(result.is_ok(), "Validation failed: {:?}", result);
 
     let summary = result.unwrap();
-    assert!(summary.contains("検証が完了しました"));
-    assert!(summary.contains("テーブル数: 1 個"));
-    assert!(summary.contains("エラーはありません"));
+    assert!(summary.contains("Validation complete"));
+    assert!(summary.contains("Tables: 1"));
+    assert!(summary.contains("No errors found"));
 }
 
 #[test]
@@ -219,8 +219,8 @@ tables:
     assert!(result.is_ok());
 
     let summary = result.unwrap();
-    assert!(summary.contains("検証が完了しました"));
-    assert!(summary.contains("1 個のエラー") || summary.contains("エラーが見つかりました"));
+    assert!(summary.contains("Validation Statistics"));
+    assert!(summary.contains("error(s) found"));
 }
 
 #[test]
@@ -272,8 +272,8 @@ tables:
     assert!(result.is_ok());
 
     let summary = result.unwrap();
-    assert!(summary.contains("検証が完了しました"));
-    assert!(summary.contains("エラーが見つかりました"));
+    assert!(summary.contains("Validation Statistics"));
+    assert!(summary.contains("error(s) found"));
 }
 
 #[test]
@@ -316,18 +316,18 @@ tables:
     assert!(result.is_ok());
 
     let summary = result.unwrap();
-    assert!(summary.contains("検証が完了しました"));
-    assert!(summary.contains("テーブル数: 1 個"));
+    assert!(summary.contains("Validation complete"));
+    assert!(summary.contains("Tables: 1"));
 }
 
 #[test]
 fn test_format_validation_summary() {
     let handler = ValidateCommandHandler::new();
 
-    // 検証結果のサマリーをフォーマット
+    // Format validation summary
     let summary = handler.format_validation_summary(true, 0, 0, 2, 5, 3, 1);
 
-    assert!(summary.contains("検証が完了しました"));
-    assert!(summary.contains("テーブル数: 2 個"));
-    assert!(summary.contains("エラーはありません"));
+    assert!(summary.contains("Validation complete"));
+    assert!(summary.contains("Tables: 2"));
+    assert!(summary.contains("No errors found"));
 }

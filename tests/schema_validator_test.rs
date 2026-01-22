@@ -60,17 +60,17 @@ mod schema_validator_tests {
         assert!(!result.is_valid());
         assert!(result.error_count() > 0);
 
-        // プライマリキーがないエラーが含まれているはず
+        // Check for primary key error in result
         let has_pk_error = result.errors.iter().any(|e| match e {
             ValidationError::Constraint { message, .. } => {
-                message.contains("プライマリキー") || message.contains("PRIMARY KEY")
+                message.contains("primary key") || message.contains("PRIMARY KEY")
             }
             _ => false,
         });
         assert!(has_pk_error);
     }
 
-    /// カラムが存在しないテーブルの検証テスト
+    /// Test validation of table without columns
     #[test]
     fn test_validate_table_without_columns() {
         let mut schema = Schema::new("1.0".to_string());
@@ -86,17 +86,17 @@ mod schema_validator_tests {
         assert!(!result.is_valid());
         assert!(result.error_count() > 0);
 
-        // カラムがないエラーが含まれているはず
+        // Check for column error in result
         let has_column_error = result.errors.iter().any(|e| match e {
             ValidationError::Constraint { message, .. } => {
-                message.contains("カラム") || message.contains("column")
+                message.contains("column") || message.contains("Column")
             }
             _ => false,
         });
         assert!(has_column_error);
     }
 
-    /// 外部キー制約の参照先テーブルが存在しない場合のテスト
+    /// Test validation of foreign key reference to non-existent table
     #[test]
     fn test_validate_foreign_key_reference_not_found() {
         let mut schema = Schema::new("1.0".to_string());
@@ -142,17 +142,17 @@ mod schema_validator_tests {
         assert!(!result.is_valid());
         assert!(result.error_count() > 0);
 
-        // 参照エラーが含まれているはず
+        // Check for reference error in result
         let has_reference_error = result.errors.iter().any(|e| match e {
             ValidationError::Reference { message, .. } => {
-                message.contains("authors") || message.contains("参照先")
+                message.contains("authors") || message.contains("does not exist")
             }
             _ => false,
         });
         assert!(has_reference_error);
     }
 
-    /// 外部キー制約の参照先カラムが存在しない場合のテスト
+    /// Test validation of foreign key reference to non-existent column
     #[test]
     fn test_validate_foreign_key_column_not_found() {
         let mut schema = Schema::new("1.0".to_string());
@@ -198,17 +198,17 @@ mod schema_validator_tests {
         assert!(!result.is_valid());
         assert!(result.error_count() > 0);
 
-        // 参照エラーが含まれているはず
+        // Check for reference error in result
         let has_reference_error = result.errors.iter().any(|e| match e {
             ValidationError::Reference { message, .. } => {
-                message.contains("uuid") || message.contains("カラム")
+                message.contains("uuid") || message.contains("column")
             }
             _ => false,
         });
         assert!(has_reference_error);
     }
 
-    /// インデックスのカラムが存在しない場合のテスト
+    /// Test validation of index with non-existent column
     #[test]
     fn test_validate_index_column_not_found() {
         let mut schema = Schema::new("1.0".to_string());
@@ -237,17 +237,17 @@ mod schema_validator_tests {
         assert!(!result.is_valid());
         assert!(result.error_count() > 0);
 
-        // 参照エラーが含まれているはず
+        // Check for reference error in result
         let has_reference_error = result.errors.iter().any(|e| match e {
             ValidationError::Reference { message, .. } => {
-                message.contains("email") || message.contains("インデックス")
+                message.contains("email") || message.contains("Index")
             }
             _ => false,
         });
         assert!(has_reference_error);
     }
 
-    /// 制約のカラムが存在しない場合のテスト
+    /// Test validation of constraint with non-existent column
     #[test]
     fn test_validate_constraint_column_not_found() {
         let mut schema = Schema::new("1.0".to_string());
@@ -271,17 +271,17 @@ mod schema_validator_tests {
         assert!(!result.is_valid());
         assert!(result.error_count() > 0);
 
-        // 参照エラーが含まれているはず
+        // Check for reference error in result
         let has_reference_error = result.errors.iter().any(|e| match e {
             ValidationError::Reference { message, .. } => {
-                message.contains("nonexistent") || message.contains("カラム")
+                message.contains("nonexistent") || message.contains("column")
             }
             _ => false,
         });
         assert!(has_reference_error);
     }
 
-    /// 複数のエラーを検出するテスト
+    /// Test detection of multiple errors
     #[test]
     fn test_validate_multiple_errors() {
         let mut schema = Schema::new("1.0".to_string());

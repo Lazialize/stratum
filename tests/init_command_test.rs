@@ -151,10 +151,10 @@ mod init_command_tests {
         let result = handler.execute(&command);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("already initialized") || err_msg.contains("既に初期化"));
+        assert!(err_msg.contains("already initialized"));
     }
 
-    /// force=trueで初期化済みプロジェクトを再初期化
+    /// Re-initialize with force=true
     #[test]
     fn test_execute_already_initialized_with_force() {
         let temp_dir = TempDir::new().unwrap();

@@ -49,19 +49,19 @@ impl GenerateCommandHandler {
         let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
         if !config_path.exists() {
             return Err(anyhow!(
-                "設定ファイルが見つかりません: {:?}。まず `init` コマンドでプロジェクトを初期化してください。",
+                "Config file not found: {:?}. Please initialize the project first with the `init` command.",
                 config_path
             ));
         }
 
         let config = Config::from_file(&config_path)
-            .with_context(|| "設定ファイルの読み込みに失敗しました")?;
+            .with_context(|| "Failed to read config file")?;
 
         // スキーマディレクトリのパスを解決
         let schema_dir = command.project_path.join(&config.schema_dir);
         if !schema_dir.exists() {
             return Err(anyhow!(
-                "スキーマディレクトリが見つかりません: {:?}",
+                "Schema directory not found: {:?}",
                 schema_dir
             ));
         }
@@ -70,7 +70,7 @@ impl GenerateCommandHandler {
         let parser = SchemaParserService::new();
         let current_schema = parser
             .parse_schema_directory(&schema_dir)
-            .with_context(|| "スキーマの読み込みに失敗しました")?;
+            .with_context(|| "Failed to read schema")?;
 
         // 前回のスキーマ状態を読み込む（存在しない場合は空のスキーマ）
         let previous_schema = self.load_previous_schema(&command.project_path, &config)?;
@@ -82,7 +82,7 @@ impl GenerateCommandHandler {
         // 差分がない場合はエラー
         if diff.is_empty() {
             return Err(anyhow!(
-                "スキーマに変更がありません。マイグレーションファイルは生成されませんでした。"
+                "No schema changes found. No migration files were generated."
             ));
         }
 
@@ -99,25 +99,25 @@ impl GenerateCommandHandler {
         let sanitized_description = generator.sanitize_description(&description);
         let migration_name = generator.generate_migration_filename(&timestamp, &sanitized_description);
 
-        // マイグレーションディレクトリを作成
+        // Create migration directory
         let migrations_dir = command.project_path.join(&config.migrations_dir);
         let migration_dir = migrations_dir.join(&migration_name);
         fs::create_dir_all(&migration_dir)
-            .with_context(|| format!("マイグレーションディレクトリの作成に失敗しました: {:?}", migration_dir))?;
+            .with_context(|| format!("Failed to create migration directory: {:?}", migration_dir))?;
 
         // UP SQLを生成
         let up_sql = generator.generate_up_sql(&diff, config.dialect)
-            .map_err(|e| anyhow::anyhow!("UP SQLの生成に失敗しました: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to generate UP SQL: {}", e))?;
         let up_sql_path = migration_dir.join("up.sql");
         fs::write(&up_sql_path, up_sql)
-            .with_context(|| format!("up.sqlの書き込みに失敗しました: {:?}", up_sql_path))?;
+            .with_context(|| format!("Failed to write up.sql: {:?}", up_sql_path))?;
 
         // DOWN SQLを生成
         let down_sql = generator.generate_down_sql(&diff, config.dialect)
-            .map_err(|e| anyhow::anyhow!("DOWN SQLの生成に失敗しました: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to generate DOWN SQL: {}", e))?;
         let down_sql_path = migration_dir.join("down.sql");
         fs::write(&down_sql_path, down_sql)
-            .with_context(|| format!("down.sqlの書き込みに失敗しました: {:?}", down_sql_path))?;
+            .with_context(|| format!("Failed to write down.sql: {:?}", down_sql_path))?;
 
         // チェックサムを計算
         let checksum_calculator = SchemaChecksumService::new();
@@ -132,7 +132,7 @@ impl GenerateCommandHandler {
         );
         let meta_path = migration_dir.join(".meta.yaml");
         fs::write(&meta_path, metadata)
-            .with_context(|| format!("メタデータの書き込みに失敗しました: {:?}", meta_path))?;
+            .with_context(|| format!("Failed to write metadata: {:?}", meta_path))?;
 
         // 現在のスキーマを保存（次回の差分検出用）
         self.save_current_schema(&command.project_path, &config, &current_schema)?;
@@ -152,10 +152,10 @@ impl GenerateCommandHandler {
         }
 
         let content = fs::read_to_string(&snapshot_path)
-            .with_context(|| format!("スキーマスナップショットの読み込みに失敗しました: {:?}", snapshot_path))?;
+            .with_context(|| format!("Failed to read schema snapshot: {:?}", snapshot_path))?;
 
         serde_saphyr::from_str(&content)
-            .with_context(|| "スキーマスナップショットのパースに失敗しました")
+            .with_context(|| "Failed to parse schema snapshot")
     }
 
     /// 現在のスキーマを保存
@@ -165,10 +165,10 @@ impl GenerateCommandHandler {
             .join(".schema_snapshot.yaml");
 
         let yaml = serde_saphyr::to_string(schema)
-            .with_context(|| "スキーマのシリアライズに失敗しました")?;
+            .with_context(|| "Failed to serialize schema")?;
 
         fs::write(&snapshot_path, yaml)
-            .with_context(|| format!("スキーマスナップショットの書き込みに失敗しました: {:?}", snapshot_path))?;
+            .with_context(|| format!("Failed to write schema snapshot: {:?}", snapshot_path))?;
 
         Ok(())
     }

@@ -66,7 +66,7 @@ impl DatabaseConnectionService {
             .connect(&connection_string)
             .await
             .map_err(|e| DatabaseError::Connection {
-                message: format!("データベース接続プールの作成に失敗しました: {}", dialect),
+                message: format!("Failed to create database connection pool: {}", dialect),
                 cause: e.to_string(),
             })
     }
@@ -87,7 +87,7 @@ impl DatabaseConnectionService {
             .await
             .map(|_| ())
             .map_err(|e| DatabaseError::Connection {
-                message: "データベース接続テストに失敗しました".to_string(),
+                message: "Database connection test failed".to_string(),
                 cause: e.to_string(),
             })
     }

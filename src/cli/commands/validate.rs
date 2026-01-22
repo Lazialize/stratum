@@ -45,13 +45,13 @@ impl ValidateCommandHandler {
         let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
         if !config_path.exists() {
             return Err(anyhow!(
-                "設定ファイルが見つかりません: {:?}。まず `init` コマンドでプロジェクトを初期化してください。",
+                "Config file not found: {:?}. Please initialize the project first with the `init` command.",
                 config_path
             ));
         }
 
         let config = Config::from_file(&config_path)
-            .with_context(|| "設定ファイルの読み込みに失敗しました")?;
+            .with_context(|| "Failed to read config file")?;
 
         // スキーマディレクトリのパスを解決
         let schema_dir = if let Some(ref custom_dir) = command.schema_dir {
@@ -62,7 +62,7 @@ impl ValidateCommandHandler {
 
         if !schema_dir.exists() {
             return Err(anyhow!(
-                "スキーマディレクトリが見つかりません: {:?}",
+                "Schema directory not found: {:?}",
                 schema_dir
             ));
         }
@@ -71,7 +71,7 @@ impl ValidateCommandHandler {
         let parser = SchemaParserService::new();
         let schema = parser
             .parse_schema_directory(&schema_dir)
-            .with_context(|| "スキーマの解析に失敗しました")?;
+            .with_context(|| "Failed to parse schema")?;
 
         // スキーマを検証
         let validator = SchemaValidatorService::new();
@@ -91,11 +91,11 @@ impl ValidateCommandHandler {
     ) -> String {
         let mut output = String::new();
 
-        output.push_str("=== スキーマ検証結果 ===\n\n");
+        output.push_str("=== Schema Validation Results ===\n\n");
 
         // エラーの表示
         if !result.errors.is_empty() {
-            output.push_str(&format!("❌ {} 個のエラーが見つかりました:\n\n", result.errors.len()));
+            output.push_str(&format!("❌ {} error(s) found:\n\n", result.errors.len()));
 
             for (i, error) in result.errors.iter().enumerate() {
                 output.push_str(&format!("{}. {}\n", i + 1, error));
@@ -103,16 +103,16 @@ impl ValidateCommandHandler {
                 // エラーの場所を表示
                 if let Some(location) = self.get_error_location(error) {
                     if let Some(table) = &location.table {
-                        output.push_str(&format!("   場所: テーブル '{}'\n", table));
+                        output.push_str(&format!("   Location: table '{}'\n", table));
                         if let Some(column) = &location.column {
-                            output.push_str(&format!("         カラム '{}'\n", column));
+                            output.push_str(&format!("             column '{}'\n", column));
                         }
                     }
                 }
 
                 // 修正案を表示
                 if let Some(suggestion) = self.get_error_suggestion(error) {
-                    output.push_str(&format!("   修正案: {}\n", suggestion));
+                    output.push_str(&format!("   Suggestion: {}\n", suggestion));
                 }
 
                 output.push('\n');
@@ -120,20 +120,20 @@ impl ValidateCommandHandler {
         }
 
         // 統計情報の表示
-        output.push_str("\n=== 検証統計 ===\n");
+        output.push_str("\n=== Validation Statistics ===\n");
         let stats = self.calculate_statistics(schema);
-        output.push_str(&format!("テーブル数: {} 個\n", stats.0));
-        output.push_str(&format!("カラム数: {} 個\n", stats.1));
-        output.push_str(&format!("インデックス数: {} 個\n", stats.2));
-        output.push_str(&format!("制約数: {} 個\n", stats.3));
+        output.push_str(&format!("Tables: {}\n", stats.0));
+        output.push_str(&format!("Columns: {}\n", stats.1));
+        output.push_str(&format!("Indexes: {}\n", stats.2));
+        output.push_str(&format!("Constraints: {}\n", stats.3));
 
         // 結果サマリー
-        output.push_str("\n=== 結果 ===\n");
+        output.push_str("\n=== Result ===\n");
         if result.is_valid() {
-            output.push_str("✓ 検証が完了しました。エラーはありません。\n");
+            output.push_str("✓ Validation complete. No errors found.\n");
         } else {
             output.push_str(&format!(
-                "✗ 検証が完了しました。{} 個のエラーが見つかりました。\n",
+                "✗ Validation complete. {} error(s) found.\n",
                 result.errors.len()
             ));
         }
@@ -190,28 +190,28 @@ impl ValidateCommandHandler {
     ) -> String {
         let mut output = String::new();
 
-        output.push_str("=== スキーマ検証結果 ===\n\n");
+        output.push_str("=== Schema Validation Results ===\n\n");
 
         if error_count > 0 {
-            output.push_str(&format!("❌ {} 個のエラーが見つかりました\n", error_count));
+            output.push_str(&format!("❌ {} error(s) found\n", error_count));
         }
 
         if warning_count > 0 {
-            output.push_str(&format!("⚠️  {} 個の警告が見つかりました\n", warning_count));
+            output.push_str(&format!("⚠️  {} warning(s) found\n", warning_count));
         }
 
-        output.push_str("\n=== 検証統計 ===\n");
-        output.push_str(&format!("テーブル数: {} 個\n", table_count));
-        output.push_str(&format!("カラム数: {} 個\n", column_count));
-        output.push_str(&format!("インデックス数: {} 個\n", index_count));
-        output.push_str(&format!("制約数: {} 個\n", constraint_count));
+        output.push_str("\n=== Validation Statistics ===\n");
+        output.push_str(&format!("Tables: {}\n", table_count));
+        output.push_str(&format!("Columns: {}\n", column_count));
+        output.push_str(&format!("Indexes: {}\n", index_count));
+        output.push_str(&format!("Constraints: {}\n", constraint_count));
 
-        output.push_str("\n=== 結果 ===\n");
+        output.push_str("\n=== Result ===\n");
         if is_valid && error_count == 0 {
-            output.push_str("✓ 検証が完了しました。エラーはありません。\n");
+            output.push_str("✓ Validation complete. No errors found.\n");
         } else {
             output.push_str(&format!(
-                "✗ 検証が完了しました。{} 個のエラーが見つかりました。\n",
+                "✗ Validation complete. {} error(s) found.\n",
                 error_count
             ));
         }
@@ -242,14 +242,14 @@ mod tests {
 
         // エラーなしの場合
         let summary = handler.format_validation_summary(true, 0, 0, 2, 5, 3, 1);
-        assert!(summary.contains("検証が完了しました"));
-        assert!(summary.contains("2 個"));
-        assert!(summary.contains("エラーはありません"));
+        assert!(summary.contains("Validation complete"));
+        assert!(summary.contains("Tables: 2"));
+        assert!(summary.contains("No errors found"));
 
         // エラーありの場合
         let summary = handler.format_validation_summary(false, 3, 1, 2, 5, 3, 1);
-        assert!(summary.contains("3 個のエラー"));
-        assert!(summary.contains("1 個の警告"));
+        assert!(summary.contains("3 error(s) found"));
+        assert!(summary.contains("1 warning(s) found"));
     }
 
     #[test]

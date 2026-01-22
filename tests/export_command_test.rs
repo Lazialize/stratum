@@ -85,7 +85,7 @@ async fn test_export_no_config_file() {
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("設定ファイルが見つかりません"));
+        .contains("Config file not found"));
 }
 
 #[tokio::test]
@@ -102,7 +102,7 @@ async fn test_export_invalid_environment() {
     let result = handler.execute(&command).await;
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
-    assert!(error_msg.contains("環境") || error_msg.contains("設定が見つかりません"));
+    assert!(error_msg.contains("Environment") || error_msg.contains("not found"));
 }
 
 #[tokio::test]
@@ -177,7 +177,7 @@ async fn test_export_from_sqlite_database() {
     assert!(result.is_ok(), "Export failed: {:?}", result);
 
     let summary = result.unwrap();
-    assert!(summary.contains("エクスポート完了"));
+    assert!(summary.contains("Export Complete"));
     assert!(summary.contains("users"));
     assert!(summary.contains("posts"));
 
@@ -241,8 +241,8 @@ fn test_format_export_summary() {
 
     let summary = handler.format_export_summary(&table_names, output_path.as_ref());
 
-    assert!(summary.contains("エクスポート完了"));
-    assert!(summary.contains("エクスポートされたテーブル: 2 個"));
+    assert!(summary.contains("Export Complete"));
+    assert!(summary.contains("Exported tables: 2"));
     assert!(summary.contains("users"));
     assert!(summary.contains("posts"));
     assert!(summary.contains("/test/output"));
@@ -256,7 +256,7 @@ fn test_format_export_summary_stdout() {
 
     let summary = handler.format_export_summary(&table_names, None);
 
-    assert!(summary.contains("エクスポート完了"));
-    assert!(summary.contains("エクスポートされたテーブル: 1 個"));
-    assert!(summary.contains("標準出力"));
+    assert!(summary.contains("Export Complete"));
+    assert!(summary.contains("Exported tables: 1"));
+    assert!(summary.contains("stdout"));
 }

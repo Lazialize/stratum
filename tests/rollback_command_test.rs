@@ -117,7 +117,7 @@ async fn test_rollback_no_config_file() {
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("設定ファイルが見つかりません"));
+        .contains("Config file not found"));
 }
 
 #[tokio::test]
@@ -139,7 +139,7 @@ async fn test_rollback_no_migrations_dir() {
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("マイグレーションディレクトリが見つかりません"));
+        .contains("Migrations directory not found"));
 }
 
 #[tokio::test]
@@ -246,7 +246,7 @@ async fn test_rollback_single_migration_sqlite() {
     assert!(result.is_ok(), "Rollback failed: {:?}", result);
 
     let summary = result.unwrap();
-    assert!(summary.contains("ロールバック完了"));
+    assert!(summary.contains("Rollback complete"));
     assert!(summary.contains("20260121120000"));
 
     // マイグレーション履歴が削除されたことを確認
@@ -286,7 +286,7 @@ async fn test_generate_summary() {
     ];
 
     let summary = handler.generate_summary(&rolled_back);
-    assert!(summary.contains("2 個のマイグレーション"));
+    assert!(summary.contains("2 migration(s) rolled back"));
     assert!(summary.contains("20260121120001"));
     assert!(summary.contains("20260121120000"));
     assert!(summary.contains("80ms")); // 50 + 30

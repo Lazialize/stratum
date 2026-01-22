@@ -66,7 +66,7 @@ impl Config {
     /// YAMLファイルから設定を読み込む
     pub fn from_file(path: &std::path::Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
-            .with_context(|| format!("設定ファイルの読み込みに失敗しました: {:?}", path))?;
+            .with_context(|| format!("Failed to read config file: {:?}", path))?;
 
         Self::from_str(&content)
     }
@@ -80,7 +80,7 @@ impl Config {
     /// YAML文字列から設定を読み込む
     pub fn from_str(yaml: &str) -> Result<Self> {
         serde_saphyr::from_str(yaml)
-            .with_context(|| "設定ファイルのパースに失敗しました")
+            .with_context(|| "Failed to parse config file")
     }
 
     /// 指定された環境のデータベース設定を取得
@@ -90,7 +90,7 @@ impl Config {
             .cloned()
             .ok_or_else(|| {
                 anyhow!(
-                    "環境 '{}' が見つかりません。利用可能な環境: {:?}",
+                    "Environment '{}' not found. Available environments: {:?}",
                     environment,
                     self.environments.keys().collect::<Vec<_>>()
                 )
@@ -101,19 +101,19 @@ impl Config {
     pub fn validate(&self) -> Result<()> {
         // バージョンチェック
         if self.version.is_empty() {
-            return Err(anyhow!("設定ファイルのバージョンが指定されていません"));
+            return Err(anyhow!("Config file version is not specified"));
         }
 
         // 環境設定チェック
         if self.environments.is_empty() {
-            return Err(anyhow!("少なくとも1つの環境設定が必要です"));
+            return Err(anyhow!("At least one environment configuration is required"));
         }
 
         // 各環境のデータベース設定を検証
         for (env_name, db_config) in &self.environments {
             db_config
                 .validate()
-                .with_context(|| format!("環境 '{}' の設定が不正です", env_name))?;
+                .with_context(|| format!("Invalid config for environment '{}'", env_name))?;
         }
 
         Ok(())
@@ -179,16 +179,16 @@ impl DatabaseConfig {
         config
     }
 
-    /// データベース設定の妥当性を検証
+    /// Validate database configuration
     pub fn validate(&self) -> Result<()> {
         if self.database.is_empty() {
-            return Err(anyhow!("データベース名が指定されていません"));
+            return Err(anyhow!("Database name is not specified"));
         }
 
         Ok(())
     }
 
-    /// 接続文字列を生成（PostgreSQL用）
+    /// Generate connection string (for PostgreSQL)
     pub fn to_connection_string(&self, dialect: Dialect) -> String {
         match dialect {
             Dialect::PostgreSQL => {

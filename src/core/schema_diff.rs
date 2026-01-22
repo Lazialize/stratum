@@ -139,7 +139,7 @@ impl SchemaDiff {
                 .map(|(&name, _)| name)
                 .collect();
             return Err(format!(
-                "循環参照が検出されました。以下のテーブル間で循環参照があります: {:?}",
+                "Circular reference detected. The following tables have circular references: {:?}",
                 remaining
             ));
         }
@@ -583,9 +583,9 @@ mod tests {
 
         let result = diff.sort_added_tables_by_dependency();
 
-        // 循環参照はエラーになる
+        // Circular reference should result in an error
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("循環参照"));
+        assert!(result.unwrap_err().contains("Circular reference"));
     }
 
     #[test]

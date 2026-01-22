@@ -164,7 +164,7 @@ tables:
 
         assert!(result.is_err());
         let error_message = result.unwrap_err().to_string();
-        assert!(error_message.contains("ファイルが見つかりません") || error_message.contains("No such file"));
+        assert!(error_message.contains("File not found") || error_message.contains("No such file"));
     }
 
     /// 不正なYAML構文のテスト

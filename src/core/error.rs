@@ -10,8 +10,8 @@ use thiserror::Error;
 /// スキーマ定義ファイルの検証時に発生するエラーを表現します。
 #[derive(Debug, Clone, Error)]
 pub enum ValidationError {
-    /// 構文エラー
-    #[error("構文エラー: {message}{}", format_location_opt(.location))]
+    /// Syntax error
+    #[error("Syntax error: {message}{}", format_location_opt(.location))]
     Syntax {
         /// エラーメッセージ
         message: String,
@@ -21,8 +21,8 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    /// 参照エラー
-    #[error("参照エラー: {message}{}", format_location_opt(.location))]
+    /// Reference error
+    #[error("Reference error: {message}{}", format_location_opt(.location))]
     Reference {
         /// エラーメッセージ
         message: String,
@@ -32,8 +32,8 @@ pub enum ValidationError {
         suggestion: Option<String>,
     },
 
-    /// 制約エラー
-    #[error("制約エラー: {message}{}", format_location_opt(.location))]
+    /// Constraint error
+    #[error("Constraint error: {message}{}", format_location_opt(.location))]
     Constraint {
         /// エラーメッセージ
         message: String,
@@ -116,13 +116,13 @@ impl ErrorLocation {
         let mut parts = Vec::new();
 
         if let Some(table) = &self.table {
-            parts.push(format!("テーブル: {}", table));
+            parts.push(format!("table: {}", table));
         }
         if let Some(column) = &self.column {
-            parts.push(format!("カラム: {}", column));
+            parts.push(format!("column: {}", column));
         }
         if let Some(line) = self.line {
-            parts.push(format!("行: {}", line));
+            parts.push(format!("line: {}", line));
         }
 
         if parts.is_empty() {
@@ -190,7 +190,7 @@ impl Default for ValidationResult {
 ///
 /// マイグレーション適用時に発生するエラーを表現します。
 #[derive(Debug, Clone, Error)]
-#[error("マイグレーション {version} 失敗: {error}")]
+#[error("Migration {version} failed: {error}")]
 pub struct MigrationError {
     /// マイグレーションバージョン
     pub version: String,
@@ -235,8 +235,8 @@ impl MigrationError {
 /// データベース操作時に発生するエラーを表現します。
 #[derive(Debug, Error)]
 pub enum DatabaseError {
-    /// 接続エラー
-    #[error("データベース接続エラー: {message} (原因: {cause})")]
+    /// Connection error
+    #[error("Database connection error: {message} (cause: {cause})")]
     Connection {
         /// エラーメッセージ
         message: String,
@@ -244,8 +244,8 @@ pub enum DatabaseError {
         cause: String,
     },
 
-    /// クエリ実行エラー
-    #[error("クエリ実行エラー: {message}")]
+    /// Query execution error
+    #[error("Query execution error: {message}")]
     Query {
         /// エラーメッセージ
         message: String,
@@ -253,15 +253,15 @@ pub enum DatabaseError {
         sql: Option<String>,
     },
 
-    /// トランザクションエラー
-    #[error("トランザクションエラー: {message}")]
+    /// Transaction error
+    #[error("Transaction error: {message}")]
     Transaction {
         /// エラーメッセージ
         message: String,
     },
 
-    /// マイグレーションエラー
-    #[error("マイグレーションエラー: {error}")]
+    /// Migration error
+    #[error("Migration error: {error}")]
     Migration {
         /// マイグレーションエラー
         error: MigrationError,
@@ -295,15 +295,15 @@ impl DatabaseError {
 /// ファイル操作時に発生するエラーを表現します。
 #[derive(Debug, Error)]
 pub enum IoError {
-    /// ファイルが見つからない
-    #[error("ファイルが見つかりません: {path}")]
+    /// File not found
+    #[error("File not found: {path}")]
     FileNotFound {
         /// ファイルパス
         path: String,
     },
 
-    /// ファイル読み込みエラー
-    #[error("ファイルの読み込みに失敗しました: {path} (原因: {cause})")]
+    /// File read error
+    #[error("Failed to read file: {path} (cause: {cause})")]
     FileRead {
         /// ファイルパス
         path: String,
@@ -311,8 +311,8 @@ pub enum IoError {
         cause: String,
     },
 
-    /// ファイル書き込みエラー
-    #[error("ファイルの書き込みに失敗しました: {path} (原因: {cause})")]
+    /// File write error
+    #[error("Failed to write file: {path} (cause: {cause})")]
     FileWrite {
         /// ファイルパス
         path: String,
@@ -320,8 +320,8 @@ pub enum IoError {
         cause: String,
     },
 
-    /// ディレクトリ作成エラー
-    #[error("ディレクトリの作成に失敗しました: {path} (原因: {cause})")]
+    /// Directory creation error
+    #[error("Failed to create directory: {path} (cause: {cause})")]
     DirectoryCreate {
         /// ディレクトリパス
         path: String,
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn test_validation_error_syntax_creation() {
         let error = ValidationError::Syntax {
-            message: "無効な構文".to_string(),
+            message: "Invalid syntax".to_string(),
             location: None,
             suggestion: None,
         };
@@ -389,7 +389,7 @@ mod tests {
         assert!(result.is_valid());
 
         result.add_error(ValidationError::Syntax {
-            message: "エラー".to_string(),
+            message: "Error".to_string(),
             location: None,
             suggestion: None,
         });
@@ -400,14 +400,14 @@ mod tests {
 
     #[test]
     fn test_migration_error_creation() {
-        let error = MigrationError::new("20260121120000".to_string(), "失敗".to_string());
+        let error = MigrationError::new("20260121120000".to_string(), "Failed".to_string());
 
         assert_eq!(error.version(), "20260121120000");
         assert!(!error.has_sql_statement());
 
         let error_with_sql = MigrationError::with_sql(
             "20260121120000".to_string(),
-            "失敗".to_string(),
+            "Failed".to_string(),
             "CREATE TABLE users".to_string(),
         );
 
@@ -417,19 +417,19 @@ mod tests {
     #[test]
     fn test_database_error_variants() {
         let conn_error = DatabaseError::Connection {
-            message: "接続失敗".to_string(),
-            cause: "タイムアウト".to_string(),
+            message: "Connection failed".to_string(),
+            cause: "Timeout".to_string(),
         };
         assert!(conn_error.is_connection());
 
         let query_error = DatabaseError::Query {
-            message: "クエリ失敗".to_string(),
+            message: "Query failed".to_string(),
             sql: None,
         };
         assert!(query_error.is_query());
 
         let tx_error = DatabaseError::Transaction {
-            message: "トランザクション失敗".to_string(),
+            message: "Transaction failed".to_string(),
         };
         assert!(tx_error.is_transaction());
     }

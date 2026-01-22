@@ -48,20 +48,20 @@ impl StatusCommandHandler {
         let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
         if !config_path.exists() {
             return Err(anyhow!(
-                "設定ファイルが見つかりません: {:?}。まず `init` コマンドでプロジェクトを初期化してください。",
+                "Config file not found: {:?}. Please initialize the project first with the `init` command.",
                 config_path
             ));
         }
 
         let config = Config::from_file(&config_path)
-            .with_context(|| "設定ファイルの読み込みに失敗しました")?;
+            .with_context(|| "Failed to read config file")?;
 
         // マイグレーションディレクトリのパスを解決
         let migrations_dir = command.project_path.join(&config.migrations_dir);
 
         if !migrations_dir.exists() {
             return Err(anyhow!(
-                "マイグレーションディレクトリが見つかりません: {:?}",
+                "Migrations directory not found: {:?}",
                 migrations_dir
             ));
         }
@@ -77,13 +77,13 @@ impl StatusCommandHandler {
         // データベースに接続して適用済みマイグレーションを取得
         let db_config = config
             .get_database_config(&command.env)
-            .with_context(|| format!("環境 '{}' の設定が見つかりません", command.env))?;
+            .with_context(|| format!("Config for environment '{}' not found", command.env))?;
 
         let db_service = DatabaseConnectionService::new();
         let pool = db_service
             .create_pool(config.dialect, &db_config)
             .await
-            .with_context(|| "データベース接続に失敗しました")?;
+            .with_context(|| "Failed to connect to database")?;
 
         let migrator = DatabaseMigratorService::new();
 
@@ -91,20 +91,20 @@ impl StatusCommandHandler {
         migrator
             .create_migration_table(&pool, config.dialect)
             .await
-            .with_context(|| "マイグレーション履歴テーブルの作成に失敗しました")?;
+            .with_context(|| "Failed to create migration history table")?;
 
         // 適用済みマイグレーションを取得
         let applied_migrations = migrator
             .get_migrations(&pool)
             .await
-            .with_context(|| "適用済みマイグレーションの取得に失敗しました")?;
+            .with_context(|| "Failed to get applied migrations")?;
 
         // マイグレーション状態を生成
         let status_list = self.build_migration_status(&local_migrations, &applied_migrations);
 
         // 適用済み/未適用の数を計算
-        let applied_count = status_list.iter().filter(|(_, _, status)| status.contains("適用済み")).count();
-        let pending_count = status_list.iter().filter(|(_, _, status)| status.contains("未適用")).count();
+        let applied_count = status_list.iter().filter(|(_, _, status)| status.contains("Applied")).count();
+        let pending_count = status_list.iter().filter(|(_, _, status)| status.contains("Pending")).count();
 
         // フォーマット用に参照のベクタを作成
         let status_list_refs: Vec<(&str, &str, &str)> = status_list
@@ -121,7 +121,7 @@ impl StatusCommandHandler {
         let mut migrations = Vec::new();
 
         let entries = fs::read_dir(migrations_dir)
-            .with_context(|| format!("マイグレーションディレクトリの読み込みに失敗: {:?}", migrations_dir))?;
+            .with_context(|| format!("Failed to read migrations directory: {:?}", migrations_dir))?;
 
         for entry in entries {
             let entry = entry?;
@@ -135,7 +135,7 @@ impl StatusCommandHandler {
             let dir_name = path
                 .file_name()
                 .and_then(|n| n.to_str())
-                .ok_or_else(|| anyhow!("無効なディレクトリ名: {:?}", path))?;
+                .ok_or_else(|| anyhow!("Invalid directory name: {:?}", path))?;
 
             // フォーマット: {version}_{description}
             let parts: Vec<&str> = dir_name.splitn(2, '_').collect();
@@ -177,7 +177,7 @@ impl StatusCommandHandler {
                 return Ok(checksum);
             }
         }
-        Err(anyhow!("チェックサムがメタデータファイルに見つかりません"))
+        Err(anyhow!("Checksum not found in metadata file"))
     }
 
     /// マイグレーション状態のリストを構築
@@ -196,12 +196,12 @@ impl StatusCommandHandler {
             .map(|local| {
                 let status = if let Some(applied) = applied_map.get(local.version.as_str()) {
                     if applied.checksum == local.checksum {
-                        "適用済み".to_string()
+                        "Applied".to_string()
                     } else {
-                        "適用済み (チェックサム不一致)".to_string()
+                        "Applied (checksum mismatch)".to_string()
                     }
                 } else {
-                    "未適用".to_string()
+                    "Pending".to_string()
                 };
 
                 (local.version.as_str(), local.description.as_str(), status)
@@ -212,9 +212,9 @@ impl StatusCommandHandler {
     /// マイグレーションが存在しない場合のメッセージ
     fn format_no_migrations(&self) -> String {
         let mut output = String::new();
-        output.push_str("=== マイグレーション状態 ===\n\n");
-        output.push_str("マイグレーションが見つかりません。\n");
-        output.push_str("\n`generate` コマンドでマイグレーションを作成してください。\n");
+        output.push_str("=== Migration Status ===\n\n");
+        output.push_str("No migrations found.\n");
+        output.push_str("\nUse the `generate` command to create migrations.\n");
         output
     }
 
@@ -227,23 +227,23 @@ impl StatusCommandHandler {
     ) -> String {
         let mut output = String::new();
 
-        output.push_str("=== マイグレーション状態 ===\n\n");
+        output.push_str("=== Migration Status ===\n\n");
 
         // テーブルヘッダー
         output.push_str(&format!(
             "{:<20} {:<40} {:<30}\n",
-            "バージョン", "説明", "状態"
+            "Version", "Description", "Status"
         ));
         output.push_str(&format!("{}\n", "-".repeat(90)));
 
         // 各マイグレーションの状態
         for (version, description, status) in status_list {
-            let status_display = if status.contains("チェックサム不一致") {
-                "⚠️  適用済み (チェックサム不一致)"
-            } else if status.contains("適用済み") {
-                "✓ 適用済み"
+            let status_display = if status.contains("checksum mismatch") {
+                "⚠️  Applied (checksum mismatch)"
+            } else if status.contains("Applied") {
+                "✓ Applied"
             } else {
-                "  未適用"
+                "  Pending"
             };
 
             output.push_str(&format!(
@@ -255,16 +255,16 @@ impl StatusCommandHandler {
         // サマリー
         output.push_str(&format!("\n{}\n", "-".repeat(90)));
         output.push_str(&format!(
-            "合計: {} 個 (適用済み: {}, 未適用: {})\n",
+            "Total: {} (Applied: {}, Pending: {})\n",
             status_list.len(),
             applied_count,
             pending_count
         ));
 
         // チェックサム不一致の警告
-        if status_list.iter().any(|(_, _, s)| s.contains("チェックサム不一致")) {
-            output.push_str("\n⚠️  警告: チェックサムが一致しないマイグレーションがあります。\n");
-            output.push_str("   マイグレーションファイルが適用後に変更された可能性があります。\n");
+        if status_list.iter().any(|(_, _, s)| s.contains("checksum mismatch")) {
+            output.push_str("\n⚠️  Warning: Some migrations have mismatched checksums.\n");
+            output.push_str("   Migration files may have been modified after being applied.\n");
         }
 
         output
@@ -326,8 +326,8 @@ checksum: "test_checksum_123"
         let status_list = handler.build_migration_status(&local_migrations, &applied_migrations);
 
         assert_eq!(status_list.len(), 2);
-        assert_eq!(status_list[0].2, "適用済み");
-        assert_eq!(status_list[1].2, "未適用");
+        assert_eq!(status_list[0].2, "Applied");
+        assert_eq!(status_list[1].2, "Pending");
     }
 
     #[test]
@@ -349,7 +349,7 @@ checksum: "test_checksum_123"
         let status_list = handler.build_migration_status(&local_migrations, &applied_migrations);
 
         assert_eq!(status_list.len(), 1);
-        assert_eq!(status_list[0].2, "適用済み (チェックサム不一致)");
+        assert_eq!(status_list[0].2, "Applied (checksum mismatch)");
     }
 
     #[test]
@@ -357,20 +357,20 @@ checksum: "test_checksum_123"
         let handler = StatusCommandHandler::new();
 
         let status_list = vec![
-            ("20260121120000", "create_users", "適用済み"),
-            ("20260121120001", "create_posts", "未適用"),
+            ("20260121120000", "create_users", "Applied"),
+            ("20260121120001", "create_posts", "Pending"),
         ];
 
         let summary = handler.format_migration_status(&status_list, 1, 1);
 
-        assert!(summary.contains("マイグレーション状態"));
+        assert!(summary.contains("Migration Status"));
         assert!(summary.contains("20260121120000"));
         assert!(summary.contains("create_users"));
-        assert!(summary.contains("✓ 適用済み"));
-        assert!(summary.contains("未適用"));
-        assert!(summary.contains("合計: 2"));
-        assert!(summary.contains("適用済み: 1"));
-        assert!(summary.contains("未適用: 1"));
+        assert!(summary.contains("✓ Applied"));
+        assert!(summary.contains("Pending"));
+        assert!(summary.contains("Total: 2"));
+        assert!(summary.contains("Applied: 1"));
+        assert!(summary.contains("Pending: 1"));
     }
 
     #[test]
@@ -378,7 +378,7 @@ checksum: "test_checksum_123"
         let handler = StatusCommandHandler::new();
         let output = handler.format_no_migrations();
 
-        assert!(output.contains("マイグレーション状態"));
-        assert!(output.contains("マイグレーションが見つかりません"));
+        assert!(output.contains("Migration Status"));
+        assert!(output.contains("No migrations found"));
     }
 }

@@ -50,47 +50,47 @@ impl ExportCommandHandler {
         let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
         if !config_path.exists() {
             return Err(anyhow!(
-                "設定ファイルが見つかりません: {:?}。まず `init` コマンドでプロジェクトを初期化してください。",
+                "Config file not found: {:?}. Please initialize the project first with the `init` command.",
                 config_path
             ));
         }
 
         let config = Config::from_file(&config_path)
-            .with_context(|| "設定ファイルの読み込みに失敗しました")?;
+            .with_context(|| "Failed to read config file")?;
 
         // データベースに接続
         let db_config = config
             .get_database_config(&command.env)
-            .with_context(|| format!("環境 '{}' の設定が見つかりません", command.env))?;
+            .with_context(|| format!("Config for environment '{}' not found", command.env))?;
 
         let db_service = DatabaseConnectionService::new();
         let pool = db_service
             .create_pool(config.dialect, &db_config)
             .await
-            .with_context(|| "データベース接続に失敗しました")?;
+            .with_context(|| "Failed to connect to database")?;
 
         // データベースからスキーマ情報を取得
         let schema = self
             .extract_schema_from_database(&pool, config.dialect)
             .await
-            .with_context(|| "スキーマ情報の取得に失敗しました")?;
+            .with_context(|| "Failed to get schema information")?;
 
         // テーブル名のリストを取得
         let table_names: Vec<String> = schema.tables.keys().cloned().collect();
 
         // YAML形式にシリアライズ
         let yaml_content = serde_saphyr::to_string(&schema)
-            .with_context(|| "スキーマのYAMLシリアライズに失敗しました")?;
+            .with_context(|| "Failed to serialize schema to YAML")?;
 
         // 出力先に応じて処理
         if let Some(output_dir) = &command.output_dir {
             // ディレクトリに出力
             fs::create_dir_all(output_dir)
-                .with_context(|| format!("出力ディレクトリの作成に失敗: {:?}", output_dir))?;
+                .with_context(|| format!("Failed to create output directory: {:?}", output_dir))?;
 
             let output_file = output_dir.join("schema.yaml");
             fs::write(&output_file, yaml_content)
-                .with_context(|| format!("スキーマファイルの書き込みに失敗: {:?}", output_file))?;
+                .with_context(|| format!("Failed to write schema file: {:?}", output_file))?;
 
             Ok(self.format_export_summary(&table_names, Some(output_dir)))
         } else {
@@ -477,10 +477,10 @@ impl ExportCommandHandler {
     ) -> String {
         let mut output = String::new();
 
-        output.push_str("=== スキーマエクスポート完了 ===\n\n");
+        output.push_str("=== Schema Export Complete ===\n\n");
 
         output.push_str(&format!(
-            "エクスポートされたテーブル: {} 個\n\n",
+            "Exported tables: {}\n\n",
             table_names.len()
         ));
 
@@ -491,9 +491,9 @@ impl ExportCommandHandler {
         output.push('\n');
 
         if let Some(dir) = output_dir {
-            output.push_str(&format!("出力先: {:?}\n", dir.join("schema.yaml")));
+            output.push_str(&format!("Output: {:?}\n", dir.join("schema.yaml")));
         } else {
-            output.push_str("出力先: 標準出力\n");
+            output.push_str("Output: stdout\n");
         }
 
         output
@@ -552,8 +552,8 @@ mod tests {
 
         let summary = handler.format_export_summary(&table_names, output_path.as_ref());
 
-        assert!(summary.contains("エクスポート完了"));
-        assert!(summary.contains("2 個"));
+        assert!(summary.contains("Export Complete"));
+        assert!(summary.contains("2"));
         assert!(summary.contains("users"));
         assert!(summary.contains("posts"));
     }
