@@ -535,6 +535,10 @@ at your option.
 - Database access via [SQLx](https://github.com/launchbadge/sqlx)
 - YAML parsing with [serde-saphyr](https://github.com/Ethiraric/saphyr)
 
+## Note
+
+🤖 **This project was created with the assistance of AI (Claude, Anthropic).** The code, documentation, and architecture were developed through human-AI collaboration.
+
 ---
 
 Made with ❤️ by the Stratum Contributors
