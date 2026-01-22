@@ -453,4 +453,141 @@ mod sqlite_sql_generator_tests {
         assert!(sql.contains("FOREIGN KEY (user_id) REFERENCES users (id)"));
         assert!(sql.contains("FOREIGN KEY (category_id) REFERENCES categories (id)"));
     }
+
+    // Phase 4: 新規データ型のマッピングテスト
+
+    #[test]
+    fn test_map_column_type_decimal() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = Table::new("products".to_string());
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2,
+            },
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        // SQLite では DECIMAL を TEXT にマッピング（精度保証のため）
+        assert!(sql.contains("price TEXT NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_float() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = Table::new("measurements".to_string());
+        table.add_column(Column::new(
+            "value".to_string(),
+            ColumnType::FLOAT,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("value REAL NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_double() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = Table::new("coordinates".to_string());
+        table.add_column(Column::new(
+            "latitude".to_string(),
+            ColumnType::DOUBLE,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        // SQLite では FLOAT も DOUBLE も REAL にマッピング
+        assert!(sql.contains("latitude REAL NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_char() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = Table::new("codes".to_string());
+        table.add_column(Column::new(
+            "code".to_string(),
+            ColumnType::CHAR { length: 10 },
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("code TEXT NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_date() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = Table::new("events".to_string());
+        table.add_column(Column::new(
+            "event_date".to_string(),
+            ColumnType::DATE,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("event_date TEXT NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_time() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = Table::new("schedules".to_string());
+        table.add_column(Column::new(
+            "start_time".to_string(),
+            ColumnType::TIME {
+                with_time_zone: None,
+            },
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("start_time TEXT NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_blob() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = Table::new("documents".to_string());
+        table.add_column(Column::new(
+            "content".to_string(),
+            ColumnType::BLOB,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("content BLOB NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_uuid() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "user_id".to_string(),
+            ColumnType::UUID,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        // SQLite では UUID を TEXT にマッピング
+        assert!(sql.contains("user_id TEXT NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_jsonb() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = Table::new("settings".to_string());
+        table.add_column(Column::new(
+            "config".to_string(),
+            ColumnType::JSONB,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        // SQLite では JSONB を TEXT にマッピング
+        assert!(sql.contains("config TEXT NOT NULL"));
+    }
 }

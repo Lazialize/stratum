@@ -400,4 +400,149 @@ mod postgres_sql_generator_tests {
         assert!(sql.contains("UNIQUE (email)"));
         assert!(sql.contains("CHECK (status IN ('active', 'inactive'))"));
     }
+
+    // Phase 4: 新規データ型のマッピングテスト
+
+    #[test]
+    fn test_map_column_type_decimal() {
+        let generator = PostgresSqlGenerator::new();
+        let mut table = Table::new("products".to_string());
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2,
+            },
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("price NUMERIC(10, 2) NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_float() {
+        let generator = PostgresSqlGenerator::new();
+        let mut table = Table::new("measurements".to_string());
+        table.add_column(Column::new(
+            "value".to_string(),
+            ColumnType::FLOAT,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("value REAL NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_double() {
+        let generator = PostgresSqlGenerator::new();
+        let mut table = Table::new("coordinates".to_string());
+        table.add_column(Column::new(
+            "latitude".to_string(),
+            ColumnType::DOUBLE,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("latitude DOUBLE PRECISION NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_char() {
+        let generator = PostgresSqlGenerator::new();
+        let mut table = Table::new("codes".to_string());
+        table.add_column(Column::new(
+            "code".to_string(),
+            ColumnType::CHAR { length: 10 },
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("code CHAR(10) NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_date() {
+        let generator = PostgresSqlGenerator::new();
+        let mut table = Table::new("events".to_string());
+        table.add_column(Column::new(
+            "event_date".to_string(),
+            ColumnType::DATE,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("event_date DATE NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_time() {
+        let generator = PostgresSqlGenerator::new();
+        let mut table = Table::new("schedules".to_string());
+        
+        // TIME without timezone
+        table.add_column(Column::new(
+            "start_time".to_string(),
+            ColumnType::TIME {
+                with_time_zone: None,
+            },
+            false,
+        ));
+        
+        // TIME with timezone
+        table.add_column(Column::new(
+            "end_time".to_string(),
+            ColumnType::TIME {
+                with_time_zone: Some(true),
+            },
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("start_time TIME NOT NULL"));
+        assert!(sql.contains("end_time TIME WITH TIME ZONE NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_blob() {
+        let generator = PostgresSqlGenerator::new();
+        let mut table = Table::new("documents".to_string());
+        table.add_column(Column::new(
+            "content".to_string(),
+            ColumnType::BLOB,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("content BYTEA NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_uuid() {
+        let generator = PostgresSqlGenerator::new();
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "user_id".to_string(),
+            ColumnType::UUID,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("user_id UUID NOT NULL"));
+    }
+
+    #[test]
+    fn test_map_column_type_jsonb() {
+        let generator = PostgresSqlGenerator::new();
+        let mut table = Table::new("settings".to_string());
+        table.add_column(Column::new(
+            "config".to_string(),
+            ColumnType::JSONB,
+            false,
+        ));
+
+        let sql = generator.generate_create_table(&table);
+        assert!(sql.contains("config JSONB NOT NULL"));
+    }
 }

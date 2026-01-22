@@ -382,4 +382,233 @@ mod schema_validator_tests {
         assert!(result.is_valid());
         assert_eq!(result.error_count(), 0);
     }
+
+    // Phase 4: 新規データ型のバリデーションテスト
+
+    #[test]
+    fn test_decimal_scale_exceeds_precision() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        
+        // scale > precision のケース（エラー）
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 5,
+                scale: 10,
+            },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result.error_count() > 0);
+        assert!(result.errors[0].to_string().contains("scale"));
+        assert!(result.errors[0].to_string().contains("precision"));
+    }
+
+    #[test]
+    fn test_decimal_precision_exceeds_mysql_limit() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        
+        // precision > 65 のケース（MySQL制限）
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 100,
+                scale: 2,
+            },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result.error_count() > 0);
+        assert!(result.errors[0].to_string().contains("precision"));
+        assert!(result.errors[0].to_string().contains("65"));
+    }
+
+    #[test]
+    fn test_decimal_valid() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        
+        // 正常なDECIMAL定義
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2,
+            },
+            false,
+        ));
+        
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        assert!(result.is_valid());
+        assert_eq!(result.error_count(), 0);
+    }
+
+    #[test]
+    fn test_char_length_zero() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("codes".to_string());
+        
+        // length = 0 のケース（エラー）
+        table.add_column(Column::new(
+            "code".to_string(),
+            ColumnType::CHAR { length: 0 },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result.error_count() > 0);
+        assert!(result.errors[0].to_string().contains("length"));
+    }
+
+    #[test]
+    fn test_char_length_exceeds_limit() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("codes".to_string());
+        
+        // length > 255 のケース（エラー）
+        table.add_column(Column::new(
+            "code".to_string(),
+            ColumnType::CHAR { length: 300 },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result.error_count() > 0);
+        assert!(result.errors[0].to_string().contains("255"));
+    }
+
+    #[test]
+    fn test_char_valid() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("codes".to_string());
+        
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        
+        // 正常なCHAR定義
+        table.add_column(Column::new(
+            "code".to_string(),
+            ColumnType::CHAR { length: 10 },
+            false,
+        ));
+        
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        assert!(result.is_valid());
+        assert_eq!(result.error_count(), 0);
+    }
+
+    #[test]
+    fn test_sqlite_decimal_warning() {
+        use stratum::core::config::Dialect;
+        
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2,
+            },
+            false,
+        ));
+        
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let warnings = validator.generate_dialect_warnings(&schema, &Dialect::SQLite);
+
+        assert!(!warnings.is_empty());
+        assert!(warnings[0].message.contains("TEXT"));
+        assert!(warnings[0].message.contains("DECIMAL"));
+    }
+
+    #[test]
+    fn test_jsonb_fallback_warning() {
+        use stratum::core::config::Dialect;
+        
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("documents".to_string());
+        
+        table.add_column(Column::new(
+            "data".to_string(),
+            ColumnType::JSONB,
+            false,
+        ));
+        
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        
+        // MySQL での警告
+        let mysql_warnings = validator.generate_dialect_warnings(&schema, &Dialect::MySQL);
+        assert!(!mysql_warnings.is_empty());
+        assert!(mysql_warnings[0].message.contains("JSON"));
+        
+        // SQLite での警告
+        let sqlite_warnings = validator.generate_dialect_warnings(&schema, &Dialect::SQLite);
+        assert!(!sqlite_warnings.is_empty());
+        assert!(sqlite_warnings[0].message.contains("TEXT"));
+    }
 }

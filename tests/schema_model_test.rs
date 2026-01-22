@@ -298,4 +298,158 @@ check_expression: "age >= 0"
         assert_eq!(schema.get_table("users").unwrap().name, "users");
         assert!(schema.get_table("products").is_none());
     }
+
+    // Phase 4: 新規データ型のシリアライゼーションテスト
+
+    #[test]
+    fn test_decimal_type_serialization() {
+        let yaml = r#"
+kind: DECIMAL
+precision: 10
+scale: 2
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml).unwrap();
+        match col_type {
+            ColumnType::DECIMAL { precision, scale } => {
+                assert_eq!(precision, 10);
+                assert_eq!(scale, 2);
+            }
+            _ => panic!("Expected DECIMAL type"),
+        }
+
+        let serialized = serde_saphyr::to_string(&col_type).unwrap();
+        assert!(serialized.contains("DECIMAL"));
+        assert!(serialized.contains("precision: 10"));
+        assert!(serialized.contains("scale: 2"));
+    }
+
+    #[test]
+    fn test_float_type_serialization() {
+        let yaml = r#"
+kind: FLOAT
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml).unwrap();
+        match col_type {
+            ColumnType::FLOAT => {}
+            _ => panic!("Expected FLOAT type"),
+        }
+
+        let serialized = serde_saphyr::to_string(&col_type).unwrap();
+        assert!(serialized.contains("FLOAT"));
+    }
+
+    #[test]
+    fn test_double_type_serialization() {
+        let yaml = r#"
+kind: DOUBLE
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml).unwrap();
+        match col_type {
+            ColumnType::DOUBLE => {}
+            _ => panic!("Expected DOUBLE type"),
+        }
+
+        let serialized = serde_saphyr::to_string(&col_type).unwrap();
+        assert!(serialized.contains("DOUBLE"));
+    }
+
+    #[test]
+    fn test_char_type_serialization() {
+        let yaml = r#"
+kind: CHAR
+length: 50
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml).unwrap();
+        match col_type {
+            ColumnType::CHAR { length } => assert_eq!(length, 50),
+            _ => panic!("Expected CHAR type"),
+        }
+
+        let serialized = serde_saphyr::to_string(&col_type).unwrap();
+        assert!(serialized.contains("CHAR"));
+        assert!(serialized.contains("length: 50"));
+    }
+
+    #[test]
+    fn test_date_type_serialization() {
+        let yaml = r#"
+kind: DATE
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml).unwrap();
+        match col_type {
+            ColumnType::DATE => {}
+            _ => panic!("Expected DATE type"),
+        }
+
+        let serialized = serde_saphyr::to_string(&col_type).unwrap();
+        assert!(serialized.contains("DATE"));
+    }
+
+    #[test]
+    fn test_time_type_serialization() {
+        let yaml_without_tz = r#"
+kind: TIME
+with_time_zone: null
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml_without_tz).unwrap();
+        match col_type {
+            ColumnType::TIME { with_time_zone } => assert_eq!(with_time_zone, None),
+            _ => panic!("Expected TIME type"),
+        }
+
+        let yaml_with_tz = r#"
+kind: TIME
+with_time_zone: true
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml_with_tz).unwrap();
+        match col_type {
+            ColumnType::TIME { with_time_zone } => assert_eq!(with_time_zone, Some(true)),
+            _ => panic!("Expected TIME type"),
+        }
+    }
+
+    #[test]
+    fn test_blob_type_serialization() {
+        let yaml = r#"
+kind: BLOB
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml).unwrap();
+        match col_type {
+            ColumnType::BLOB => {}
+            _ => panic!("Expected BLOB type"),
+        }
+
+        let serialized = serde_saphyr::to_string(&col_type).unwrap();
+        assert!(serialized.contains("BLOB"));
+    }
+
+    #[test]
+    fn test_uuid_type_serialization() {
+        let yaml = r#"
+kind: UUID
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml).unwrap();
+        match col_type {
+            ColumnType::UUID => {}
+            _ => panic!("Expected UUID type"),
+        }
+
+        let serialized = serde_saphyr::to_string(&col_type).unwrap();
+        assert!(serialized.contains("UUID"));
+    }
+
+    #[test]
+    fn test_jsonb_type_serialization() {
+        let yaml = r#"
+kind: JSONB
+"#;
+        let col_type: ColumnType = serde_saphyr::from_str(yaml).unwrap();
+        match col_type {
+            ColumnType::JSONB => {}
+            _ => panic!("Expected JSONB type"),
+        }
+
+        let serialized = serde_saphyr::to_string(&col_type).unwrap();
+        assert!(serialized.contains("JSONB"));
+    }
 }

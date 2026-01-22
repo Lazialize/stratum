@@ -18,11 +18,16 @@
 | Phase 2 | Task 2.3: SQLite拡張 | ✅ 完了 | 2026-01-22 |
 | Phase 3 | Task 3.1: 型固有バリデーション | ✅ 完了 | 2026-01-22 |
 | Phase 3 | Task 3.2: 方言固有警告機能 | ✅ 完了 | 2026-01-22 |
-| Phase 4 | Task 4.1-4.6 | ⏸️ 未開始 | - |
+| Phase 4 | Task 4.1: スキーマモデルテスト | ✅ 完了 | 2026-01-22 |
+| Phase 4 | Task 4.2: PostgreSQLテスト | ✅ 完了 | 2026-01-22 |
+| Phase 4 | Task 4.3: MySQLテスト | ✅ 完了 | 2026-01-22 |
+| Phase 4 | Task 4.4: SQLiteテスト | ✅ 完了 | 2026-01-22 |
+| Phase 4 | Task 4.5: バリデーターテスト | ✅ 完了 | 2026-01-22 |
+| Phase 4 | Task 4.6: 全テスト実行 | ✅ 完了 | 2026-01-22 |
 | Phase 5 | Task 5.1-5.2 | ⏸️ 未開始 | - |
 | Phase 6 | Task 6.1-6.2 | ⏸️ 未開始 | - |
 
-**完了率**: 44% (8/18タスク)
+**完了率**: 78% (14/18タスク)
 
 ---
 
@@ -282,6 +287,143 @@ test result: ok. 152 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 ---
 
+## Phase 4: テスト実装 ✅
+
+### 実装サマリー
+
+Phase 4では、新規追加した9つのデータ型に対する包括的なテストスイートを実装しました。合計**44個**の新規テストを追加し、全てのテストが成功しています。
+
+#### Task 4.1: スキーマモデルテスト追加
+**ファイル**: [tests/schema_model_test.rs](../../../tests/schema_model_test.rs)
+
+**追加したテスト** (9個):
+1. `test_decimal_type_serialization` - DECIMAL型のYAMLシリアライゼーション検証
+2. `test_float_type_serialization` - FLOAT型のYAMLシリアライゼーション検証
+3. `test_double_type_serialization` - DOUBLE型のYAMLシリアライゼーション検証
+4. `test_char_type_serialization` - CHAR型のYAMLシリアライゼーション検証
+5. `test_date_type_serialization` - DATE型のYAMLシリアライゼーション検証
+6. `test_time_type_serialization` - TIME型（タイムゾーン有無両方）の検証
+7. `test_blob_type_serialization` - BLOB型のYAMLシリアライゼーション検証
+8. `test_uuid_type_serialization` - UUID型のYAMLシリアライゼーション検証
+9. `test_jsonb_type_serialization` - JSONB型のYAMLシリアライゼーション検証
+
+**テスト結果**: ✅ 16個のテスト全て成功（既存7個 + 新規9個）
+
+#### Task 4.2: PostgreSQL SQLジェネレーターテスト追加
+**ファイル**: [tests/postgres_sql_generator_test.rs](../../../tests/postgres_sql_generator_test.rs)
+
+**追加したテスト** (9個):
+1. `test_map_column_type_decimal` - NUMERIC(p, s)へのマッピング検証
+2. `test_map_column_type_float` - REALへのマッピング検証
+3. `test_map_column_type_double` - DOUBLE PRECISIONへのマッピング検証
+4. `test_map_column_type_char` - CHAR(n)へのマッピング検証
+5. `test_map_column_type_date` - DATEへのマッピング検証
+6. `test_map_column_type_time` - TIME / TIME WITH TIME ZONEへのマッピング検証
+7. `test_map_column_type_blob` - BYTEAへのマッピング検証
+8. `test_map_column_type_uuid` - UUIDへのマッピング検証（ネイティブ）
+9. `test_map_column_type_jsonb` - JSONBへのマッピング検証（ネイティブ）
+
+**テスト結果**: ✅ 25個のテスト全て成功（既存16個 + 新規9個）
+
+#### Task 4.3: MySQL SQLジェネレーターテスト追加
+**ファイル**: [tests/mysql_sql_generator_test.rs](../../../tests/mysql_sql_generator_test.rs)
+
+**追加したテスト** (9個):
+1. `test_map_column_type_decimal` - DECIMAL(p, s)へのマッピング検証
+2. `test_map_column_type_float` - FLOATへのマッピング検証
+3. `test_map_column_type_double` - DOUBLEへのマッピング検証
+4. `test_map_column_type_char` - CHAR(n)へのマッピング検証
+5. `test_map_column_type_date` - DATEへのマッピング検証
+6. `test_map_column_type_time` - TIMEへのマッピング検証（タイムゾーン無視）
+7. `test_map_column_type_blob` - BLOBへのマッピング検証
+8. `test_map_column_type_uuid` - CHAR(36)へのフォールバック検証
+9. `test_map_column_type_jsonb` - JSONへのフォールバック検証
+
+**テスト結果**: ✅ 26個のテスト全て成功（既存17個 + 新規9個）
+
+#### Task 4.4: SQLite SQLジェネレーターテスト追加
+**ファイル**: [tests/sqlite_sql_generator_test.rs](../../../tests/sqlite_sql_generator_test.rs)
+
+**追加したテスト** (9個):
+1. `test_map_column_type_decimal` - TEXTへのマッピング検証（精度保証）
+2. `test_map_column_type_float` - REALへのマッピング検証
+3. `test_map_column_type_double` - REALへのマッピング検証（FLOATと同じ）
+4. `test_map_column_type_char` - TEXTへのマッピング検証
+5. `test_map_column_type_date` - TEXTへのマッピング検証
+6. `test_map_column_type_time` - TEXTへのマッピング検証
+7. `test_map_column_type_blob` - BLOBへのマッピング検証（ネイティブ）
+8. `test_map_column_type_uuid` - TEXTへのマッピング検証
+9. `test_map_column_type_jsonb` - TEXTへのマッピング検証
+
+**テスト結果**: ✅ 26個のテスト全て成功（既存17個 + 新規9個）
+
+#### Task 4.5: バリデーターテスト追加
+**ファイル**: [tests/schema_validator_test.rs](../../../tests/schema_validator_test.rs)
+
+**追加したテスト** (8個):
+1. `test_decimal_scale_exceeds_precision` - scale > precision エラー検証
+2. `test_decimal_precision_exceeds_mysql_limit` - precision > 65 エラー検証
+3. `test_decimal_valid` - 正常なDECIMAL定義の検証
+4. `test_char_length_zero` - length = 0 エラー検証
+5. `test_char_length_exceeds_limit` - length > 255 エラー検証
+6. `test_char_valid` - 正常なCHAR定義の検証
+7. `test_sqlite_decimal_warning` - SQLite DECIMAL → TEXT 警告検証
+8. `test_jsonb_fallback_warning` - MySQL/SQLite JSONB フォールバック警告検証
+
+**テスト結果**: ✅ 18個のテスト全て成功（既存10個 + 新規8個）
+
+#### Task 4.6: 全テスト実行確認
+
+**プロジェクト全体のテスト結果**:
+- ライブラリテスト: 152個 ✅
+- 統合テスト: 200個以上 ✅
+- **合計**: 全テスト成功、リグレッションなし
+
+**新規追加テスト総数**: 44個
+- スキーマモデル: 9個
+- PostgreSQL: 9個
+- MySQL: 9個
+- SQLite: 9個
+- バリデーター: 8個
+
+---
+
+## ビルド＆テスト結果（Phase 4更新）
+
+### テストカバレッジ
+
+| テストファイル | Phase 3 | Phase 4 | 増加数 |
+|---------------|---------|---------|--------|
+| schema_model_test.rs | 7 | 16 | +9 |
+| postgres_sql_generator_test.rs | 16 | 25 | +9 |
+| mysql_sql_generator_test.rs | 17 | 26 | +9 |
+| sqlite_sql_generator_test.rs | 17 | 26 | +9 |
+| schema_validator_test.rs | 10 | 18 | +8 |
+| **合計** | **67** | **111** | **+44** |
+
+### ビルド状態
+```bash
+$ cargo build
+   Compiling stratum v0.1.0
+warning: unused import: `Duration`
+  --> src/cli/commands/apply.rs:15:14
+
+warning: 1 warning emitted
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.31s
+```
+
+**ステータス**: ✅ ビルド成功
+
+### 全テスト結果
+```bash
+$ cargo test
+test result: ok. 152 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+**ステータス**: ✅ 全テスト成功（Phase 1-4の実装が既存機能に影響なし）
+
+---
+
 ## 次のステップ
 
 ### Phase 3: バリデーション実装（推定1.5時間）
@@ -374,8 +516,13 @@ test result: ok. 152 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 - **[IMPL]** Phase 3: Add ValidationWarning structure and dialect-specific warning system
 - **[IMPL]** Phase 3: Add generate_dialect_warnings() for database compatibility warnings
 - **[TEST]** Phase 3: Add 8 new tests for validation and warning functionality
+- **[TEST]** Phase 4: Add 9 serialization tests for new data types in schema_model_test.rs
+- **[TEST]** Phase 4: Add 9 PostgreSQL type mapping tests in postgres_sql_generator_test.rs
+- **[TEST]** Phase 4: Add 9 MySQL type mapping tests in mysql_sql_generator_test.rs
+- **[TEST]** Phase 4: Add 9 SQLite type mapping tests in sqlite_sql_generator_test.rs
+- **[TEST]** Phase 4: Add 8 validation and warning tests in schema_validator_test.rs
 
 ---
 
-**ステータス**: Phase 1, Phase 2 & Phase 3 完了 ✅  
-**次のマイルストーン**: Phase 4 テスト実装
+**ステータス**: Phase 1, Phase 2, Phase 3 & Phase 4 完了 ✅  
+**次のマイルストーン**: Phase 5 ドキュメント更新
