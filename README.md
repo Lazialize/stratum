@@ -316,15 +316,35 @@ Stratum uses YAML for schema definitions. Each table is defined with its columns
 
 Supported column types:
 
+**Numeric Types:**
 - `INTEGER` - Integer numbers
-  - `precision`: Optional bit size
+  - `precision`: Optional bit size (e.g., 16, 32, 64)
+- `DECIMAL` - Fixed-point decimal numbers
+  - `precision`: Total number of digits (required)
+  - `scale`: Number of decimal places (required)
+- `FLOAT` - Single-precision floating-point numbers
+- `DOUBLE` - Double-precision floating-point numbers
+
+**String Types:**
 - `VARCHAR` - Variable-length strings
   - `length`: Maximum length (required)
+- `CHAR` - Fixed-length strings
+  - `length`: Fixed length (required, 1-255)
 - `TEXT` - Long text
-- `BOOLEAN` - Boolean values
+
+**Date/Time Types:**
+- `DATE` - Date only (no time)
+- `TIME` - Time only (no date)
+  - `with_time_zone`: Optional timezone support
 - `TIMESTAMP` - Date and time
   - `with_time_zone`: Optional timezone support
+
+**Other Types:**
+- `BOOLEAN` - Boolean values (true/false)
+- `BLOB` - Binary large objects (images, files, etc.)
+- `UUID` - Universally unique identifier
 - `JSON` - JSON data
+- `JSONB` - Binary JSON (PostgreSQL optimized, falls back to JSON on other databases)
 
 ### Constraints
 
@@ -338,6 +358,122 @@ Supported constraints:
   - `referenced_columns`: Referenced column names
 - `UNIQUE` - Unique constraint
   - `columns`: List of column names
+
+### Database Dialect Type Mapping
+
+Stratum automatically maps column types to the appropriate native type for each database:
+
+| Stratum Type | PostgreSQL | MySQL | SQLite |
+|--------------|------------|-------|--------|
+| INTEGER | INTEGER/SERIAL | INT | INTEGER |
+| DECIMAL | NUMERIC(p,s) | DECIMAL(p,s) | TEXT |
+| FLOAT | REAL | FLOAT | REAL |
+| DOUBLE | DOUBLE PRECISION | DOUBLE | REAL |
+| VARCHAR | VARCHAR(n) | VARCHAR(n) | TEXT |
+| CHAR | CHAR(n) | CHAR(n) | TEXT |
+| TEXT | TEXT | TEXT | TEXT |
+| DATE | DATE | DATE | TEXT |
+| TIME | TIME [WITH TZ] | TIME | TEXT |
+| TIMESTAMP | TIMESTAMP [WITH TZ] | TIMESTAMP | TEXT |
+| BOOLEAN | BOOLEAN | BOOLEAN | INTEGER |
+| BLOB | BYTEA | BLOB | BLOB |
+| UUID | UUID | CHAR(36) | TEXT |
+| JSON | JSON | JSON | TEXT |
+| JSONB | JSONB | JSON | TEXT |
+
+**Note:** SQLite has limited native type support. Stratum stores some types as TEXT to preserve precision (e.g., DECIMAL, DATE).
+
+### Column Type Examples
+
+Here are examples of how to use each column type in your schema:
+
+```yaml
+version: "1.0"
+tables:
+  products:
+    name: products
+    columns:
+      # Numeric types
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        auto_increment: true
+      - name: price
+        type:
+          kind: DECIMAL
+          precision: 10
+          scale: 2
+        nullable: false
+      - name: weight
+        type:
+          kind: FLOAT
+        nullable: true
+      - name: latitude
+        type:
+          kind: DOUBLE
+        nullable: true
+
+      # String types
+      - name: name
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: false
+      - name: country_code
+        type:
+          kind: CHAR
+          length: 2
+        nullable: false
+      - name: description
+        type:
+          kind: TEXT
+        nullable: true
+
+      # Date/Time types
+      - name: manufacturing_date
+        type:
+          kind: DATE
+        nullable: true
+      - name: opening_time
+        type:
+          kind: TIME
+          with_time_zone: false
+        nullable: true
+      - name: created_at
+        type:
+          kind: TIMESTAMP
+          with_time_zone: true
+        nullable: false
+
+      # Other types
+      - name: is_active
+        type:
+          kind: BOOLEAN
+        nullable: false
+        default_value: "true"
+      - name: thumbnail
+        type:
+          kind: BLOB
+        nullable: true
+      - name: external_id
+        type:
+          kind: UUID
+        nullable: false
+      - name: attributes
+        type:
+          kind: JSON
+        nullable: true
+      - name: metadata
+        type:
+          kind: JSONB
+        nullable: true
+
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id
+```
 
 ### Example Schema
 

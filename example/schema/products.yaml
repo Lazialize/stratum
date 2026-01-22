@@ -1,0 +1,151 @@
+version: "1.0"
+tables:
+  products:
+    name: products
+    columns:
+      # INTEGER - Primary key with auto-increment
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        auto_increment: true
+
+      # VARCHAR - Product name
+      - name: name
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: false
+
+      # TEXT - Long description
+      - name: description
+        type:
+          kind: TEXT
+        nullable: true
+
+      # DECIMAL - Price with 2 decimal places
+      - name: price
+        type:
+          kind: DECIMAL
+          precision: 10
+          scale: 2
+        nullable: false
+
+      # FLOAT - Weight in kg (approximate)
+      - name: weight_kg
+        type:
+          kind: FLOAT
+        nullable: true
+
+      # DOUBLE - GPS latitude coordinate
+      - name: warehouse_latitude
+        type:
+          kind: DOUBLE
+        nullable: true
+
+      # DOUBLE - GPS longitude coordinate
+      - name: warehouse_longitude
+        type:
+          kind: DOUBLE
+        nullable: true
+
+      # CHAR - Fixed-length country code (ISO 3166-1 alpha-2)
+      - name: country_code
+        type:
+          kind: CHAR
+          length: 2
+        nullable: false
+
+      # DATE - Manufacturing date
+      - name: manufacturing_date
+        type:
+          kind: DATE
+        nullable: true
+
+      # TIME - Store opening time
+      - name: store_opening_time
+        type:
+          kind: TIME
+          with_time_zone: false
+        nullable: true
+
+      # TIMESTAMP - Record creation timestamp
+      - name: created_at
+        type:
+          kind: TIMESTAMP
+          with_time_zone: true
+        nullable: false
+
+      # TIMESTAMP - Last update timestamp
+      - name: updated_at
+        type:
+          kind: TIMESTAMP
+          with_time_zone: true
+        nullable: false
+
+      # BOOLEAN - Product availability status
+      - name: is_active
+        type:
+          kind: BOOLEAN
+        nullable: false
+        default_value: "true"
+
+      # BLOB - Product thumbnail image
+      - name: thumbnail
+        type:
+          kind: BLOB
+        nullable: true
+
+      # UUID - External system identifier
+      - name: external_id
+        type:
+          kind: UUID
+        nullable: false
+
+      # JSON - Product attributes (compatible with all databases)
+      - name: attributes
+        type:
+          kind: JSON
+        nullable: true
+
+      # JSONB - Product metadata (PostgreSQL optimized, falls back to JSON/TEXT)
+      - name: metadata
+        type:
+          kind: JSONB
+        nullable: true
+
+    indexes:
+      # Index on product name for searching
+      - name: idx_products_name
+        columns:
+          - name
+        unique: false
+
+      # Unique index on external_id
+      - name: idx_products_external_id
+        columns:
+          - external_id
+        unique: true
+
+      # Index on country_code for filtering
+      - name: idx_products_country
+        columns:
+          - country_code
+        unique: false
+
+      # Index on is_active for filtering active products
+      - name: idx_products_active
+        columns:
+          - is_active
+        unique: false
+
+    constraints:
+      # Primary key constraint
+      - type: PRIMARY_KEY
+        columns:
+          - id
+
+      # Unique constraint on external_id
+      - type: UNIQUE
+        columns:
+          - external_id

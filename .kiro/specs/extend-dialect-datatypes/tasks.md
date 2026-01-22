@@ -314,27 +314,28 @@
 
 ---
 
-### Task 4.5: バリデーターテスト追加
-**要件**: REQ-9, REQ-10  
-**ファイル**: `tests/schema_validator_test.rs`  
-**優先度**: High  
+### Task 4.5: バリデーターテスト追加 ✅
+**要件**: REQ-9, REQ-10
+**ファイル**: `tests/schema_validator_test.rs`
+**優先度**: High
 **推定時間**: 30分
+**完了日**: 2026-01-22
 
 **作業内容**:
-- [ ] DECIMALバリデーションテスト:
+- [x] DECIMALバリデーションテスト:
   - `test_decimal_scale_exceeds_precision`
   - `test_decimal_precision_exceeds_mysql_limit`
   - `test_decimal_valid`
-- [ ] CHARバリデーションテスト:
+- [x] CHARバリデーションテスト:
   - `test_char_length_zero`
   - `test_char_length_exceeds_limit`
   - `test_char_valid`
-- [ ] 警告テスト:
+- [x] 警告テスト:
   - `test_sqlite_decimal_warning`
   - `test_jsonb_fallback_warning`
 
 **受け入れ条件**:
-- [ ] すべてのテストがパス
+- [x] すべてのテストがパス
 
 ---
 
