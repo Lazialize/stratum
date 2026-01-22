@@ -171,14 +171,19 @@ use serde::{Deserialize, Serialize};
 ### Current Examples
 - `users.yaml`: Basic table with constraints
 - `products.yaml`: Comprehensive example with all 15 data types
+- `dialect_specific_example.yaml`: 方言別の型・制約の差分を示す例
+
+### Dialect-Specific Examples
+- `*_specific_types.yml`: 方言固有の型マッピングを単独で示す例
+- `migrations/`: サンプルのマイグレーション構成（検証や説明用途）
 
 ## Directory Exclusions
 
 ### Version Control (`.gitignore`)
-- Build artifacts: `target/`, `Cargo.lock` (for libraries)
+- Build artifacts: `target/`, `Cargo.lock`
 - IDE files: `.vscode/`, `.idea/`
-- Local configs: `.stratum.yaml` (if containing sensitive data)
-- Test artifacts: `*.db`, `migrations/` (if local-only)
+- Local logs/snapshots: `.stratum/logs/`, `.stratum/snapshots/`
+- Distribution artifacts: `dist/`
 
 ### Documentation Exclusions
 - Temporary files: `.DS_Store`, `*.swp`
@@ -192,3 +197,8 @@ use serde::{Deserialize, Serialize};
 3. **Testability**: Core/Services are pure, Adapters are mockable via traits
 4. **Feature Modularity**: Commands, generators, validators are independently testable
 5. **Example-Driven**: Examples serve as both documentation and smoke tests
+
+---
+
+updated_at: 2026-01-22  
+change_note: 例示ファイルの追加（方言別・マイグレーション例）と`.gitignore`実態の反映
