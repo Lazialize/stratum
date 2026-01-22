@@ -43,6 +43,8 @@ async-trait = "0.1"                                # 非同期トレイト定義
 # Testing utilities
 tokio-test = "0.4"
 tempfile = "3"  # 一時ファイル/ディレクトリ作成
+testcontainers = "0.26"  # コンテナベースの統合テスト
+testcontainers-modules = { version = "0.14", features = ["postgres", "mysql"] }  # データベースモジュール
 
 # リリースビルドの最適化設定
 [profile.release]
