@@ -1,0 +1,140 @@
+# SQLite-specific column types example
+#
+# SQLite has a flexible type system and doesn't have many dialect-specific types.
+# However, it has some special behaviors with certain type combinations.
+#
+# Note: SQLite stores most types as TEXT, INTEGER, REAL, or BLOB.
+# The common column types defined in Stratum work well with SQLite.
+
+version: "1.0"
+tables:
+  # Example table using SQLite best practices
+  notes:
+    name: notes
+    columns:
+      # INTEGER PRIMARY KEY - Special in SQLite (auto-incrementing ROWID)
+      # This is the recommended pattern for auto-incrementing primary keys in SQLite
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        default_value: null
+        auto_increment: true
+
+      # Common VARCHAR type (stored as TEXT in SQLite)
+      - name: title
+        type:
+          kind: VARCHAR
+          length: 200
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # Common TEXT type (native SQLite type)
+      - name: content
+        type:
+          kind: TEXT
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # Common INTEGER type
+      - name: view_count
+        type:
+          kind: INTEGER
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # Common BOOLEAN type (stored as INTEGER 0/1 in SQLite)
+      - name: is_pinned
+        type:
+          kind: BOOLEAN
+        nullable: false
+        default_value: "false"
+        auto_increment: null
+
+      # Common TIMESTAMP type (stored as TEXT in SQLite)
+      - name: created_at
+        type:
+          kind: TIMESTAMP
+          with_time_zone: false
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id
+
+    indexes:
+      - name: idx_notes_created_at
+        columns:
+          - created_at
+        unique: false
+
+  # Example table demonstrating SQLite's type affinity
+  documents:
+    name: documents
+    columns:
+      # INTEGER PRIMARY KEY (auto-incrementing)
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        default_value: null
+        auto_increment: true
+
+      # Common VARCHAR type
+      - name: filename
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # Common BLOB type (native SQLite type for binary data)
+      - name: file_data
+        type:
+          kind: BLOB
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # Common INTEGER type
+      - name: file_size
+        type:
+          kind: INTEGER
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # Common REAL type (SQLite's floating-point type)
+      - name: compression_ratio
+        type:
+          kind: FLOAT
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # Common TEXT type (can store JSON as text in SQLite)
+      - name: metadata
+        type:
+          kind: JSON
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id
+
+# Note: SQLite doesn't require dialect-specific types for most use cases.
+# The common types defined in Stratum (INTEGER, TEXT, REAL, BLOB) map
+# directly to SQLite's native type system.
+#
+# For more information on SQLite's type system, see:
+# https://www.sqlite.org/datatype3.html

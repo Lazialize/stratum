@@ -1,0 +1,122 @@
+# PostgreSQL-specific column types example
+#
+# This schema demonstrates PostgreSQL-specific column types that are not available
+# in other databases. These types are validated at database execution time.
+
+version: "1.0"
+tables:
+  # Example table using PostgreSQL-specific types
+  network_logs:
+    name: network_logs
+    columns:
+      # SERIAL - Auto-incrementing integer (equivalent to INTEGER + SEQUENCE)
+      - name: id
+        type:
+          kind: SERIAL
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # INET - IPv4 or IPv6 network address
+      - name: client_ip
+        type:
+          kind: INET
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # CIDR - IPv4 or IPv6 network specification
+      - name: subnet
+        type:
+          kind: CIDR
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # VARBIT - Variable-length bit string
+      - name: flags
+        type:
+          kind: VARBIT
+          length: 16
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # Common VARCHAR type (works on all databases)
+      - name: user_agent
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # Common TIMESTAMP type with timezone
+      - name: created_at
+        type:
+          kind: TIMESTAMP
+          with_time_zone: true
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id
+
+    indexes:
+      - name: idx_network_logs_client_ip
+        columns:
+          - client_ip
+        unique: false
+
+  # Example table using PostgreSQL integer types
+  statistics:
+    name: statistics
+    columns:
+      # BIGSERIAL - Auto-incrementing big integer (64-bit)
+      - name: id
+        type:
+          kind: BIGSERIAL
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # INT2 - 2-byte integer (-32768 to 32767)
+      - name: small_count
+        type:
+          kind: INT2
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # INT4 - 4-byte integer (standard integer)
+      - name: medium_count
+        type:
+          kind: INT4
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # INT8 - 8-byte integer (big integer)
+      - name: large_count
+        type:
+          kind: INT8
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # Common VARCHAR type
+      - name: description
+        type:
+          kind: VARCHAR
+          length: 100
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id

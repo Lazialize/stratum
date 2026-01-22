@@ -21,6 +21,16 @@ Use common types when:
 - The common type meets your requirements
 - You might switch databases in the future
 
+## YAML Schema Reference
+
+For IDE auto-completion and validation, Stratum provides a JSON Schema file that defines all supported column types (both common and dialect-specific):
+
+- **Schema File**: [`resources/schemas/stratum-schema.json`](../resources/schemas/stratum-schema.json)
+- **Format**: JSON Schema Draft 2020-12
+- **Usage**: Configure your IDE to use this schema for YAML files in the `schema/` directory
+
+See the main [README](../README.md#ide-setup-for-yaml-completion) for IDE setup instructions.
+
 ## PostgreSQL-Specific Types
 
 ### Auto-Incrementing Types

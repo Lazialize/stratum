@@ -1,0 +1,139 @@
+# MySQL-specific column types example
+#
+# This schema demonstrates MySQL-specific column types that are not available
+# in other databases. These types are validated at database execution time.
+
+version: "1.0"
+tables:
+  # Example table using MySQL-specific types
+  users:
+    name: users
+    columns:
+      # Common INTEGER with auto_increment (works on all databases)
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        default_value: null
+        auto_increment: true
+
+      # Common VARCHAR type
+      - name: username
+        type:
+          kind: VARCHAR
+          length: 50
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # ENUM - String object with a value chosen from a list
+      - name: status
+        type:
+          kind: ENUM
+          values: ["active", "inactive", "pending", "banned"]
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # TINYINT - Very small integer (0 to 255 when unsigned)
+      - name: age
+        type:
+          kind: TINYINT
+          unsigned: true
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # SET - Set of string values (can have multiple)
+      - name: permissions
+        type:
+          kind: SET
+          values: ["read", "write", "execute", "delete", "admin"]
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # Common TIMESTAMP type
+      - name: created_at
+        type:
+          kind: TIMESTAMP
+          with_time_zone: false
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id
+
+    indexes:
+      - name: idx_users_username
+        columns:
+          - username
+        unique: true
+      - name: idx_users_status
+        columns:
+          - status
+        unique: false
+
+  # Example table using MySQL integer types
+  products:
+    name: products
+    columns:
+      # Common INTEGER with auto_increment
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        default_value: null
+        auto_increment: true
+
+      # Common VARCHAR type
+      - name: name
+        type:
+          kind: VARCHAR
+          length: 100
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # MEDIUMINT - Medium-sized integer
+      - name: stock_quantity
+        type:
+          kind: MEDIUMINT
+          unsigned: true
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # YEAR - Year in 4-digit format
+      - name: manufacture_year
+        type:
+          kind: YEAR
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+      # Common DECIMAL type
+      - name: price
+        type:
+          kind: DECIMAL
+          precision: 10
+          scale: 2
+        nullable: false
+        default_value: null
+        auto_increment: null
+
+      # Common TEXT type
+      - name: description
+        type:
+          kind: TEXT
+        nullable: true
+        default_value: null
+        auto_increment: null
+
+    constraints:
+      - type: PRIMARY_KEY
+        columns:
+          - id

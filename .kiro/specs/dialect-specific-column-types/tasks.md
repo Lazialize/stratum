@@ -101,24 +101,27 @@
 
 ---
 
-### Task 5: サンプルスキーマとドキュメント
+### Task 5: サンプルスキーマとドキュメント ✅
 **要件マッピング**: 6
 
 **サブタスク**:
-1. `examples/`ディレクトリに方言固有型を使用したサンプルスキーマを追加する (P)
-   - PostgreSQL用サンプル（`examples/postgres_specific_types.yml`）
-   - MySQL用サンプル（`examples/mysql_specific_types.yml`）
-   - SQLite用サンプル（`examples/sqlite_specific_types.yml`）
+- [x] `example/`ディレクトリに方言固有型を使用したサンプルスキーマを追加する
+   - PostgreSQL用サンプル（`example/postgres_specific_types.yml`）- SERIAL, INET, CIDR, VARBIT, INT2/4/8型の例
+   - MySQL用サンプル（`example/mysql_specific_types.yml`）- ENUM, SET, TINYINT, MEDIUMINT, YEAR型の例
+   - SQLite用サンプル（`example/sqlite_specific_types.yml`）- SQLiteベストプラクティスの例
+   - 既存: `example/schema/dialect_specific_example.yaml` - PostgreSQLとMySQLの混在例
 
-2. READMEに方言固有型の使用方法セクションを追加する
-   - YAMLでの記述例を示す
-   - 共通型と方言固有型の使い分けガイドラインを記述する
+- [x] READMEに方言固有型の使用方法セクションを追加する
+   - YAMLでの記述例を示す（PostgreSQL: SERIAL, INET, VARBIT / MySQL: ENUM, SET, TINYINT）
+   - 共通型と方言固有型の使い分けガイドラインを記述する（"When to Use"セクション）
    - エラー検出のタイミング（データベース実行時）を明記する
+   - サンプルファイルへのリンクを追加
 
-3. サポートされる方言固有型のリファレンスドキュメントを作成する
-   - PostgreSQL, MySQL, SQLiteそれぞれの頻出型をリストアップする
-   - 各型のパラメータ構造を説明する
-   - YAML Schema（JSON Schema）ファイルへのリンクを追加する
+- [x] サポートされる方言固有型のリファレンスドキュメントを作成する
+   - `example/DIALECT_SPECIFIC_TYPES.md`にPostgreSQL, MySQL, SQLiteの型をリストアップ
+   - 各型のパラメータ構造を説明（ENUM values, VARBIT length等）
+   - YAML Schema（JSON Schema）ファイルへのリンクを追加
+   - IDE設定へのリンクを追加
 
 ---
 

@@ -409,6 +409,13 @@ Example:
 
 **Note:** Dialect-specific types are validated at database execution time. If you use a type that doesn't exist in your target database, you'll receive a clear error message from the database engine.
 
+**Example Schema Files:**
+- PostgreSQL: [`example/postgres_specific_types.yml`](example/postgres_specific_types.yml)
+- MySQL: [`example/mysql_specific_types.yml`](example/mysql_specific_types.yml)
+- SQLite: [`example/sqlite_specific_types.yml`](example/sqlite_specific_types.yml)
+
+For more detailed documentation and examples, see [`example/DIALECT_SPECIFIC_TYPES.md`](example/DIALECT_SPECIFIC_TYPES.md).
+
 ### Column Types
 
 Supported column types:
