@@ -14,8 +14,29 @@ use std::path::PathBuf;
 #[command(name = "stratum")]
 #[command(author = "Stratum Contributors")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Database schema management CLI tool", long_about = None)]
+#[command(about = "Database schema management CLI tool")]
+#[command(long_about = "Stratum - Database Schema Management CLI
+
+Infrastructure as Code for database schemas.
+Manage database schema definitions as code with version control.
+
+Stratum helps you:
+  • Define database schemas in declarative YAML files
+  • Generate migration files automatically from schema changes
+  • Apply and rollback migrations with confidence
+  • Validate schema integrity before deployment
+  • Export existing database schemas to code
+
+Supported databases: PostgreSQL, MySQL, SQLite")]
 #[command(propagate_version = true)]
+#[command(after_help = "GETTING STARTED:
+  1. Initialize a new project:     stratum init --dialect sqlite
+  2. Define your schema:            Edit files in schema/ directory
+  3. Generate migrations:           stratum generate
+  4. Apply migrations:              stratum apply
+  5. Check migration status:        stratum status
+
+For detailed help on each command, use: stratum <command> --help")]
 pub struct Cli {
     /// Path to configuration file
     #[arg(short, long, global = true, value_name = "FILE")]
@@ -41,6 +62,16 @@ pub enum Commands {
     ///
     /// Creates the necessary directory structure and configuration files
     /// for managing database schemas with Stratum.
+    ///
+    /// EXAMPLES:
+    ///   # Initialize with SQLite
+    ///   stratum init --dialect sqlite
+    ///
+    ///   # Initialize with PostgreSQL
+    ///   stratum init --dialect postgresql
+    ///
+    ///   # Force re-initialization
+    ///   stratum init --force
     Init {
         /// Database dialect (postgresql, mysql, sqlite)
         #[arg(short, long, value_name = "DIALECT")]
@@ -55,6 +86,13 @@ pub enum Commands {
     ///
     /// Compares the current schema definition with the previous snapshot
     /// and generates migration files (up and down scripts) for any detected changes.
+    ///
+    /// EXAMPLES:
+    ///   # Generate migration with description
+    ///   stratum generate --description "add user email column"
+    ///
+    ///   # Generate with auto-generated description
+    ///   stratum generate
     Generate {
         /// Description for the migration
         #[arg(short, long, value_name = "DESCRIPTION")]
@@ -65,6 +103,16 @@ pub enum Commands {
     ///
     /// Executes all unapplied migrations in order, updating the database
     /// schema to match the current schema definition.
+    ///
+    /// EXAMPLES:
+    ///   # Apply to development environment
+    ///   stratum apply
+    ///
+    ///   # Dry run to preview SQL
+    ///   stratum apply --dry-run
+    ///
+    ///   # Apply to production with timeout
+    ///   stratum apply --env production --timeout 30
     Apply {
         /// Dry run - show SQL without executing
         #[arg(long)]
@@ -83,6 +131,16 @@ pub enum Commands {
     ///
     /// Reverts the most recently applied migration(s) by executing
     /// the down scripts.
+    ///
+    /// EXAMPLES:
+    ///   # Rollback last migration
+    ///   stratum rollback
+    ///
+    ///   # Rollback last 3 migrations
+    ///   stratum rollback --steps 3
+    ///
+    ///   # Rollback in production
+    ///   stratum rollback --env production --steps 1
     Rollback {
         /// Number of migrations to rollback
         #[arg(long, value_name = "N")]
@@ -97,6 +155,13 @@ pub enum Commands {
     ///
     /// Checks schema definition files for syntax errors, referential integrity,
     /// naming convention violations, and other potential issues.
+    ///
+    /// EXAMPLES:
+    ///   # Validate default schema directory
+    ///   stratum validate
+    ///
+    ///   # Validate specific directory
+    ///   stratum validate --schema-dir ./custom-schema
     Validate {
         /// Path to schema directory
         #[arg(short, long, value_name = "DIR")]
@@ -108,6 +173,13 @@ pub enum Commands {
     /// Displays information about applied and pending migrations,
     /// current schema version, and any drift between the schema
     /// definition and the actual database.
+    ///
+    /// EXAMPLES:
+    ///   # Show status for development
+    ///   stratum status
+    ///
+    ///   # Show status for production
+    ///   stratum status --env production
     Status {
         /// Target environment
         #[arg(short, long, value_name = "ENV", default_value = "development")]
@@ -118,6 +190,19 @@ pub enum Commands {
     ///
     /// Reads the current database schema structure and generates
     /// schema definition files in YAML format.
+    ///
+    /// EXAMPLES:
+    ///   # Export to default schema directory
+    ///   stratum export
+    ///
+    ///   # Export to custom directory
+    ///   stratum export --output ./exported-schema
+    ///
+    ///   # Export from production
+    ///   stratum export --env production --output ./prod-schema
+    ///
+    ///   # Overwrite existing files
+    ///   stratum export --force
     Export {
         /// Output directory for schema files
         #[arg(short, long, value_name = "DIR")]
