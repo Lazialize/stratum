@@ -54,16 +54,13 @@ impl GenerateCommandHandler {
             ));
         }
 
-        let config = Config::from_file(&config_path)
-            .with_context(|| "Failed to read config file")?;
+        let config =
+            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
 
         // スキーマディレクトリのパスを解決
         let schema_dir = command.project_path.join(&config.schema_dir);
         if !schema_dir.exists() {
-            return Err(anyhow!(
-                "Schema directory not found: {:?}",
-                schema_dir
-            ));
+            return Err(anyhow!("Schema directory not found: {:?}", schema_dir));
         }
 
         // 現在のスキーマを読み込む
@@ -97,23 +94,27 @@ impl GenerateCommandHandler {
             .unwrap_or_else(|| self.generate_auto_description(&diff));
 
         let sanitized_description = generator.sanitize_description(&description);
-        let migration_name = generator.generate_migration_filename(&timestamp, &sanitized_description);
+        let migration_name =
+            generator.generate_migration_filename(&timestamp, &sanitized_description);
 
         // Create migration directory
         let migrations_dir = command.project_path.join(&config.migrations_dir);
         let migration_dir = migrations_dir.join(&migration_name);
-        fs::create_dir_all(&migration_dir)
-            .with_context(|| format!("Failed to create migration directory: {:?}", migration_dir))?;
+        fs::create_dir_all(&migration_dir).with_context(|| {
+            format!("Failed to create migration directory: {:?}", migration_dir)
+        })?;
 
         // UP SQLを生成
-        let up_sql = generator.generate_up_sql(&diff, config.dialect)
+        let up_sql = generator
+            .generate_up_sql(&diff, config.dialect)
             .map_err(|e| anyhow::anyhow!("Failed to generate UP SQL: {}", e))?;
         let up_sql_path = migration_dir.join("up.sql");
         fs::write(&up_sql_path, up_sql)
             .with_context(|| format!("Failed to write up.sql: {:?}", up_sql_path))?;
 
         // DOWN SQLを生成
-        let down_sql = generator.generate_down_sql(&diff, config.dialect)
+        let down_sql = generator
+            .generate_down_sql(&diff, config.dialect)
             .map_err(|e| anyhow::anyhow!("Failed to generate DOWN SQL: {}", e))?;
         let down_sql_path = migration_dir.join("down.sql");
         fs::write(&down_sql_path, down_sql)
@@ -154,18 +155,21 @@ impl GenerateCommandHandler {
         let content = fs::read_to_string(&snapshot_path)
             .with_context(|| format!("Failed to read schema snapshot: {:?}", snapshot_path))?;
 
-        serde_saphyr::from_str(&content)
-            .with_context(|| "Failed to parse schema snapshot")
+        serde_saphyr::from_str(&content).with_context(|| "Failed to parse schema snapshot")
     }
 
     /// 現在のスキーマを保存
-    fn save_current_schema(&self, project_path: &Path, config: &Config, schema: &Schema) -> Result<()> {
+    fn save_current_schema(
+        &self,
+        project_path: &Path,
+        config: &Config,
+        schema: &Schema,
+    ) -> Result<()> {
         let snapshot_path = project_path
             .join(&config.migrations_dir)
             .join(".schema_snapshot.yaml");
 
-        let yaml = serde_saphyr::to_string(schema)
-            .with_context(|| "Failed to serialize schema")?;
+        let yaml = serde_saphyr::to_string(schema).with_context(|| "Failed to serialize schema")?;
 
         fs::write(&snapshot_path, yaml)
             .with_context(|| format!("Failed to write schema snapshot: {:?}", snapshot_path))?;
@@ -178,7 +182,8 @@ impl GenerateCommandHandler {
         let mut parts = Vec::new();
 
         if !diff.added_tables.is_empty() {
-            let table_names: Vec<String> = diff.added_tables.iter().map(|t| t.name.clone()).collect();
+            let table_names: Vec<String> =
+                diff.added_tables.iter().map(|t| t.name.clone()).collect();
             parts.push(format!("add tables {}", table_names.join(", ")));
         }
 
@@ -187,7 +192,11 @@ impl GenerateCommandHandler {
         }
 
         if !diff.modified_tables.is_empty() {
-            let table_names: Vec<String> = diff.modified_tables.iter().map(|t| t.table_name.clone()).collect();
+            let table_names: Vec<String> = diff
+                .modified_tables
+                .iter()
+                .map(|t| t.table_name.clone())
+                .collect();
             parts.push(format!("modify tables {}", table_names.join(", ")));
         }
 

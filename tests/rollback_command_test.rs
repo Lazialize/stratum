@@ -2,10 +2,10 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
-use stratum::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
-use stratum::core::config::{Config, DatabaseConfig, Dialect};
 use std::fs;
 use std::path::PathBuf;
+use stratum::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
+use stratum::core::config::{Config, DatabaseConfig, Dialect};
 use tempfile::TempDir;
 
 /// テスト用のConfig作成ヘルパー
@@ -254,12 +254,11 @@ async fn test_rollback_single_migration_sqlite() {
     assert_eq!(records.len(), 0);
 
     // テーブルが削除されたことを確認
-    let table_exists = sqlx::query(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='users'",
-    )
-    .fetch_optional(&pool)
-    .await
-    .unwrap();
+    let table_exists =
+        sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
     assert!(table_exists.is_none());
 }
 

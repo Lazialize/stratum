@@ -40,12 +40,10 @@ impl SchemaParserService {
     pub fn parse_schema_directory(&self, schema_dir: &Path) -> Result<Schema> {
         // ディレクトリの存在確認
         if !schema_dir.exists() {
-            return Err(
-                IoError::FileNotFound {
-                    path: schema_dir.display().to_string(),
-                }
-                .into(),
-            );
+            return Err(IoError::FileNotFound {
+                path: schema_dir.display().to_string(),
+            }
+            .into());
         }
 
         if !schema_dir.is_dir() {
@@ -67,9 +65,9 @@ impl SchemaParserService {
         let mut merged_schema = Schema::new("1.0".to_string());
 
         for file_path in yaml_files {
-            let schema = self.parse_schema_file(&file_path).with_context(|| {
-                format!("Failed to parse schema file: {:?}", file_path)
-            })?;
+            let schema = self
+                .parse_schema_file(&file_path)
+                .with_context(|| format!("Failed to parse schema file: {:?}", file_path))?;
 
             // バージョンを保持（最初に見つかったバージョンを使用）
             if merged_schema.table_count() == 0 {
@@ -103,12 +101,10 @@ impl SchemaParserService {
     pub fn parse_schema_file(&self, file_path: &Path) -> Result<Schema> {
         // ファイルの存在確認
         if !file_path.exists() {
-            return Err(
-                IoError::FileNotFound {
-                    path: file_path.display().to_string(),
-                }
-                .into(),
-            );
+            return Err(IoError::FileNotFound {
+                path: file_path.display().to_string(),
+            }
+            .into());
         }
 
         // ファイル内容を読み込み

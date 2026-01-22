@@ -114,23 +114,15 @@ tables:
     }
 
     /// PostgreSQLコンテナを起動して接続プールを作成
-    async fn setup_postgres_container() -> Result<
-        (ContainerAsync<Postgres>, sqlx::Pool<Any>),
-        Box<dyn std::error::Error>,
-    > {
+    async fn setup_postgres_container(
+    ) -> Result<(ContainerAsync<Postgres>, sqlx::Pool<Any>), Box<dyn std::error::Error>> {
         // PostgreSQLコンテナを起動
-        let container = Postgres::default()
-            .with_tag("16-alpine")
-            .start()
-            .await?;
+        let container = Postgres::default().with_tag("16-alpine").start().await?;
 
         // 接続文字列を構築
         let host = container.get_host().await?;
         let port = container.get_host_port_ipv4(5432).await?;
-        let connection_string = format!(
-            "postgres://postgres:postgres@{}:{}/postgres",
-            host, port
-        );
+        let connection_string = format!("postgres://postgres:postgres@{}:{}/postgres", host, port);
 
         // 接続プールを作成
         let pool = AnyPoolOptions::new()
@@ -210,7 +202,10 @@ tables:
         assert_eq!(migrations[0], "20260122000001");
 
         // ロールバック: usersテーブルを削除
-        sqlx::query("DROP TABLE users").execute(&pool).await.unwrap();
+        sqlx::query("DROP TABLE users")
+            .execute(&pool)
+            .await
+            .unwrap();
 
         // マイグレーション履歴から削除
         sqlx::query("DELETE FROM schema_migrations WHERE version = $1")
@@ -440,15 +435,14 @@ tables:
         .unwrap();
 
         // マイグレーション履歴を確認
-        let migrations: Vec<String> = sqlx::query(
-            "SELECT version FROM schema_migrations ORDER BY version",
-        )
-        .fetch_all(&pool)
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| row.get::<String, _>("version"))
-        .collect();
+        let migrations: Vec<String> =
+            sqlx::query("SELECT version FROM schema_migrations ORDER BY version")
+                .fetch_all(&pool)
+                .await
+                .unwrap()
+                .iter()
+                .map(|row| row.get::<String, _>("version"))
+                .collect();
 
         assert_eq!(migrations.len(), 2);
         assert_eq!(migrations[0], "20260122000001");
@@ -536,7 +530,10 @@ tables:
         assert_eq!(migrations[0], "20260122000001");
 
         // ロールバック: usersテーブルを削除
-        sqlx::query("DROP TABLE users").execute(&pool).await.unwrap();
+        sqlx::query("DROP TABLE users")
+            .execute(&pool)
+            .await
+            .unwrap();
 
         // マイグレーション履歴から削除
         sqlx::query("DELETE FROM schema_migrations WHERE version = ?")

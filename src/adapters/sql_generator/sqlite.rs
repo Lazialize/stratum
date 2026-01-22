@@ -136,7 +136,11 @@ impl SqlGenerator for SqliteSqlGenerator {
     }
 
     fn generate_create_index(&self, table: &Table, index: &Index) -> String {
-        let index_type = if index.unique { "UNIQUE INDEX" } else { "INDEX" };
+        let index_type = if index.unique {
+            "UNIQUE INDEX"
+        } else {
+            "INDEX"
+        };
 
         format!(
             "CREATE {} {} ON {} ({})",

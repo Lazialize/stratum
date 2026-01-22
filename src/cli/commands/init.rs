@@ -166,8 +166,8 @@ impl InitCommandHandler {
         };
 
         // YAMLにシリアライズ
-        let yaml = serde_saphyr::to_string(&config)
-            .with_context(|| "Failed to serialize config file")?;
+        let yaml =
+            serde_saphyr::to_string(&config).with_context(|| "Failed to serialize config file")?;
 
         // ファイルに書き込み
         let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);

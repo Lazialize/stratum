@@ -55,8 +55,8 @@ impl RollbackCommandHandler {
             ));
         }
 
-        let config = Config::from_file(&config_path)
-            .with_context(|| "Failed to read config file")?;
+        let config =
+            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
 
         // マイグレーションディレクトリのパスを解決
         let migrations_dir = command.project_path.join(&config.migrations_dir);
@@ -128,32 +128,18 @@ impl RollbackCommandHandler {
             let migration_info = available_migrations
                 .iter()
                 .find(|(v, _, _)| v == &record.version)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "Migration file not found: {}",
-                        record.version
-                    )
-                })?;
+                .ok_or_else(|| anyhow!("Migration file not found: {}", record.version))?;
 
             let migration_dir = &migration_info.2;
 
             // down.sqlを読み込み
             let down_sql_path = migration_dir.join("down.sql");
-            let down_sql = fs::read_to_string(&down_sql_path).with_context(|| {
-                format!(
-                    "Failed to read migration file: {:?}",
-                    down_sql_path
-                )
-            })?;
+            let down_sql = fs::read_to_string(&down_sql_path)
+                .with_context(|| format!("Failed to read migration file: {:?}", down_sql_path))?;
 
             // トランザクション内でロールバックを実行
             let result = self
-                .rollback_migration_with_transaction(
-                    &pool,
-                    &migrator,
-                    &record.version,
-                    &down_sql,
-                )
+                .rollback_migration_with_transaction(&pool, &migrator, &record.version, &down_sql)
                 .await;
 
             if let Err(e) = result {
@@ -189,10 +175,7 @@ impl RollbackCommandHandler {
         let mut migrations = Vec::new();
 
         let entries = fs::read_dir(migrations_dir).with_context(|| {
-            format!(
-                "Failed to read migrations directory: {:?}",
-                migrations_dir
-            )
+            format!("Failed to read migrations directory: {:?}", migrations_dir)
         })?;
 
         for entry in entries {

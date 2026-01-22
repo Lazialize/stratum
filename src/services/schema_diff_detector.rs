@@ -113,8 +113,11 @@ impl SchemaDiffDetector {
             ) {
                 // カラムの定義が変更されているか確認
                 if old_column != new_column {
-                    let column_diff =
-                        ColumnDiff::new((*column_name).clone(), old_column.clone(), new_column.clone());
+                    let column_diff = ColumnDiff::new(
+                        (*column_name).clone(),
+                        old_column.clone(),
+                        new_column.clone(),
+                    );
                     if !column_diff.changes.is_empty() {
                         table_diff.modified_columns.push(column_diff);
                     }

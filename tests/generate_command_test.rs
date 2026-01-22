@@ -287,11 +287,7 @@ environments:
             }
         );
 
-        fs::write(
-            project_path.join(".stratum.yaml"),
-            config_content,
-        )
-        .unwrap();
+        fs::write(project_path.join(".stratum.yaml"), config_content).unwrap();
     }
 
     /// 簡単なスキーマファイルを作成
@@ -342,7 +338,9 @@ tables:
         );
 
         fs::write(
-            project_path.join("schema").join(format!("{}.yaml", table_name)),
+            project_path
+                .join("schema")
+                .join(format!("{}.yaml", table_name)),
             schema_content,
         )
         .unwrap();

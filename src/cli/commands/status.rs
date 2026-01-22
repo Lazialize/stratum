@@ -53,8 +53,8 @@ impl StatusCommandHandler {
             ));
         }
 
-        let config = Config::from_file(&config_path)
-            .with_context(|| "Failed to read config file")?;
+        let config =
+            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
 
         // マイグレーションディレクトリのパスを解決
         let migrations_dir = command.project_path.join(&config.migrations_dir);
@@ -103,8 +103,14 @@ impl StatusCommandHandler {
         let status_list = self.build_migration_status(&local_migrations, &applied_migrations);
 
         // 適用済み/未適用の数を計算
-        let applied_count = status_list.iter().filter(|(_, _, status)| status.contains("Applied")).count();
-        let pending_count = status_list.iter().filter(|(_, _, status)| status.contains("Pending")).count();
+        let applied_count = status_list
+            .iter()
+            .filter(|(_, _, status)| status.contains("Applied"))
+            .count();
+        let pending_count = status_list
+            .iter()
+            .filter(|(_, _, status)| status.contains("Pending"))
+            .count();
 
         // フォーマット用に参照のベクタを作成
         let status_list_refs: Vec<(&str, &str, &str)> = status_list
@@ -120,8 +126,9 @@ impl StatusCommandHandler {
     fn load_local_migrations(&self, migrations_dir: &PathBuf) -> Result<Vec<Migration>> {
         let mut migrations = Vec::new();
 
-        let entries = fs::read_dir(migrations_dir)
-            .with_context(|| format!("Failed to read migrations directory: {:?}", migrations_dir))?;
+        let entries = fs::read_dir(migrations_dir).with_context(|| {
+            format!("Failed to read migrations directory: {:?}", migrations_dir)
+        })?;
 
         for entry in entries {
             let entry = entry?;
@@ -262,7 +269,10 @@ impl StatusCommandHandler {
         ));
 
         // チェックサム不一致の警告
-        if status_list.iter().any(|(_, _, s)| s.contains("checksum mismatch")) {
+        if status_list
+            .iter()
+            .any(|(_, _, s)| s.contains("checksum mismatch"))
+        {
             output.push_str("\n⚠️  Warning: Some migrations have mismatched checksums.\n");
             output.push_str("   Migration files may have been modified after being applied.\n");
         }

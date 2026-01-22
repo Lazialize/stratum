@@ -5,8 +5,8 @@
 
 #[cfg(test)]
 mod config_tests {
-    use stratum::core::config::{Config, DatabaseConfig, Dialect};
     use std::path::Path;
+    use stratum::core::config::{Config, DatabaseConfig, Dialect};
 
     /// Config構造体が正しくデシリアライズできることを確認
     #[test]

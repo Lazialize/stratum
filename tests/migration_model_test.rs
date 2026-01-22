@@ -2,7 +2,6 @@
 ///
 /// マイグレーションファイル、マイグレーション履歴、適用済みマイグレーションなどの
 /// ドメインモデルが正しく動作することを確認します。
-
 use chrono::{Duration, Utc};
 use std::path::PathBuf;
 
@@ -13,8 +12,8 @@ mod migration_model_tests {
     /// MigrationFile構造体のデシリアライゼーションのテスト
     #[test]
     fn test_migration_file_deserialization() {
-        use stratum::core::migration::MigrationFile;
         use stratum::core::config::Dialect;
+        use stratum::core::migration::MigrationFile;
 
         let yaml = r#"
 version: "20260121120000"
@@ -40,8 +39,8 @@ checksum: "abc123def456"
     /// MigrationFile構造体のシリアライゼーションのテスト
     #[test]
     fn test_migration_file_serialization() {
-        use stratum::core::migration::MigrationFile;
         use stratum::core::config::Dialect;
+        use stratum::core::migration::MigrationFile;
 
         let migration = MigrationFile {
             version: "20260121120000".to_string(),

@@ -50,8 +50,8 @@ impl ValidateCommandHandler {
             ));
         }
 
-        let config = Config::from_file(&config_path)
-            .with_context(|| "Failed to read config file")?;
+        let config =
+            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
 
         // スキーマディレクトリのパスを解決
         let schema_dir = if let Some(ref custom_dir) = command.schema_dir {
@@ -61,10 +61,7 @@ impl ValidateCommandHandler {
         };
 
         if !schema_dir.exists() {
-            return Err(anyhow!(
-                "Schema directory not found: {:?}",
-                schema_dir
-            ));
+            return Err(anyhow!("Schema directory not found: {:?}", schema_dir));
         }
 
         // スキーマ定義を読み込む
@@ -142,7 +139,10 @@ impl ValidateCommandHandler {
     }
 
     /// エラーの場所を取得
-    fn get_error_location<'a>(&self, error: &'a crate::core::error::ValidationError) -> Option<&'a crate::core::error::ErrorLocation> {
+    fn get_error_location<'a>(
+        &self,
+        error: &'a crate::core::error::ValidationError,
+    ) -> Option<&'a crate::core::error::ErrorLocation> {
         match error {
             crate::core::error::ValidationError::Syntax { location, .. }
             | crate::core::error::ValidationError::Reference { location, .. }
@@ -151,7 +151,10 @@ impl ValidateCommandHandler {
     }
 
     /// エラーの修正案を取得
-    fn get_error_suggestion<'a>(&self, error: &'a crate::core::error::ValidationError) -> Option<&'a str> {
+    fn get_error_suggestion<'a>(
+        &self,
+        error: &'a crate::core::error::ValidationError,
+    ) -> Option<&'a str> {
         match error {
             crate::core::error::ValidationError::Syntax { suggestion, .. }
             | crate::core::error::ValidationError::Reference { suggestion, .. }
@@ -162,7 +165,10 @@ impl ValidateCommandHandler {
     }
 
     /// スキーマの統計情報を計算
-    fn calculate_statistics(&self, schema: &crate::core::schema::Schema) -> (usize, usize, usize, usize) {
+    fn calculate_statistics(
+        &self,
+        schema: &crate::core::schema::Schema,
+    ) -> (usize, usize, usize, usize) {
         let table_count = schema.table_count();
         let mut column_count = 0;
         let mut index_count = 0;

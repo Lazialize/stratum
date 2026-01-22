@@ -112,10 +112,7 @@ impl DatabaseConnectionService {
     /// # Returns
     ///
     /// プールオプション
-    pub fn create_pool_options_with_timeout(
-        &self,
-        timeout_secs: Option<u64>,
-    ) -> PoolOptions<Any> {
+    pub fn create_pool_options_with_timeout(&self, timeout_secs: Option<u64>) -> PoolOptions<Any> {
         let timeout = timeout_secs.unwrap_or(30);
         PoolOptions::new()
             .max_connections(5)

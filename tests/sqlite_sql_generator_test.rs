@@ -217,11 +217,7 @@ mod sqlite_sql_generator_tests {
         let generator = SqliteSqlGenerator::new();
 
         let table = Table::new("users".to_string());
-        let index = Index::new(
-            "idx_email".to_string(),
-            vec!["email".to_string()],
-            false,
-        );
+        let index = Index::new("idx_email".to_string(), vec!["email".to_string()], false);
 
         let sql = generator.generate_create_index(&table, &index);
 
@@ -316,11 +312,7 @@ mod sqlite_sql_generator_tests {
         ));
 
         // JSON (SQLiteではTEXT)
-        table.add_column(Column::new(
-            "col_json".to_string(),
-            ColumnType::JSON,
-            false,
-        ));
+        table.add_column(Column::new("col_json".to_string(), ColumnType::JSON, false));
 
         let sql = generator.generate_create_table(&table);
 
@@ -478,11 +470,7 @@ mod sqlite_sql_generator_tests {
     fn test_map_column_type_float() {
         let generator = SqliteSqlGenerator::new();
         let mut table = Table::new("measurements".to_string());
-        table.add_column(Column::new(
-            "value".to_string(),
-            ColumnType::FLOAT,
-            false,
-        ));
+        table.add_column(Column::new("value".to_string(), ColumnType::FLOAT, false));
 
         let sql = generator.generate_create_table(&table);
         assert!(sql.contains("value REAL NOT NULL"));
@@ -551,11 +539,7 @@ mod sqlite_sql_generator_tests {
     fn test_map_column_type_blob() {
         let generator = SqliteSqlGenerator::new();
         let mut table = Table::new("documents".to_string());
-        table.add_column(Column::new(
-            "content".to_string(),
-            ColumnType::BLOB,
-            false,
-        ));
+        table.add_column(Column::new("content".to_string(), ColumnType::BLOB, false));
 
         let sql = generator.generate_create_table(&table);
         assert!(sql.contains("content BLOB NOT NULL"));
@@ -565,11 +549,7 @@ mod sqlite_sql_generator_tests {
     fn test_map_column_type_uuid() {
         let generator = SqliteSqlGenerator::new();
         let mut table = Table::new("users".to_string());
-        table.add_column(Column::new(
-            "user_id".to_string(),
-            ColumnType::UUID,
-            false,
-        ));
+        table.add_column(Column::new("user_id".to_string(), ColumnType::UUID, false));
 
         let sql = generator.generate_create_table(&table);
         // SQLite では UUID を TEXT にマッピング
@@ -580,11 +560,7 @@ mod sqlite_sql_generator_tests {
     fn test_map_column_type_jsonb() {
         let generator = SqliteSqlGenerator::new();
         let mut table = Table::new("settings".to_string());
-        table.add_column(Column::new(
-            "config".to_string(),
-            ColumnType::JSONB,
-            false,
-        ));
+        table.add_column(Column::new("config".to_string(), ColumnType::JSONB, false));
 
         let sql = generator.generate_create_table(&table);
         // SQLite では JSONB を TEXT にマッピング

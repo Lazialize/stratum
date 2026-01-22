@@ -59,7 +59,13 @@ impl MigrationGenerator {
         description
             .to_lowercase()
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect::<String>()
             .split('_')
             .filter(|s| !s.is_empty())

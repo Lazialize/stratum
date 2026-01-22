@@ -58,8 +58,8 @@ impl ApplyCommandHandler {
             ));
         }
 
-        let config = Config::from_file(&config_path)
-            .with_context(|| "Failed to read config file")?;
+        let config =
+            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
 
         // マイグレーションディレクトリのパスを解決
         let migrations_dir = command.project_path.join(&config.migrations_dir);
@@ -128,18 +128,13 @@ impl ApplyCommandHandler {
 
             // up.sqlを読み込み
             let up_sql_path = migration_dir.join("up.sql");
-            let up_sql = fs::read_to_string(&up_sql_path).with_context(|| {
-                format!(
-                    "Failed to read migration file: {:?}",
-                    up_sql_path
-                )
-            })?;
+            let up_sql = fs::read_to_string(&up_sql_path)
+                .with_context(|| format!("Failed to read migration file: {:?}", up_sql_path))?;
 
             // メタデータを読み込み
             let meta_path = migration_dir.join(".meta.yaml");
-            let meta_content = fs::read_to_string(&meta_path).with_context(|| {
-                format!("Failed to read metadata file: {:?}", meta_path)
-            })?;
+            let meta_content = fs::read_to_string(&meta_path)
+                .with_context(|| format!("Failed to read metadata file: {:?}", meta_path))?;
 
             // メタデータをHashMapとしてパース
             use std::collections::HashMap as StdHashMap;
@@ -164,11 +159,7 @@ impl ApplyCommandHandler {
                 .await;
 
             if let Err(e) = result {
-                return Err(anyhow!(
-                    "Failed to apply migration {}: {}",
-                    version,
-                    e
-                ));
+                return Err(anyhow!("Failed to apply migration {}: {}", version, e));
             }
 
             let end_time = Utc::now();
@@ -196,10 +187,7 @@ impl ApplyCommandHandler {
         let mut migrations = Vec::new();
 
         let entries = fs::read_dir(migrations_dir).with_context(|| {
-            format!(
-                "Failed to read migrations directory: {:?}",
-                migrations_dir
-            )
+            format!("Failed to read migrations directory: {:?}", migrations_dir)
         })?;
 
         for entry in entries {
@@ -262,7 +250,11 @@ impl ApplyCommandHandler {
             })?;
 
         // マイグレーション履歴を記録
-        let migration = Migration::new(version.to_string(), description.to_string(), checksum.to_string());
+        let migration = Migration::new(
+            version.to_string(),
+            description.to_string(),
+            checksum.to_string(),
+        );
         let record_sql = migrator.generate_record_migration_sql(&migration);
 
         sqlx::query(&record_sql)
@@ -288,12 +280,8 @@ impl ApplyCommandHandler {
 
         for (version, description, migration_dir) in pending_migrations {
             let up_sql_path = migration_dir.join("up.sql");
-            let up_sql = fs::read_to_string(&up_sql_path).with_context(|| {
-                format!(
-                    "Failed to read migration file: {:?}",
-                    up_sql_path
-                )
-            })?;
+            let up_sql = fs::read_to_string(&up_sql_path)
+                .with_context(|| format!("Failed to read migration file: {:?}", up_sql_path))?;
 
             output.push_str(&format!("\u{25b6} {} - {}\n", version, description));
             output.push_str("SQL:\n");

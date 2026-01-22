@@ -194,11 +194,7 @@ mod postgres_sql_generator_tests {
         let generator = PostgresSqlGenerator::new();
 
         let table = Table::new("users".to_string());
-        let index = Index::new(
-            "idx_email".to_string(),
-            vec!["email".to_string()],
-            false,
-        );
+        let index = Index::new("idx_email".to_string(), vec!["email".to_string()], false);
 
         let sql = generator.generate_create_index(&table, &index);
 
@@ -293,11 +289,7 @@ mod postgres_sql_generator_tests {
         ));
 
         // JSON
-        table.add_column(Column::new(
-            "col_json".to_string(),
-            ColumnType::JSON,
-            false,
-        ));
+        table.add_column(Column::new("col_json".to_string(), ColumnType::JSON, false));
 
         let sql = generator.generate_create_table(&table);
 
@@ -424,11 +416,7 @@ mod postgres_sql_generator_tests {
     fn test_map_column_type_float() {
         let generator = PostgresSqlGenerator::new();
         let mut table = Table::new("measurements".to_string());
-        table.add_column(Column::new(
-            "value".to_string(),
-            ColumnType::FLOAT,
-            false,
-        ));
+        table.add_column(Column::new("value".to_string(), ColumnType::FLOAT, false));
 
         let sql = generator.generate_create_table(&table);
         assert!(sql.contains("value REAL NOT NULL"));
@@ -480,7 +468,7 @@ mod postgres_sql_generator_tests {
     fn test_map_column_type_time() {
         let generator = PostgresSqlGenerator::new();
         let mut table = Table::new("schedules".to_string());
-        
+
         // TIME without timezone
         table.add_column(Column::new(
             "start_time".to_string(),
@@ -489,7 +477,7 @@ mod postgres_sql_generator_tests {
             },
             false,
         ));
-        
+
         // TIME with timezone
         table.add_column(Column::new(
             "end_time".to_string(),
@@ -508,11 +496,7 @@ mod postgres_sql_generator_tests {
     fn test_map_column_type_blob() {
         let generator = PostgresSqlGenerator::new();
         let mut table = Table::new("documents".to_string());
-        table.add_column(Column::new(
-            "content".to_string(),
-            ColumnType::BLOB,
-            false,
-        ));
+        table.add_column(Column::new("content".to_string(), ColumnType::BLOB, false));
 
         let sql = generator.generate_create_table(&table);
         assert!(sql.contains("content BYTEA NOT NULL"));
@@ -522,11 +506,7 @@ mod postgres_sql_generator_tests {
     fn test_map_column_type_uuid() {
         let generator = PostgresSqlGenerator::new();
         let mut table = Table::new("users".to_string());
-        table.add_column(Column::new(
-            "user_id".to_string(),
-            ColumnType::UUID,
-            false,
-        ));
+        table.add_column(Column::new("user_id".to_string(), ColumnType::UUID, false));
 
         let sql = generator.generate_create_table(&table);
         assert!(sql.contains("user_id UUID NOT NULL"));
@@ -536,11 +516,7 @@ mod postgres_sql_generator_tests {
     fn test_map_column_type_jsonb() {
         let generator = PostgresSqlGenerator::new();
         let mut table = Table::new("settings".to_string());
-        table.add_column(Column::new(
-            "config".to_string(),
-            ColumnType::JSONB,
-            false,
-        ));
+        table.add_column(Column::new("config".to_string(), ColumnType::JSONB, false));
 
         let sql = generator.generate_create_table(&table);
         assert!(sql.contains("config JSONB NOT NULL"));

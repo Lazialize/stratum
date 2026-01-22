@@ -67,10 +67,7 @@ impl SchemaValidatorService {
 
             if !has_primary_key && !table.columns.is_empty() {
                 result.add_error(ValidationError::Constraint {
-                    message: format!(
-                        "Table '{}' has no primary key defined",
-                        table_name
-                    ),
+                    message: format!("Table '{}' has no primary key defined", table_name),
                     location: Some(ErrorLocation::with_table(table_name.clone())),
                     suggestion: Some("Add a PRIMARY KEY constraint".to_string()),
                 });
@@ -302,7 +299,7 @@ impl SchemaValidatorService {
                         }),
                         suggestion: Some(
                             "Set length to 255 or less, or use VARCHAR/TEXT for longer strings"
-                                .to_string()
+                                .to_string(),
                         ),
                     });
                 }
@@ -322,7 +319,11 @@ impl SchemaValidatorService {
     /// # Returns
     ///
     /// 方言固有の警告のリスト
-    pub fn generate_dialect_warnings(&self, schema: &Schema, dialect: &Dialect) -> Vec<ValidationWarning> {
+    pub fn generate_dialect_warnings(
+        &self,
+        schema: &Schema,
+        dialect: &Dialect,
+    ) -> Vec<ValidationWarning> {
         let mut warnings = Vec::new();
 
         for (table_name, table) in &schema.tables {
@@ -487,10 +488,7 @@ impl SchemaValidatorService {
                                 referenced_table
                             ),
                             location: Some(ErrorLocation::with_table(table_name.clone())),
-                            suggestion: Some(format!(
-                                "Define table '{}'",
-                                referenced_table
-                            )),
+                            suggestion: Some(format!("Define table '{}'", referenced_table)),
                         });
                     } else if let Some(ref_table) = schema.get_table(referenced_table) {
                         // Check if referenced columns exist

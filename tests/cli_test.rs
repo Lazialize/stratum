@@ -2,7 +2,6 @@
 ///
 /// このテストは、CLIの構造が正しく定義され、すべてのサブコマンドとオプションが
 /// 期待通りに動作することを確認します。
-
 use clap::Parser;
 
 #[cfg(test)]
@@ -127,16 +126,11 @@ mod cli_tests {
     /// グローバルオプション --config がパース可能であることを確認
     #[test]
     fn test_global_config_option() {
-        use stratum::cli::Cli;
         use std::path::Path;
+        use stratum::cli::Cli;
 
-        let cli = Cli::try_parse_from([
-            "stratum",
-            "--config",
-            "/path/to/config.yaml",
-            "status",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["stratum", "--config", "/path/to/config.yaml", "status"]).unwrap();
 
         assert_eq!(
             cli.config.as_deref(),

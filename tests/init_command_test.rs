@@ -44,7 +44,15 @@ mod init_command_tests {
 
         let handler = InitCommandHandler::new();
         handler
-            .generate_config_file(project_path, Dialect::PostgreSQL, "mydb", Some("localhost".to_string()), Some(5432), Some("user".to_string()), Some("pass".to_string()))
+            .generate_config_file(
+                project_path,
+                Dialect::PostgreSQL,
+                "mydb",
+                Some("localhost".to_string()),
+                Some(5432),
+                Some("user".to_string()),
+                Some("pass".to_string()),
+            )
             .expect("Failed to generate config file");
 
         // 設定ファイルが作成されているか確認
@@ -70,7 +78,15 @@ mod init_command_tests {
 
         let handler = InitCommandHandler::new();
         handler
-            .generate_config_file(project_path, Dialect::MySQL, "mydb", Some("localhost".to_string()), Some(3306), Some("root".to_string()), Some("pass".to_string()))
+            .generate_config_file(
+                project_path,
+                Dialect::MySQL,
+                "mydb",
+                Some("localhost".to_string()),
+                Some(3306),
+                Some("root".to_string()),
+                Some("pass".to_string()),
+            )
             .expect("Failed to generate config file");
 
         assert!(config_path.exists());
@@ -89,7 +105,15 @@ mod init_command_tests {
 
         let handler = InitCommandHandler::new();
         handler
-            .generate_config_file(project_path, Dialect::SQLite, "db.sqlite", None, None, None, None)
+            .generate_config_file(
+                project_path,
+                Dialect::SQLite,
+                "db.sqlite",
+                None,
+                None,
+                None,
+                None,
+            )
             .expect("Failed to generate config file");
 
         assert!(config_path.exists());
@@ -129,11 +153,17 @@ mod init_command_tests {
 
         // 事前に初期化
         let handler = InitCommandHandler::new();
+        handler.create_directory_structure(project_path).unwrap();
         handler
-            .create_directory_structure(project_path)
-            .unwrap();
-        handler
-            .generate_config_file(project_path, Dialect::PostgreSQL, "testdb", Some("localhost".to_string()), Some(5432), Some("user".to_string()), Some("pass".to_string()))
+            .generate_config_file(
+                project_path,
+                Dialect::PostgreSQL,
+                "testdb",
+                Some("localhost".to_string()),
+                Some(5432),
+                Some("user".to_string()),
+                Some("pass".to_string()),
+            )
             .unwrap();
 
         // 再初期化を試みる（force=false）
@@ -162,11 +192,17 @@ mod init_command_tests {
 
         // 事前に初期化
         let handler = InitCommandHandler::new();
+        handler.create_directory_structure(project_path).unwrap();
         handler
-            .create_directory_structure(project_path)
-            .unwrap();
-        handler
-            .generate_config_file(project_path, Dialect::PostgreSQL, "testdb", Some("localhost".to_string()), Some(5432), Some("user".to_string()), Some("pass".to_string()))
+            .generate_config_file(
+                project_path,
+                Dialect::PostgreSQL,
+                "testdb",
+                Some("localhost".to_string()),
+                Some(5432),
+                Some("user".to_string()),
+                Some("pass".to_string()),
+            )
             .unwrap();
 
         // 再初期化を試みる（force=true）
@@ -238,7 +274,15 @@ mod init_command_tests {
 
         let handler = InitCommandHandler::new();
         handler
-            .generate_config_file(project_path, Dialect::PostgreSQL, "testdb", Some("localhost".to_string()), Some(5432), Some("user".to_string()), Some("pass".to_string()))
+            .generate_config_file(
+                project_path,
+                Dialect::PostgreSQL,
+                "testdb",
+                Some("localhost".to_string()),
+                Some(5432),
+                Some("user".to_string()),
+                Some("pass".to_string()),
+            )
             .unwrap();
 
         let config_path = project_path.join(".stratum.yaml");

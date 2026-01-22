@@ -52,7 +52,7 @@ mod dependencies_tests {
     /// anyhowクレートがインポートできることを確認
     #[test]
     fn test_anyhow_dependency() {
-        use anyhow::{Result, anyhow};
+        use anyhow::{anyhow, Result};
 
         fn test_func() -> Result<()> {
             Err(anyhow!("test error"))
@@ -79,7 +79,7 @@ mod dependencies_tests {
     /// sha2クレートがインポートできることを確認
     #[test]
     fn test_sha2_dependency() {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let mut hasher = Sha256::new();
         hasher.update(b"test");

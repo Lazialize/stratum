@@ -228,14 +228,12 @@ impl ColumnType {
         use crate::core::config::Dialect;
 
         match (self, dialect) {
-            (ColumnType::INTEGER { precision }, Dialect::PostgreSQL) => {
-                match precision {
-                    Some(2) => "SMALLINT".to_string(),
-                    Some(4) => "INTEGER".to_string(),
-                    Some(8) => "BIGINT".to_string(),
-                    _ => "INTEGER".to_string(),
-                }
-            }
+            (ColumnType::INTEGER { precision }, Dialect::PostgreSQL) => match precision {
+                Some(2) => "SMALLINT".to_string(),
+                Some(4) => "INTEGER".to_string(),
+                Some(8) => "BIGINT".to_string(),
+                _ => "INTEGER".to_string(),
+            },
             (ColumnType::INTEGER { .. }, Dialect::MySQL) => "INT".to_string(),
             (ColumnType::INTEGER { .. }, Dialect::SQLite) => "INTEGER".to_string(),
 
@@ -434,11 +432,7 @@ mod tests {
 
     #[test]
     fn test_index_new() {
-        let index = Index::new(
-            "idx_email".to_string(),
-            vec!["email".to_string()],
-            true,
-        );
+        let index = Index::new("idx_email".to_string(), vec!["email".to_string()], true);
         assert_eq!(index.name, "idx_email");
         assert!(index.unique);
     }
@@ -487,7 +481,10 @@ mod tests {
         use crate::core::config::Dialect;
 
         let col_type = ColumnType::DOUBLE;
-        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "DOUBLE PRECISION");
+        assert_eq!(
+            col_type.to_sql_type(&Dialect::PostgreSQL),
+            "DOUBLE PRECISION"
+        );
         assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "DOUBLE");
         assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "REAL");
     }

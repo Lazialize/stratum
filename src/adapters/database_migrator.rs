@@ -32,33 +32,27 @@ impl DatabaseMigratorService {
     /// CREATE TABLE文のSQL文字列
     pub fn generate_create_migration_table_sql(&self, dialect: Dialect) -> String {
         match dialect {
-            Dialect::PostgreSQL => {
-                r#"CREATE TABLE IF NOT EXISTS schema_migrations (
+            Dialect::PostgreSQL => r#"CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(255) PRIMARY KEY,
     description TEXT NOT NULL,
     applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     checksum VARCHAR(64) NOT NULL
 )"#
-                .to_string()
-            }
-            Dialect::MySQL => {
-                r#"CREATE TABLE IF NOT EXISTS schema_migrations (
+            .to_string(),
+            Dialect::MySQL => r#"CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(255) PRIMARY KEY,
     description TEXT NOT NULL,
     applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     checksum VARCHAR(64) NOT NULL
 )"#
-                .to_string()
-            }
-            Dialect::SQLite => {
-                r#"CREATE TABLE IF NOT EXISTS schema_migrations (
+            .to_string(),
+            Dialect::SQLite => r#"CREATE TABLE IF NOT EXISTS schema_migrations (
     version TEXT PRIMARY KEY,
     description TEXT NOT NULL,
     applied_at TEXT NOT NULL DEFAULT (datetime('now')),
     checksum TEXT NOT NULL
 )"#
-                .to_string()
-            }
+            .to_string(),
         }
     }
 
@@ -272,12 +266,14 @@ impl DatabaseMigratorService {
     ) -> Result<Option<MigrationRecord>, DatabaseError> {
         let sql = self.generate_get_migration_by_version_sql(version);
 
-        let row_result = sqlx::query(&sql).fetch_optional(pool).await.map_err(|e| {
-            DatabaseError::Query {
-                message: format!("Failed to get migration record: {}", e),
-                sql: Some(sql),
-            }
-        })?;
+        let row_result =
+            sqlx::query(&sql)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| DatabaseError::Query {
+                    message: format!("Failed to get migration record: {}", e),
+                    sql: Some(sql),
+                })?;
 
         if let Some(row) = row_result {
             let version: String = row.get(0);
@@ -366,12 +362,14 @@ impl DatabaseMigratorService {
     ) -> Result<bool, DatabaseError> {
         let sql = self.generate_check_migration_table_exists_sql(dialect);
 
-        let row_result = sqlx::query(&sql).fetch_optional(pool).await.map_err(|e| {
-            DatabaseError::Query {
-                message: format!("Failed to check migration table existence: {}", e),
-                sql: Some(sql),
-            }
-        })?;
+        let row_result =
+            sqlx::query(&sql)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| DatabaseError::Query {
+                    message: format!("Failed to check migration table existence: {}", e),
+                    sql: Some(sql),
+                })?;
 
         Ok(row_result.is_some())
     }

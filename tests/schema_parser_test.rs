@@ -2,7 +2,6 @@
 ///
 /// スキーマディレクトリのスキャン、YAML解析、スキーマファイルのマージ処理が
 /// 正しく動作することを確認します。
-
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;

@@ -55,8 +55,8 @@ impl ExportCommandHandler {
             ));
         }
 
-        let config = Config::from_file(&config_path)
-            .with_context(|| "Failed to read config file")?;
+        let config =
+            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
 
         // データベースに接続
         let db_config = config
@@ -170,15 +170,11 @@ impl ExportCommandHandler {
         dialect: crate::core::config::Dialect,
     ) -> Result<Vec<Column>> {
         match dialect {
-            crate::core::config::Dialect::SQLite => {
-                self.get_columns_sqlite(pool, table_name).await
-            }
+            crate::core::config::Dialect::SQLite => self.get_columns_sqlite(pool, table_name).await,
             crate::core::config::Dialect::PostgreSQL => {
                 self.get_columns_postgres(pool, table_name).await
             }
-            crate::core::config::Dialect::MySQL => {
-                self.get_columns_mysql(pool, table_name).await
-            }
+            crate::core::config::Dialect::MySQL => self.get_columns_mysql(pool, table_name).await,
         }
     }
 
@@ -208,11 +204,7 @@ impl ExportCommandHandler {
     }
 
     /// PostgreSQLのカラム情報を取得
-    async fn get_columns_postgres(
-        &self,
-        pool: &AnyPool,
-        table_name: &str,
-    ) -> Result<Vec<Column>> {
+    async fn get_columns_postgres(&self, pool: &AnyPool, table_name: &str) -> Result<Vec<Column>> {
         let sql = r#"
             SELECT column_name, data_type, is_nullable, column_default, character_maximum_length, numeric_precision
             FROM information_schema.columns
@@ -232,7 +224,8 @@ impl ExportCommandHandler {
             let char_max_length: Option<i32> = row.get(4);
             let numeric_precision: Option<i32> = row.get(5);
 
-            let column_type = self.parse_postgres_type(&data_type, char_max_length, numeric_precision);
+            let column_type =
+                self.parse_postgres_type(&data_type, char_max_length, numeric_precision);
             let nullable = is_nullable == "YES";
 
             let mut column = Column::new(name, column_type, nullable);
@@ -358,9 +351,7 @@ impl ExportCommandHandler {
         dialect: crate::core::config::Dialect,
     ) -> Result<Vec<Index>> {
         match dialect {
-            crate::core::config::Dialect::SQLite => {
-                self.get_indexes_sqlite(pool, table_name).await
-            }
+            crate::core::config::Dialect::SQLite => self.get_indexes_sqlite(pool, table_name).await,
             _ => Ok(Vec::new()), // PostgreSQLとMySQLは後で実装
         }
     }
@@ -450,9 +441,9 @@ impl ExportCommandHandler {
             let from_col: String = row.get(3);
             let to_col: String = row.get(4);
 
-            let entry = fk_map.entry(id).or_insert_with(|| {
-                (ref_table.clone(), Vec::new(), Vec::new())
-            });
+            let entry = fk_map
+                .entry(id)
+                .or_insert_with(|| (ref_table.clone(), Vec::new(), Vec::new()));
 
             entry.1.push(from_col);
             entry.2.push(to_col);
@@ -479,10 +470,7 @@ impl ExportCommandHandler {
 
         output.push_str("=== Schema Export Complete ===\n\n");
 
-        output.push_str(&format!(
-            "Exported tables: {}\n\n",
-            table_names.len()
-        ));
+        output.push_str(&format!("Exported tables: {}\n\n", table_names.len()));
 
         for table_name in table_names {
             output.push_str(&format!("  - {}\n", table_name));

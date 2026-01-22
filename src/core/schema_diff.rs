@@ -437,10 +437,7 @@ mod tests {
         let diff = ColumnDiff::new("age".to_string(), old_column, new_column);
 
         assert_eq!(diff.changes.len(), 1);
-        assert!(matches!(
-            diff.changes[0],
-            ColumnChange::TypeChanged { .. }
-        ));
+        assert!(matches!(diff.changes[0], ColumnChange::TypeChanged { .. }));
     }
 
     #[test]

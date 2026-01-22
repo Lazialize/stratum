@@ -79,22 +79,18 @@ impl Config {
 
     /// YAML文字列から設定を読み込む
     pub fn from_str(yaml: &str) -> Result<Self> {
-        serde_saphyr::from_str(yaml)
-            .with_context(|| "Failed to parse config file")
+        serde_saphyr::from_str(yaml).with_context(|| "Failed to parse config file")
     }
 
     /// 指定された環境のデータベース設定を取得
     pub fn get_database_config(&self, environment: &str) -> Result<DatabaseConfig> {
-        self.environments
-            .get(environment)
-            .cloned()
-            .ok_or_else(|| {
-                anyhow!(
-                    "Environment '{}' not found. Available environments: {:?}",
-                    environment,
-                    self.environments.keys().collect::<Vec<_>>()
-                )
-            })
+        self.environments.get(environment).cloned().ok_or_else(|| {
+            anyhow!(
+                "Environment '{}' not found. Available environments: {:?}",
+                environment,
+                self.environments.keys().collect::<Vec<_>>()
+            )
+        })
     }
 
     /// 設定の妥当性を検証
@@ -106,7 +102,9 @@ impl Config {
 
         // 環境設定チェック
         if self.environments.is_empty() {
-            return Err(anyhow!("At least one environment configuration is required"));
+            return Err(anyhow!(
+                "At least one environment configuration is required"
+            ));
         }
 
         // 各環境のデータベース設定を検証
