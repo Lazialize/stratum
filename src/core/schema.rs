@@ -30,7 +30,8 @@ impl Schema {
 
     /// テーブルを追加
     pub fn add_table(&mut self, table: Table) {
-        self.tables.insert(table.name.clone(), table);
+        let table_name = table.name.clone();
+        self.tables.insert(table_name, table);
     }
 
     /// 指定されたテーブルが存在するか確認

@@ -12,7 +12,7 @@ use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::core::config::Config;
 use crate::core::migration::{AppliedMigration, Migration};
 use anyhow::{anyhow, Context, Result};
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -321,6 +321,7 @@ impl Default for ApplyCommandHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration;
 
     #[test]
     fn test_new_handler() {

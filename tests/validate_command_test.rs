@@ -322,10 +322,20 @@ tables:
 
 #[test]
 fn test_format_validation_summary() {
+    use stratum::cli::commands::validate::ValidationSummary;
     let handler = ValidateCommandHandler::new();
 
     // Format validation summary
-    let summary = handler.format_validation_summary(true, 0, 0, 2, 5, 3, 1);
+    let summary_data = ValidationSummary {
+        is_valid: true,
+        error_count: 0,
+        warning_count: 0,
+        table_count: 2,
+        column_count: 5,
+        index_count: 3,
+        constraint_count: 1,
+    };
+    let summary = handler.format_validation_summary(summary_data);
 
     assert!(summary.contains("Validation complete"));
     assert!(summary.contains("Tables: 2"));

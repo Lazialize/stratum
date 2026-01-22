@@ -11,6 +11,17 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// 設定ファイル生成のパラメータ
+#[derive(Debug, Clone)]
+pub struct ConfigFileParams {
+    pub dialect: Dialect,
+    pub database_name: String,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub user: Option<String>,
+    pub password: Option<String>,
+}
+
 /// initコマンドの入力パラメータ
 #[derive(Debug, Clone)]
 pub struct InitCommand {
@@ -63,15 +74,15 @@ impl InitCommandHandler {
         self.create_directory_structure(&command.project_path)?;
 
         // 設定ファイルを生成
-        self.generate_config_file(
-            &command.project_path,
-            command.dialect,
-            &command.database_name,
-            command.host.clone(),
-            command.port,
-            command.user.clone(),
-            command.password.clone(),
-        )?;
+        let config_params = ConfigFileParams {
+            dialect: command.dialect,
+            database_name: command.database_name.clone(),
+            host: command.host.clone(),
+            port: command.port,
+            user: command.user.clone(),
+            password: command.password.clone(),
+        };
+        self.generate_config_file(&command.project_path, config_params)?;
 
         Ok(())
     }
@@ -118,25 +129,15 @@ impl InitCommandHandler {
     /// # Arguments
     ///
     /// * `project_path` - プロジェクトのルートパス
-    /// * `dialect` - データベース方言
-    /// * `database_name` - データベース名
-    /// * `host` - ホスト名（オプション）
-    /// * `port` - ポート番号（オプション）
-    /// * `user` - ユーザー名（オプション）
-    /// * `password` - パスワード（オプション）
+    /// * `params` - 設定ファイル生成のパラメータ
     pub fn generate_config_file(
         &self,
         project_path: &Path,
-        dialect: Dialect,
-        database_name: &str,
-        host: Option<String>,
-        port: Option<u16>,
-        user: Option<String>,
-        password: Option<String>,
+        params: ConfigFileParams,
     ) -> Result<()> {
         // デフォルト値を設定
-        let host = host.unwrap_or_else(|| "localhost".to_string());
-        let port = port.unwrap_or_else(|| match dialect {
+        let host = params.host.unwrap_or("localhost".to_string());
+        let port = params.port.unwrap_or(match params.dialect {
             Dialect::PostgreSQL => 5432,
             Dialect::MySQL => 3306,
             Dialect::SQLite => 0,
@@ -144,11 +145,11 @@ impl InitCommandHandler {
 
         // データベース設定を作成
         let db_config = DatabaseConfig {
-            host: host.clone(),
+            host,
             port,
-            database: database_name.to_string(),
-            user,
-            password,
+            database: params.database_name,
+            user: params.user,
+            password: params.password,
             timeout: Some(30),
         };
 
@@ -159,7 +160,7 @@ impl InitCommandHandler {
         // 設定オブジェクトを作成
         let config = Config {
             version: "1.0".to_string(),
-            dialect,
+            dialect: params.dialect,
             schema_dir: PathBuf::from("schema"),
             migrations_dir: PathBuf::from("migrations"),
             environments,

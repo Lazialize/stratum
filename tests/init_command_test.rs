@@ -6,7 +6,7 @@
 mod init_command_tests {
     use std::fs;
     use std::path::PathBuf;
-    use stratum::cli::commands::init::{InitCommand, InitCommandHandler};
+    use stratum::cli::commands::init::{ConfigFileParams, InitCommand, InitCommandHandler};
     use stratum::core::config::{Config, Dialect};
     use tempfile::TempDir;
 
@@ -43,16 +43,16 @@ mod init_command_tests {
         let config_path = project_path.join(".stratum.yaml");
 
         let handler = InitCommandHandler::new();
+        let params = ConfigFileParams {
+            dialect: Dialect::PostgreSQL,
+            database_name: "mydb".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(5432),
+            user: Some("user".to_string()),
+            password: Some("pass".to_string()),
+        };
         handler
-            .generate_config_file(
-                project_path,
-                Dialect::PostgreSQL,
-                "mydb",
-                Some("localhost".to_string()),
-                Some(5432),
-                Some("user".to_string()),
-                Some("pass".to_string()),
-            )
+            .generate_config_file(project_path, params)
             .expect("Failed to generate config file");
 
         // 設定ファイルが作成されているか確認
@@ -77,16 +77,16 @@ mod init_command_tests {
         let config_path = project_path.join(".stratum.yaml");
 
         let handler = InitCommandHandler::new();
+        let params = ConfigFileParams {
+            dialect: Dialect::MySQL,
+            database_name: "mydb".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(3306),
+            user: Some("root".to_string()),
+            password: Some("pass".to_string()),
+        };
         handler
-            .generate_config_file(
-                project_path,
-                Dialect::MySQL,
-                "mydb",
-                Some("localhost".to_string()),
-                Some(3306),
-                Some("root".to_string()),
-                Some("pass".to_string()),
-            )
+            .generate_config_file(project_path, params)
             .expect("Failed to generate config file");
 
         assert!(config_path.exists());
@@ -104,16 +104,16 @@ mod init_command_tests {
         let config_path = project_path.join(".stratum.yaml");
 
         let handler = InitCommandHandler::new();
+        let params = ConfigFileParams {
+            dialect: Dialect::SQLite,
+            database_name: "db.sqlite".to_string(),
+            host: None,
+            port: None,
+            user: None,
+            password: None,
+        };
         handler
-            .generate_config_file(
-                project_path,
-                Dialect::SQLite,
-                "db.sqlite",
-                None,
-                None,
-                None,
-                None,
-            )
+            .generate_config_file(project_path, params)
             .expect("Failed to generate config file");
 
         assert!(config_path.exists());
@@ -154,16 +154,16 @@ mod init_command_tests {
         // 事前に初期化
         let handler = InitCommandHandler::new();
         handler.create_directory_structure(project_path).unwrap();
+        let params = ConfigFileParams {
+            dialect: Dialect::PostgreSQL,
+            database_name: "testdb".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(5432),
+            user: Some("user".to_string()),
+            password: Some("pass".to_string()),
+        };
         handler
-            .generate_config_file(
-                project_path,
-                Dialect::PostgreSQL,
-                "testdb",
-                Some("localhost".to_string()),
-                Some(5432),
-                Some("user".to_string()),
-                Some("pass".to_string()),
-            )
+            .generate_config_file(project_path, params)
             .unwrap();
 
         // 再初期化を試みる（force=false）
@@ -193,16 +193,16 @@ mod init_command_tests {
         // 事前に初期化
         let handler = InitCommandHandler::new();
         handler.create_directory_structure(project_path).unwrap();
+        let params = ConfigFileParams {
+            dialect: Dialect::PostgreSQL,
+            database_name: "testdb".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(5432),
+            user: Some("user".to_string()),
+            password: Some("pass".to_string()),
+        };
         handler
-            .generate_config_file(
-                project_path,
-                Dialect::PostgreSQL,
-                "testdb",
-                Some("localhost".to_string()),
-                Some(5432),
-                Some("user".to_string()),
-                Some("pass".to_string()),
-            )
+            .generate_config_file(project_path, params)
             .unwrap();
 
         // 再初期化を試みる（force=true）
@@ -273,16 +273,16 @@ mod init_command_tests {
         let project_path = temp_dir.path();
 
         let handler = InitCommandHandler::new();
+        let params = ConfigFileParams {
+            dialect: Dialect::PostgreSQL,
+            database_name: "testdb".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(5432),
+            user: Some("user".to_string()),
+            password: Some("pass".to_string()),
+        };
         handler
-            .generate_config_file(
-                project_path,
-                Dialect::PostgreSQL,
-                "testdb",
-                Some("localhost".to_string()),
-                Some(5432),
-                Some("user".to_string()),
-                Some("pass".to_string()),
-            )
+            .generate_config_file(project_path, params)
             .unwrap();
 
         let config_path = project_path.join(".stratum.yaml");

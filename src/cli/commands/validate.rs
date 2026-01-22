@@ -12,6 +12,18 @@ use crate::services::schema_validator::SchemaValidatorService;
 use anyhow::{anyhow, Context, Result};
 use std::path::PathBuf;
 
+/// 検証結果のサマリー情報
+#[derive(Debug, Clone)]
+pub struct ValidationSummary {
+    pub is_valid: bool,
+    pub error_count: usize,
+    pub warning_count: usize,
+    pub table_count: usize,
+    pub column_count: usize,
+    pub index_count: usize,
+    pub constraint_count: usize,
+}
+
 /// validateコマンドの入力パラメータ
 #[derive(Debug, Clone)]
 pub struct ValidateCommand {
@@ -184,41 +196,32 @@ impl ValidateCommandHandler {
     }
 
     /// 検証結果のサマリーをフォーマット（テスト用）
-    pub fn format_validation_summary(
-        &self,
-        is_valid: bool,
-        error_count: usize,
-        warning_count: usize,
-        table_count: usize,
-        column_count: usize,
-        index_count: usize,
-        constraint_count: usize,
-    ) -> String {
+    pub fn format_validation_summary(&self, summary: ValidationSummary) -> String {
         let mut output = String::new();
 
         output.push_str("=== Schema Validation Results ===\n\n");
 
-        if error_count > 0 {
-            output.push_str(&format!("❌ {} error(s) found\n", error_count));
+        if summary.error_count > 0 {
+            output.push_str(&format!("❌ {} error(s) found\n", summary.error_count));
         }
 
-        if warning_count > 0 {
-            output.push_str(&format!("⚠️  {} warning(s) found\n", warning_count));
+        if summary.warning_count > 0 {
+            output.push_str(&format!("⚠️  {} warning(s) found\n", summary.warning_count));
         }
 
         output.push_str("\n=== Validation Statistics ===\n");
-        output.push_str(&format!("Tables: {}\n", table_count));
-        output.push_str(&format!("Columns: {}\n", column_count));
-        output.push_str(&format!("Indexes: {}\n", index_count));
-        output.push_str(&format!("Constraints: {}\n", constraint_count));
+        output.push_str(&format!("Tables: {}\n", summary.table_count));
+        output.push_str(&format!("Columns: {}\n", summary.column_count));
+        output.push_str(&format!("Indexes: {}\n", summary.index_count));
+        output.push_str(&format!("Constraints: {}\n", summary.constraint_count));
 
         output.push_str("\n=== Result ===\n");
-        if is_valid && error_count == 0 {
+        if summary.is_valid && summary.error_count == 0 {
             output.push_str("✓ Validation complete. No errors found.\n");
         } else {
             output.push_str(&format!(
                 "✗ Validation complete. {} error(s) found.\n",
-                error_count
+                summary.error_count
             ));
         }
 
@@ -247,13 +250,31 @@ mod tests {
         let handler = ValidateCommandHandler::new();
 
         // エラーなしの場合
-        let summary = handler.format_validation_summary(true, 0, 0, 2, 5, 3, 1);
+        let summary_data = ValidationSummary {
+            is_valid: true,
+            error_count: 0,
+            warning_count: 0,
+            table_count: 2,
+            column_count: 5,
+            index_count: 3,
+            constraint_count: 1,
+        };
+        let summary = handler.format_validation_summary(summary_data);
         assert!(summary.contains("Validation complete"));
         assert!(summary.contains("Tables: 2"));
         assert!(summary.contains("No errors found"));
 
         // エラーありの場合
-        let summary = handler.format_validation_summary(false, 3, 1, 2, 5, 3, 1);
+        let summary_data_with_errors = ValidationSummary {
+            is_valid: false,
+            error_count: 3,
+            warning_count: 1,
+            table_count: 2,
+            column_count: 5,
+            index_count: 3,
+            constraint_count: 1,
+        };
+        let summary = handler.format_validation_summary(summary_data_with_errors);
         assert!(summary.contains("3 error(s) found"));
         assert!(summary.contains("1 warning(s) found"));
     }

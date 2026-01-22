@@ -106,8 +106,8 @@ mod migration_generator_tests {
             .unwrap();
 
         // removed_tablesの場合、DOWNではテーブルを再作成する必要がある
-        // 現在はTODOコメントを生成
-        assert!(down_sql.contains("TODO") || down_sql.contains("Recreate"));
+        // 現在はNOTEコメントを生成
+        assert!(down_sql.contains("NOTE") || down_sql.contains("Manually add CREATE TABLE"));
     }
 
     /// 複数の変更を含むUP SQL生成テスト

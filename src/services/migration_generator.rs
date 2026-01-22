@@ -159,7 +159,7 @@ impl MigrationGenerator {
     /// # Returns
     ///
     /// DOWN SQL文字列（エラーの場合はエラーメッセージ）
-    pub fn generate_down_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> Result<String, String> {
+    pub fn generate_down_sql(&self, diff: &SchemaDiff, _dialect: Dialect) -> Result<String, String> {
         let mut statements = Vec::new();
 
         // 外部キー依存関係を考慮してテーブルをソート
@@ -187,16 +187,14 @@ impl MigrationGenerator {
             }
         }
 
-        // 削除されたテーブルを再作成（UPで生成した分）
-        let _generator: Box<dyn SqlGenerator> = match dialect {
-            Dialect::PostgreSQL => Box::new(PostgresSqlGenerator::new()),
-            Dialect::MySQL => Box::new(MysqlSqlGenerator::new()),
-            Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
-        };
-
+        // 削除されたテーブルを再作成
+        // 注: ロールバック時に削除されたテーブルを復元するには、
+        // 元のスキーマ定義が必要です。手動で CREATE TABLE 文を追加してください。
         for table_name in &diff.removed_tables {
-            // 注: 実際のテーブル定義がないため、プレースホルダー
-            statements.push(format!("-- TODO: Recreate table {}", table_name));
+            statements.push(format!(
+                "-- NOTE: Manually add CREATE TABLE statement for '{}' if rollback is needed",
+                table_name
+            ));
         }
 
         Ok(statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" })

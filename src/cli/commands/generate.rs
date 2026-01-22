@@ -182,20 +182,21 @@ impl GenerateCommandHandler {
         let mut parts = Vec::new();
 
         if !diff.added_tables.is_empty() {
-            let table_names: Vec<String> =
-                diff.added_tables.iter().map(|t| t.name.clone()).collect();
+            let table_names: Vec<&str> =
+                diff.added_tables.iter().map(|t| t.name.as_str()).collect();
             parts.push(format!("add tables {}", table_names.join(", ")));
         }
 
         if !diff.removed_tables.is_empty() {
-            parts.push(format!("remove tables {}", diff.removed_tables.join(", ")));
+            let removed_names: Vec<&str> = diff.removed_tables.iter().map(|s| s.as_str()).collect();
+            parts.push(format!("remove tables {}", removed_names.join(", ")));
         }
 
         if !diff.modified_tables.is_empty() {
-            let table_names: Vec<String> = diff
+            let table_names: Vec<&str> = diff
                 .modified_tables
                 .iter()
-                .map(|t| t.table_name.clone())
+                .map(|t| t.table_name.as_str())
                 .collect();
             parts.push(format!("modify tables {}", table_names.join(", ")));
         }

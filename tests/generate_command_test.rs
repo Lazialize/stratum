@@ -6,7 +6,7 @@
 mod generate_command_tests {
     use std::fs;
     use stratum::cli::commands::generate::{GenerateCommand, GenerateCommandHandler};
-    use stratum::core::config::{Config, Dialect};
+    use stratum::core::config::Dialect;
     use tempfile::TempDir;
 
     /// コマンドハンドラーの作成テスト
