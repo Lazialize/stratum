@@ -125,24 +125,41 @@
 
 ---
 
-### Task 6: 統合テスト
+### Task 6: 統合テスト ✅
 **要件マッピング**: 1, 2, 3, 4, 5
 
 **サブタスク**:
-1. PostgreSQL方言固有型の統合テストを追加する
+- [x] PostgreSQL方言固有型の統合テストを追加する
    - `SERIAL`型のテーブル作成とマイグレーション実行をテストする
+   - `INET`型を使用したテーブル作成とデータ挿入をテストする
    - `ARRAY`型のパラメータ処理をテストする
    - 既存の共通型との混在スキーマをテストする
 
-2. MySQL方言固有型の統合テストを追加する
+- [x] MySQL方言固有型の統合テストを追加する
    - `ENUM`型のvaluesパラメータ処理をテストする
    - `TINYINT`型のテーブル作成をテストする
+   - `SET`型を使用したテーブル作成とデータ挿入をテストする
    - 既存の共通型との混在スキーマをテストする
 
-3. 無効な方言固有型のエラーハンドリングをテストする
-   - 存在しない型名のエラーメッセージ伝達をテストする
-   - 不正なパラメータのエラーメッセージ伝達をテストする
-   - エラーメッセージにデータベースの詳細情報が含まれることを確認する
+- [x] 無効な方言固有型のエラーハンドリングをテストする（Task 4で実装済み）
+   - 存在しない型名のエラーメッセージ伝達をテストする (`tests/dialect_specific_database_error_test.rs`)
+   - 不正なパラメータのエラーメッセージ伝達をテストする (`tests/dialect_specific_database_error_test.rs`)
+   - エラーメッセージにデータベースの詳細情報が含まれることを確認する (`tests/dialect_specific_database_error_test.rs`)
+
+**実装内容**:
+- `tests/dialect_specific_integration_test.rs`ファイルを作成
+- PostgreSQL統合テスト（4テスト）:
+  - `test_postgres_serial_type_table_creation` - SERIAL型のテーブル作成とスキーマ検証
+  - `test_postgres_inet_type_table_creation` - INET型の動作確認（データ挿入・取得）
+  - `test_postgres_array_type_table_creation` - ARRAY型の動作確認（配列データ処理）
+  - `test_postgres_mixed_common_and_dialect_specific_types` - SERIAL+VARCHAR+DECIMAL混在スキーマ
+- MySQL統合テスト（4テスト）:
+  - `test_mysql_enum_type_table_creation` - ENUM型の動作確認（値制約検証）
+  - `test_mysql_tinyint_type_table_creation` - TINYINT UNSIGNED型の動作確認
+  - `test_mysql_set_type_table_creation` - SET型の動作確認（複数値選択）
+  - `test_mysql_mixed_common_and_dialect_specific_types` - INT+VARCHAR+ENUM+TINYINT+TEXT混在スキーマ
+- すべてのテストに`#[ignore]`属性を付与（Docker環境が必要）
+- エラーハンドリングテストはTask 4で実装済みの`tests/dialect_specific_database_error_test.rs`で対応
 
 ---
 
