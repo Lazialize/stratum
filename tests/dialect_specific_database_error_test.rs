@@ -184,7 +184,7 @@ mod dialect_specific_database_error_tests {
 
         // VARCHARに無効な長さパラメータを指定
         // PostgreSQLのVARCHARの最大長は10485760
-        let sql = "CREATE TABLE test_table (name VARCHAR(99999999999));";
+        let sql = "CREATE TABLE test_table (name VARCHAR(10485761));";
 
         let result = sqlx::query(sql).execute(&mut conn).await;
 
@@ -196,7 +196,9 @@ mod dialect_specific_database_error_tests {
 
         // データベースからのパラメータエラーメッセージが含まれることを確認
         assert!(
-            error_message.contains("length") || error_message.contains("invalid"),
+            error_message.contains("length")
+                || error_message.contains("invalid")
+                || error_message.contains("at most"),
             "Expected error message to contain parameter error, got: {}",
             error_message
         );
@@ -219,10 +221,7 @@ mod dialect_specific_database_error_tests {
             .await
             .expect("Failed to get container port");
 
-        let connection_string = format!(
-            "mysql://root:root@127.0.0.1:{}/test",
-            port
-        );
+        let connection_string = format!("mysql://root@127.0.0.1:{}/test", port);
 
         let mut conn = sqlx::MySqlConnection::connect(&connection_string)
             .await

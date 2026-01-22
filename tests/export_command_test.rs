@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use sqlx::any::install_default_drivers;
 use stratum::cli::commands::export::{ExportCommand, ExportCommandHandler};
 use stratum::core::config::{Config, DatabaseConfig, Dialect};
 use tempfile::TempDir;
@@ -108,10 +109,12 @@ async fn test_export_invalid_environment() {
 #[tokio::test]
 #[ignore] // 統合テスト - 実際のデータベースが必要
 async fn test_export_from_sqlite_database() {
+    install_default_drivers();
     let (_temp_dir, project_path) = setup_test_project().unwrap();
 
     // データベースファイルのパス
     let db_path = project_path.join("test.db");
+    fs::File::create(&db_path).unwrap();
 
     // 設定ファイルにデータベース接続情報を追加
     let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
@@ -189,10 +192,12 @@ async fn test_export_from_sqlite_database() {
 #[tokio::test]
 #[ignore] // 統合テスト - 実際のデータベースが必要
 async fn test_export_to_stdout() {
+    install_default_drivers();
     let (_temp_dir, project_path) = setup_test_project().unwrap();
 
     // データベースファイルのパス
     let db_path = project_path.join("test.db");
+    fs::File::create(&db_path).unwrap();
 
     // 設定ファイルにデータベース接続情報を追加
     let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));

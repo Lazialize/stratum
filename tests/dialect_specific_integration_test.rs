@@ -98,19 +98,19 @@ async fn test_postgres_inet_type_table_creation() {
         .expect("Failed to create table with INET type");
 
     // データを挿入してINET型が正しく動作することを確認
-    sqlx::query("INSERT INTO test_inet_table (ip_address) VALUES ($1)")
+    sqlx::query("INSERT INTO test_inet_table (ip_address) VALUES ($1::inet)")
         .bind("192.168.1.1")
         .execute(&mut conn)
         .await
         .expect("Failed to insert INET data");
 
-    let result = sqlx::query("SELECT ip_address FROM test_inet_table")
+    let result = sqlx::query("SELECT ip_address::text AS ip_address FROM test_inet_table")
         .fetch_one(&mut conn)
         .await
         .expect("Failed to fetch INET data");
 
     let ip: String = result.get("ip_address");
-    assert_eq!(ip, "192.168.1.1");
+    assert_eq!(ip, "192.168.1.1/32");
 }
 
 /// PostgreSQL: ARRAY型を使用したテーブル作成の統合テスト
@@ -236,10 +236,7 @@ async fn test_mysql_enum_type_table_creation() {
         .await
         .expect("Failed to get container port");
 
-    let connection_string = format!(
-        "mysql://root:test@127.0.0.1:{}/mysql",
-        host_port
-    );
+    let connection_string = format!("mysql://root@127.0.0.1:{}/mysql", host_port);
 
     let mut conn = MySqlConnection::connect(&connection_string)
         .await
@@ -288,10 +285,7 @@ async fn test_mysql_tinyint_type_table_creation() {
         .await
         .expect("Failed to get container port");
 
-    let connection_string = format!(
-        "mysql://root:test@127.0.0.1:{}/mysql",
-        host_port
-    );
+    let connection_string = format!("mysql://root@127.0.0.1:{}/mysql", host_port);
 
     let mut conn = MySqlConnection::connect(&connection_string)
         .await
@@ -340,10 +334,7 @@ async fn test_mysql_set_type_table_creation() {
         .await
         .expect("Failed to get container port");
 
-    let connection_string = format!(
-        "mysql://root:test@127.0.0.1:{}/mysql",
-        host_port
-    );
+    let connection_string = format!("mysql://root@127.0.0.1:{}/mysql", host_port);
 
     let mut conn = MySqlConnection::connect(&connection_string)
         .await
@@ -392,10 +383,7 @@ async fn test_mysql_mixed_common_and_dialect_specific_types() {
         .await
         .expect("Failed to get container port");
 
-    let connection_string = format!(
-        "mysql://root:test@127.0.0.1:{}/mysql",
-        host_port
-    );
+    let connection_string = format!("mysql://root@127.0.0.1:{}/mysql", host_port);
 
     let mut conn = MySqlConnection::connect(&connection_string)
         .await
@@ -432,7 +420,7 @@ async fn test_mysql_mixed_common_and_dialect_specific_types() {
         .await
         .expect("Failed to fetch data");
 
-    let id: u32 = result.get("id");
+    let id: i32 = result.get("id");
     let username: String = result.get("username");
     let status: String = result.get("status");
     let age: Option<u8> = result.get("age");

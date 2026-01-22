@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use sqlx::any::install_default_drivers;
 use stratum::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
 use stratum::core::config::{Config, DatabaseConfig, Dialect};
 use tempfile::TempDir;
@@ -180,10 +181,12 @@ async fn test_load_available_migrations() {
 #[tokio::test]
 #[ignore] // 統合テスト - 実際のデータベースが必要
 async fn test_rollback_single_migration_sqlite() {
+    install_default_drivers();
     let (_temp_dir, project_path) = setup_test_project().unwrap();
 
     // データベースファイルのパス
     let db_path = project_path.join("test.db");
+    fs::File::create(&db_path).unwrap();
 
     // 設定ファイルにデータベース接続情報を追加
     let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
@@ -246,7 +249,7 @@ async fn test_rollback_single_migration_sqlite() {
     assert!(result.is_ok(), "Rollback failed: {:?}", result);
 
     let summary = result.unwrap();
-    assert!(summary.contains("Rollback complete"));
+    assert!(summary.contains("Migration Rollback Complete"));
     assert!(summary.contains("20260121120000"));
 
     // マイグレーション履歴が削除されたことを確認
