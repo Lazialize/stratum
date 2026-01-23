@@ -13,6 +13,8 @@ use stratum::cli::{Cli, Commands};
 use stratum::core::config::Dialect;
 
 fn main() {
+    sqlx::any::install_default_drivers();
+
     // CLIをパースして実行
     let cli = Cli::parse();
 
