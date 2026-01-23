@@ -5,6 +5,7 @@
 pub mod mysql;
 pub mod postgres;
 pub mod sqlite;
+pub mod sqlite_table_recreator;
 
 use crate::core::schema::{ColumnType, Index, Table};
 use crate::core::schema_diff::ColumnDiff;
@@ -111,6 +112,32 @@ pub trait SqlGenerator {
         // デフォルト実装：空のベクター
         // 各方言の実装でオーバーライド
         Vec::new()
+    }
+
+    /// カラム型変更のALTER TABLE文を生成（旧テーブル情報付き）
+    ///
+    /// SQLiteなど、カラム追加/削除を伴うテーブル再作成が必要な場合に使用します。
+    /// 旧テーブルのカラム情報を基に、列交差ロジックでデータコピーSQLを生成します。
+    ///
+    /// # Arguments
+    ///
+    /// * `table` - 対象テーブルの新しい定義（direction=Upなら新定義、Downなら旧定義）
+    /// * `old_table` - 対象テーブルの古い定義（列交差のための参照）
+    /// * `column_diff` - カラム差分情報
+    /// * `direction` - マイグレーション方向（Up/Down）
+    ///
+    /// # Returns
+    ///
+    /// ALTER TABLE文のベクター（SQLiteは複数文）
+    fn generate_alter_column_type_with_old_table(
+        &self,
+        table: &Table,
+        _old_table: Option<&Table>,
+        column_diff: &ColumnDiff,
+        direction: MigrationDirection,
+    ) -> Vec<String> {
+        // デフォルト実装：old_tableを無視して通常のgenerate_alter_column_typeを呼び出す
+        self.generate_alter_column_type(table, column_diff, direction)
     }
 }
 

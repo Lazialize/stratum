@@ -2,8 +2,10 @@
 //
 // スキーマ定義からPostgreSQL用のDDL文を生成します。
 
-use crate::adapters::sql_generator::SqlGenerator;
+use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
+use crate::core::schema_diff::ColumnDiff;
+use crate::core::type_category::TypeCategory;
 
 /// PostgreSQL用SQLジェネレーター
 #[derive(Debug, Clone)]
@@ -151,9 +153,99 @@ impl PostgresSqlGenerator {
     fn should_add_as_table_constraint(&self, constraint: &Constraint) -> bool {
         !matches!(constraint, Constraint::FOREIGN_KEY { .. })
     }
+
+    /// USING句が必要かどうかを判定
+    ///
+    /// TypeCategoryベースでUSING句の自動生成を判定します。
+    /// design.mdの「USING句生成ルール」に基づく実装。
+    fn needs_using_clause(&self, source_type: &ColumnType, target_type: &ColumnType) -> bool {
+        let source_category = TypeCategory::from_column_type(source_type);
+        let target_category = TypeCategory::from_column_type(target_type);
+
+        use TypeCategory::*;
+
+        match (source_category, target_category) {
+            // 同一カテゴリ内: 不要
+            (Numeric, Numeric)
+            | (String, String)
+            | (DateTime, DateTime)
+            | (Binary, Binary)
+            | (Json, Json)
+            | (Boolean, Boolean)
+            | (Uuid, Uuid) => false,
+
+            // String → Numeric/Boolean/DateTime/Json: 必要
+            (String, Numeric) | (String, Boolean) | (String, DateTime) | (String, Json) => true,
+
+            // Numeric → String: 不要（暗黙変換）
+            (Numeric, String) => false,
+
+            // DateTime → String: 不要（暗黙変換）
+            (DateTime, String) => false,
+
+            // Boolean → Numeric/String: 不要（暗黙変換）
+            (Boolean, Numeric) | (Boolean, String) => false,
+
+            // Uuid → String: 不要（暗黙変換）
+            (Uuid, String) => false,
+
+            // Json → String: 不要（暗黙変換）
+            (Json, String) => false,
+
+            // Binary → String: 不要（暗黙変換）
+            (Binary, String) => false,
+
+            // Otherカテゴリ: 安全のためUSING句を付与
+            (Other, _) | (_, Other) => true,
+
+            // その他の変換: 安全のためUSING句を付与
+            _ => true,
+        }
+    }
 }
 
 impl SqlGenerator for PostgresSqlGenerator {
+    fn generate_alter_column_type(
+        &self,
+        table: &Table,
+        column_diff: &ColumnDiff,
+        direction: MigrationDirection,
+    ) -> Vec<String> {
+        let column_name = &column_diff.column_name;
+
+        // 方向に応じて対象の型を決定
+        let (source_type, target_type) = match direction {
+            MigrationDirection::Up => (
+                &column_diff.old_column.column_type,
+                &column_diff.new_column.column_type,
+            ),
+            MigrationDirection::Down => (
+                &column_diff.new_column.column_type,
+                &column_diff.old_column.column_type,
+            ),
+        };
+
+        // 対象の型をPostgreSQL型文字列にマッピング
+        let target_type_str = self.map_column_type(target_type, None);
+
+        // USING句が必要かどうかを判定
+        let needs_using = self.needs_using_clause(source_type, target_type);
+
+        let sql = if needs_using {
+            format!(
+                "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{}",
+                table.name, column_name, target_type_str, column_name, target_type_str
+            )
+        } else {
+            format!(
+                "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
+                table.name, column_name, target_type_str
+            )
+        };
+
+        vec![sql]
+    }
+
     fn generate_create_table(&self, table: &Table) -> String {
         let mut parts = Vec::new();
 
@@ -359,5 +451,208 @@ mod tests {
 
         let def = generator.generate_constraint_definition(&constraint);
         assert_eq!(def, "CHECK (price >= 0)");
+    }
+
+    // ==========================================
+    // generate_alter_column_type のテスト
+    // ==========================================
+
+    use crate::adapters::sql_generator::MigrationDirection;
+    use crate::core::schema_diff::ColumnDiff;
+
+    fn create_test_table() -> Table {
+        let mut table = Table::new("users".to_string());
+        table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.columns.push(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        table
+    }
+
+    #[test]
+    fn test_alter_column_type_same_category_no_using() {
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        // INTEGER → BIGINT（同じNumericカテゴリ内）
+        let old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: Some(8) },
+            false,
+        );
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE BIGINT");
+    }
+
+    #[test]
+    fn test_alter_column_type_numeric_to_string_no_using() {
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        // INTEGER → TEXT（暗黙変換可能）
+        let old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let new_column = Column::new("id".to_string(), ColumnType::TEXT, false);
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE TEXT");
+    }
+
+    #[test]
+    fn test_alter_column_type_string_to_numeric_with_using() {
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        // TEXT → INTEGER（USING句が必要）
+        let old_column = Column::new("name".to_string(), ColumnType::TEXT, false);
+        let new_column = Column::new(
+            "name".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let diff = ColumnDiff::new("name".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users ALTER COLUMN name TYPE INTEGER USING name::INTEGER"
+        );
+    }
+
+    #[test]
+    fn test_alter_column_type_string_to_boolean_with_using() {
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        // VARCHAR → BOOLEAN（USING句が必要）
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 10 },
+            false,
+        );
+        let new_column = Column::new("name".to_string(), ColumnType::BOOLEAN, false);
+        let diff = ColumnDiff::new("name".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users ALTER COLUMN name TYPE BOOLEAN USING name::BOOLEAN"
+        );
+    }
+
+    #[test]
+    fn test_alter_column_type_string_to_json_with_using() {
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        // TEXT → JSONB（USING句が必要）
+        let old_column = Column::new("name".to_string(), ColumnType::TEXT, false);
+        let new_column = Column::new("name".to_string(), ColumnType::JSONB, false);
+        let diff = ColumnDiff::new("name".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users ALTER COLUMN name TYPE JSONB USING name::JSONB"
+        );
+    }
+
+    #[test]
+    fn test_alter_column_type_down_direction() {
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        // Down方向: old_columnの型に戻す
+        let old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: Some(8) },
+            false,
+        );
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Down);
+
+        assert_eq!(sql.len(), 1);
+        // Down方向なので old_type (INTEGER) に戻す
+        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE INTEGER");
+    }
+
+    #[test]
+    fn test_alter_column_type_datetime_to_string_no_using() {
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        // TIMESTAMP → TEXT（暗黙変換可能）
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::TIMESTAMP {
+                with_time_zone: None,
+            },
+            false,
+        );
+        let new_column = Column::new("name".to_string(), ColumnType::TEXT, false);
+        let diff = ColumnDiff::new("name".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN name TYPE TEXT");
+    }
+
+    #[test]
+    fn test_alter_column_type_string_to_datetime_with_using() {
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        // TEXT → TIMESTAMP（USING句が必要）
+        let old_column = Column::new("name".to_string(), ColumnType::TEXT, false);
+        let new_column = Column::new(
+            "name".to_string(),
+            ColumnType::TIMESTAMP {
+                with_time_zone: None,
+            },
+            false,
+        );
+        let diff = ColumnDiff::new("name".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users ALTER COLUMN name TYPE TIMESTAMP USING name::TIMESTAMP"
+        );
     }
 }

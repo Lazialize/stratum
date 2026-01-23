@@ -59,11 +59,15 @@ async fn run_command(cli: Cli) -> Result<String> {
             Ok("Project initialized.".to_string())
         }
 
-        Commands::Generate { description } => {
+        Commands::Generate {
+            description,
+            dry_run,
+        } => {
             let handler = GenerateCommandHandler::new();
             let command = GenerateCommand {
                 project_path,
                 description,
+                dry_run,
             };
             handler.execute(&command)
         }

@@ -5,9 +5,12 @@
 use crate::adapters::sql_generator::mysql::MysqlSqlGenerator;
 use crate::adapters::sql_generator::postgres::PostgresSqlGenerator;
 use crate::adapters::sql_generator::sqlite::SqliteSqlGenerator;
-use crate::adapters::sql_generator::SqlGenerator;
+use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::core::config::Dialect;
-use crate::core::schema_diff::{EnumChangeKind, EnumDiff, SchemaDiff};
+use crate::core::error::ValidationResult;
+use crate::core::schema::Schema;
+use crate::core::schema_diff::{ColumnChange, EnumChangeKind, EnumDiff, SchemaDiff};
+use crate::services::type_change_validator::TypeChangeValidator;
 use chrono::Utc;
 
 /// マイグレーションファイル生成サービス
@@ -359,6 +362,239 @@ impl MigrationGenerator {
     fn escape_enum_value(&self, value: &str) -> String {
         value.replace('\'', "''")
     }
+
+    /// UP SQLを生成（スキーマ付き、型変更対応）
+    ///
+    /// # Arguments
+    ///
+    /// * `diff` - スキーマ差分
+    /// * `old_schema` - 変更前のスキーマ
+    /// * `new_schema` - 変更後のスキーマ
+    /// * `dialect` - データベース方言
+    ///
+    /// # Returns
+    ///
+    /// UP SQL文字列と検証結果のタプル、または検証エラー
+    pub fn generate_up_sql_with_schemas(
+        &self,
+        diff: &SchemaDiff,
+        _old_schema: &Schema,
+        new_schema: &Schema,
+        dialect: Dialect,
+    ) -> Result<(String, ValidationResult), String> {
+        // 型変更の検証
+        let validator = TypeChangeValidator::new();
+        let mut total_validation_result = ValidationResult::new();
+
+        for table_diff in &diff.modified_tables {
+            let validation = validator.validate_type_changes(
+                &table_diff.table_name,
+                &table_diff.modified_columns,
+                &dialect,
+            );
+            total_validation_result.merge(validation);
+        }
+
+        // エラーがある場合は早期リターン
+        if !total_validation_result.is_valid() {
+            let error_messages: Vec<String> = total_validation_result
+                .errors
+                .iter()
+                .map(|e| e.to_string())
+                .collect();
+            return Err(format!(
+                "Type change validation failed:\n{}",
+                error_messages.join("\n")
+            ));
+        }
+
+        let mut statements = Vec::new();
+
+        // データベース方言に応じたSQLジェネレーターを取得
+        let generator: Box<dyn SqlGenerator> = match dialect {
+            Dialect::PostgreSQL => Box::new(PostgresSqlGenerator::new()),
+            Dialect::MySQL => Box::new(MysqlSqlGenerator::new()),
+            Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
+        };
+
+        if matches!(dialect, Dialect::PostgreSQL) {
+            self.append_enum_statements_pre_table(diff, &mut statements)?;
+        }
+
+        // 外部キー依存関係を考慮してテーブルをソート
+        let sorted_tables = diff.sort_added_tables_by_dependency()?;
+
+        // 追加されたテーブルのCREATE TABLE文を生成（ソート済み）
+        for table in &sorted_tables {
+            statements.push(generator.generate_create_table(table));
+
+            // インデックスの作成
+            for index in &table.indexes {
+                statements.push(generator.generate_create_index(table, index));
+            }
+
+            // FOREIGN KEY制約の追加（SQLite以外）
+            if !matches!(dialect, Dialect::SQLite) {
+                for (i, constraint) in table.constraints.iter().enumerate() {
+                    if matches!(
+                        constraint,
+                        crate::core::schema::Constraint::FOREIGN_KEY { .. }
+                    ) {
+                        let alter_sql = generator.generate_alter_table_add_constraint(table, i);
+                        if !alter_sql.is_empty() {
+                            statements.push(alter_sql);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 変更されたテーブルの処理
+        for table_diff in &diff.modified_tables {
+            // カラムの追加
+            for column in &table_diff.added_columns {
+                statements.push(format!(
+                    "ALTER TABLE {} ADD COLUMN {} {} {}",
+                    table_diff.table_name,
+                    column.name,
+                    self.get_column_type_string(column, dialect),
+                    if column.nullable { "" } else { "NOT NULL" }
+                ));
+            }
+
+            // 型変更の処理
+            for column_diff in &table_diff.modified_columns {
+                if self.has_type_change(column_diff) {
+                    // Up方向ではnew_schemaからテーブル定義を取得
+                    if let Some(table) = new_schema.tables.get(&table_diff.table_name) {
+                        // 旧テーブル情報を渡して列交差ロジックを有効にする（SQLite用）
+                        let old_table = _old_schema.tables.get(&table_diff.table_name);
+                        let alter_statements = generator.generate_alter_column_type_with_old_table(
+                            table,
+                            old_table,
+                            column_diff,
+                            MigrationDirection::Up,
+                        );
+                        statements.extend(alter_statements);
+                    }
+                }
+            }
+
+            // インデックスの追加
+            for index in &table_diff.added_indexes {
+                let table = crate::core::schema::Table::new(table_diff.table_name.clone());
+                statements.push(generator.generate_create_index(&table, index));
+            }
+        }
+
+        if matches!(dialect, Dialect::PostgreSQL) {
+            self.append_enum_statements_post_table(diff, &mut statements)?;
+        }
+
+        // 削除されたテーブルのDROP TABLE文を生成
+        for table_name in &diff.removed_tables {
+            statements.push(format!("DROP TABLE {}", table_name));
+        }
+
+        if matches!(dialect, Dialect::PostgreSQL) {
+            self.append_enum_drop_statements(diff, &mut statements)?;
+        }
+
+        let sql = statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" };
+        Ok((sql, total_validation_result))
+    }
+
+    /// DOWN SQLを生成（スキーマ付き、型変更対応）
+    ///
+    /// # Arguments
+    ///
+    /// * `diff` - スキーマ差分
+    /// * `old_schema` - 変更前のスキーマ
+    /// * `new_schema` - 変更後のスキーマ
+    /// * `dialect` - データベース方言
+    ///
+    /// # Returns
+    ///
+    /// DOWN SQL文字列と検証結果のタプル、またはエラー
+    pub fn generate_down_sql_with_schemas(
+        &self,
+        diff: &SchemaDiff,
+        old_schema: &Schema,
+        _new_schema: &Schema,
+        dialect: Dialect,
+    ) -> Result<(String, ValidationResult), String> {
+        let mut statements = Vec::new();
+
+        // データベース方言に応じたSQLジェネレーターを取得
+        let generator: Box<dyn SqlGenerator> = match dialect {
+            Dialect::PostgreSQL => Box::new(PostgresSqlGenerator::new()),
+            Dialect::MySQL => Box::new(MysqlSqlGenerator::new()),
+            Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
+        };
+
+        // 外部キー依存関係を考慮してテーブルをソート
+        let sorted_tables = diff.sort_added_tables_by_dependency()?;
+
+        // UP SQLと逆の操作を生成
+        // 追加されたテーブルを削除（依存関係の逆順 = 参照元を先に削除）
+        for table in sorted_tables.iter().rev() {
+            statements.push(format!("DROP TABLE {}", table.name));
+        }
+
+        // 変更されたテーブルの処理（逆操作）
+        for table_diff in &diff.modified_tables {
+            // 追加されたカラムを削除
+            for column in &table_diff.added_columns {
+                statements.push(format!(
+                    "ALTER TABLE {} DROP COLUMN {}",
+                    table_diff.table_name, column.name
+                ));
+            }
+
+            // 型変更の逆処理（元の型に戻す）
+            for column_diff in &table_diff.modified_columns {
+                if self.has_type_change(column_diff) {
+                    // Down方向ではold_schemaからテーブル定義を取得
+                    if let Some(table) = old_schema.tables.get(&table_diff.table_name) {
+                        // 旧テーブル情報を渡して列交差ロジックを有効にする（SQLite用）
+                        // Down方向では新スキーマが「旧」として扱われる
+                        let other_table = _new_schema.tables.get(&table_diff.table_name);
+                        let alter_statements = generator.generate_alter_column_type_with_old_table(
+                            table,
+                            other_table,
+                            column_diff,
+                            MigrationDirection::Down,
+                        );
+                        statements.extend(alter_statements);
+                    }
+                }
+            }
+
+            // 追加されたインデックスを削除
+            for index in &table_diff.added_indexes {
+                statements.push(format!("DROP INDEX {}", index.name));
+            }
+        }
+
+        // 削除されたテーブルを再作成
+        for table_name in &diff.removed_tables {
+            statements.push(format!(
+                "-- NOTE: Manually add CREATE TABLE statement for '{}' if rollback is needed",
+                table_name
+            ));
+        }
+
+        let sql = statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" };
+        Ok((sql, ValidationResult::new()))
+    }
+
+    /// カラム差分がTypeChangedを含むかどうか
+    fn has_type_change(&self, column_diff: &crate::core::schema_diff::ColumnDiff) -> bool {
+        column_diff
+            .changes
+            .iter()
+            .any(|change| matches!(change, ColumnChange::TypeChanged { .. }))
+    }
 }
 
 impl Default for MigrationGenerator {
@@ -514,6 +750,241 @@ mod tests {
 
         let result = generator.generate_up_sql(&diff, Dialect::PostgreSQL);
 
+        assert!(result.is_err());
+    }
+
+    // ==========================================
+    // 型変更SQL生成のテスト (with_schemas)
+    // ==========================================
+
+    use crate::core::schema::{Column, ColumnType, Constraint, Table};
+    use crate::core::schema_diff::{ColumnDiff, TableDiff};
+
+    fn create_test_schemas_for_type_change() -> (Schema, Schema) {
+        // 旧スキーマ: usersテーブル (age: INTEGER)
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        old_table.columns.push(Column::new(
+            "age".to_string(),
+            ColumnType::INTEGER { precision: None },
+            true,
+        ));
+        old_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        old_schema.tables.insert("users".to_string(), old_table);
+
+        // 新スキーマ: usersテーブル (age: VARCHAR)
+        let mut new_schema = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("users".to_string());
+        new_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        new_table.columns.push(Column::new(
+            "age".to_string(),
+            ColumnType::VARCHAR { length: 50 },
+            true,
+        ));
+        new_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        new_schema.tables.insert("users".to_string(), new_table);
+
+        (old_schema, new_schema)
+    }
+
+    fn create_diff_with_type_change() -> SchemaDiff {
+        let mut diff = SchemaDiff::new();
+
+        let old_column = Column::new(
+            "age".to_string(),
+            ColumnType::INTEGER { precision: None },
+            true,
+        );
+        let new_column = Column::new("age".to_string(), ColumnType::VARCHAR { length: 50 }, true);
+        let column_diff = ColumnDiff::new("age".to_string(), old_column, new_column);
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_columns.push(column_diff);
+        diff.modified_tables.push(table_diff);
+
+        diff
+    }
+
+    #[test]
+    fn test_generate_up_sql_with_schemas_type_change_postgresql() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_type_change();
+        let diff = create_diff_with_type_change();
+
+        let result = generator.generate_up_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::PostgreSQL,
+        );
+
+        assert!(result.is_ok());
+        let (sql, validation_result) = result.unwrap();
+        assert!(sql.contains("ALTER TABLE users ALTER COLUMN age TYPE"));
+        assert!(validation_result.is_valid()); // Numeric → String は安全
+    }
+
+    #[test]
+    fn test_generate_up_sql_with_schemas_type_change_mysql() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_type_change();
+        let diff = create_diff_with_type_change();
+
+        let result =
+            generator.generate_up_sql_with_schemas(&diff, &old_schema, &new_schema, Dialect::MySQL);
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("ALTER TABLE users MODIFY COLUMN age"));
+    }
+
+    #[test]
+    fn test_generate_up_sql_with_schemas_type_change_sqlite() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_type_change();
+        let diff = create_diff_with_type_change();
+
+        let result = generator.generate_up_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::SQLite,
+        );
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        // SQLiteはテーブル再作成パターンを使用
+        assert!(sql.contains("PRAGMA foreign_keys=off"));
+        assert!(sql.contains("BEGIN TRANSACTION"));
+        assert!(sql.contains("CREATE TABLE new_users"));
+    }
+
+    #[test]
+    fn test_generate_down_sql_with_schemas_type_change_postgresql() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_type_change();
+        let diff = create_diff_with_type_change();
+
+        let result = generator.generate_down_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::PostgreSQL,
+        );
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        // Down方向では元の型(INTEGER)に戻す
+        assert!(sql.contains("ALTER TABLE users ALTER COLUMN age TYPE INTEGER"));
+    }
+
+    #[test]
+    fn test_generate_up_sql_with_schemas_validation_warning() {
+        let generator = MigrationGenerator::new();
+
+        // 逆方向の型変更（VARCHAR → INTEGER）で警告が出るケース
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("products".to_string());
+        old_table.columns.push(Column::new(
+            "price".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        ));
+        old_schema.tables.insert("products".to_string(), old_table);
+
+        let mut new_schema = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("products".to_string());
+        new_table.columns.push(Column::new(
+            "price".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        new_schema.tables.insert("products".to_string(), new_table);
+
+        let mut diff = SchemaDiff::new();
+        let old_column = Column::new(
+            "price".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "price".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let column_diff = ColumnDiff::new("price".to_string(), old_column, new_column);
+        let mut table_diff = TableDiff::new("products".to_string());
+        table_diff.modified_columns.push(column_diff);
+        diff.modified_tables.push(table_diff);
+
+        let result = generator.generate_up_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::PostgreSQL,
+        );
+
+        assert!(result.is_ok());
+        let (sql, validation_result) = result.unwrap();
+        assert!(sql.contains("ALTER TABLE"));
+        // String → Numeric は警告
+        assert!(validation_result.warning_count() > 0);
+    }
+
+    #[test]
+    fn test_generate_up_sql_with_schemas_validation_error() {
+        let generator = MigrationGenerator::new();
+
+        // 互換性のない型変更（JSONB → INTEGER）でエラーが出るケース
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("documents".to_string());
+        old_table
+            .columns
+            .push(Column::new("data".to_string(), ColumnType::JSONB, false));
+        old_schema.tables.insert("documents".to_string(), old_table);
+
+        let mut new_schema = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("documents".to_string());
+        new_table.columns.push(Column::new(
+            "data".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        new_schema.tables.insert("documents".to_string(), new_table);
+
+        let mut diff = SchemaDiff::new();
+        let old_column = Column::new("data".to_string(), ColumnType::JSONB, false);
+        let new_column = Column::new(
+            "data".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let column_diff = ColumnDiff::new("data".to_string(), old_column, new_column);
+        let mut table_diff = TableDiff::new("documents".to_string());
+        table_diff.modified_columns.push(column_diff);
+        diff.modified_tables.push(table_diff);
+
+        let result = generator.generate_up_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::PostgreSQL,
+        );
+
+        // エラーがある場合はErrが返される
         assert!(result.is_err());
     }
 }

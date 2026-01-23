@@ -158,7 +158,11 @@ impl ValidateCommandHandler {
         match error {
             crate::core::error::ValidationError::Syntax { location, .. }
             | crate::core::error::ValidationError::Reference { location, .. }
-            | crate::core::error::ValidationError::Constraint { location, .. } => location.as_ref(),
+            | crate::core::error::ValidationError::Constraint { location, .. }
+            | crate::core::error::ValidationError::TypeConversion { location, .. }
+            | crate::core::error::ValidationError::DialectConstraint { location, .. } => {
+                location.as_ref()
+            }
         }
     }
 
@@ -170,9 +174,11 @@ impl ValidateCommandHandler {
         match error {
             crate::core::error::ValidationError::Syntax { suggestion, .. }
             | crate::core::error::ValidationError::Reference { suggestion, .. }
-            | crate::core::error::ValidationError::Constraint { suggestion, .. } => {
+            | crate::core::error::ValidationError::Constraint { suggestion, .. }
+            | crate::core::error::ValidationError::TypeConversion { suggestion, .. } => {
                 suggestion.as_deref()
             }
+            crate::core::error::ValidationError::DialectConstraint { .. } => None,
         }
     }
 

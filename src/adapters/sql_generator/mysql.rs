@@ -2,8 +2,9 @@
 //
 // スキーマ定義からMySQL用のDDL文を生成します。
 
-use crate::adapters::sql_generator::SqlGenerator;
+use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
+use crate::core::schema_diff::ColumnDiff;
 
 /// MySQL用SQLジェネレーター
 #[derive(Debug, Clone)]
@@ -138,9 +139,71 @@ impl MysqlSqlGenerator {
     fn should_add_as_table_constraint(&self, constraint: &Constraint) -> bool {
         !matches!(constraint, Constraint::FOREIGN_KEY { .. })
     }
+
+    /// MODIFY COLUMN用のカラム定義を生成
+    ///
+    /// MySQLのMODIFY COLUMNは完全なカラム定義が必要なため、
+    /// target_columnの属性を使用してカラム定義を生成します。
+    fn generate_column_definition_for_modify(
+        &self,
+        _table: &Table,
+        column_name: &str,
+        target_column: &Column,
+    ) -> String {
+        let mut parts = Vec::new();
+
+        // カラム名
+        parts.push(column_name.to_string());
+
+        // データ型
+        let type_str =
+            self.map_column_type(&target_column.column_type, target_column.auto_increment);
+        parts.push(type_str);
+
+        // NULL制約
+        if !target_column.nullable {
+            parts.push("NOT NULL".to_string());
+        }
+
+        // AUTO_INCREMENT
+        if target_column.auto_increment.unwrap_or(false) {
+            parts.push("AUTO_INCREMENT".to_string());
+        }
+
+        // デフォルト値
+        if let Some(ref default_value) = target_column.default_value {
+            parts.push(format!("DEFAULT {}", default_value));
+        }
+
+        parts.join(" ")
+    }
 }
 
 impl SqlGenerator for MysqlSqlGenerator {
+    fn generate_alter_column_type(
+        &self,
+        table: &Table,
+        column_diff: &ColumnDiff,
+        direction: MigrationDirection,
+    ) -> Vec<String> {
+        let column_name = &column_diff.column_name;
+
+        // 方向に応じて対象のカラム定義を決定
+        let target_column = match direction {
+            MigrationDirection::Up => &column_diff.new_column,
+            MigrationDirection::Down => &column_diff.old_column,
+        };
+
+        // MODIFY COLUMNは完全なカラム定義が必要
+        // target_columnの属性を使用してカラム定義を生成
+        let column_def =
+            self.generate_column_definition_for_modify(table, column_name, target_column);
+
+        let sql = format!("ALTER TABLE {} MODIFY COLUMN {}", table.name, column_def);
+
+        vec![sql]
+    }
+
     fn generate_create_table(&self, table: &Table) -> String {
         let mut parts = Vec::new();
 
@@ -355,5 +418,201 @@ mod tests {
 
         let def = generator.generate_constraint_definition(&constraint);
         assert_eq!(def, "CHECK (price >= 0)");
+    }
+
+    // ==========================================
+    // generate_alter_column_type のテスト
+    // ==========================================
+
+    use crate::adapters::sql_generator::MigrationDirection;
+    use crate::core::schema_diff::ColumnDiff;
+
+    fn create_test_table_with_columns() -> Table {
+        let mut table = Table::new("users".to_string());
+        table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        let mut name_col = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        );
+        name_col.default_value = Some("'unknown'".to_string());
+        table.columns.push(name_col);
+        table
+    }
+
+    #[test]
+    fn test_alter_column_type_basic() {
+        let generator = MysqlSqlGenerator::new();
+        let table = create_test_table_with_columns();
+
+        // INTEGER → BIGINT
+        let old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: Some(8) },
+            false,
+        );
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(sql[0], "ALTER TABLE users MODIFY COLUMN id BIGINT NOT NULL");
+    }
+
+    #[test]
+    fn test_alter_column_type_with_nullable() {
+        let generator = MysqlSqlGenerator::new();
+        let mut table = Table::new("users".to_string());
+        let nullable_col = Column::new(
+            "bio".to_string(),
+            ColumnType::TEXT,
+            true, // nullable
+        );
+        table.columns.push(nullable_col);
+
+        // TEXT → VARCHAR (nullable)
+        let old_column = Column::new("bio".to_string(), ColumnType::TEXT, true);
+        let new_column = Column::new("bio".to_string(), ColumnType::VARCHAR { length: 500 }, true);
+        let diff = ColumnDiff::new("bio".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        // NULLableなのでNOT NULLが含まれない
+        assert_eq!(sql[0], "ALTER TABLE users MODIFY COLUMN bio VARCHAR(500)");
+    }
+
+    #[test]
+    fn test_alter_column_type_with_default() {
+        let generator = MysqlSqlGenerator::new();
+        let mut table = Table::new("users".to_string());
+        let mut col = Column::new(
+            "status".to_string(),
+            ColumnType::VARCHAR { length: 20 },
+            false,
+        );
+        col.default_value = Some("'active'".to_string());
+        table.columns.push(col);
+
+        // VARCHAR(20) → VARCHAR(50) with default
+        let mut old_column = Column::new(
+            "status".to_string(),
+            ColumnType::VARCHAR { length: 20 },
+            false,
+        );
+        old_column.default_value = Some("'active'".to_string());
+        let mut new_column = Column::new(
+            "status".to_string(),
+            ColumnType::VARCHAR { length: 50 },
+            false,
+        );
+        new_column.default_value = Some("'active'".to_string());
+        let diff = ColumnDiff::new("status".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'active'"
+        );
+    }
+
+    #[test]
+    fn test_alter_column_type_with_auto_increment() {
+        let generator = MysqlSqlGenerator::new();
+        let mut table = Table::new("users".to_string());
+        let mut col = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        col.auto_increment = Some(true);
+        table.columns.push(col);
+
+        // INTEGER → BIGINT with AUTO_INCREMENT
+        let mut old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        old_column.auto_increment = Some(true);
+        let mut new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: Some(8) },
+            false,
+        );
+        new_column.auto_increment = Some(true);
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT"
+        );
+    }
+
+    #[test]
+    fn test_alter_column_type_down_direction() {
+        let generator = MysqlSqlGenerator::new();
+        let mut table = Table::new("users".to_string());
+        table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+
+        // Down方向: BIGINT → INTEGER に戻す
+        let old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: Some(8) },
+            false,
+        );
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Down);
+
+        assert_eq!(sql.len(), 1);
+        // Down方向なので old_type (INT) に戻す
+        assert_eq!(sql[0], "ALTER TABLE users MODIFY COLUMN id INT NOT NULL");
+    }
+
+    #[test]
+    fn test_alter_column_type_varchar_to_text() {
+        let generator = MysqlSqlGenerator::new();
+        let mut table = Table::new("posts".to_string());
+        table
+            .columns
+            .push(Column::new("content".to_string(), ColumnType::TEXT, true));
+
+        // VARCHAR → TEXT
+        let old_column = Column::new(
+            "content".to_string(),
+            ColumnType::VARCHAR { length: 1000 },
+            true,
+        );
+        let new_column = Column::new("content".to_string(), ColumnType::TEXT, true);
+        let diff = ColumnDiff::new("content".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(sql[0], "ALTER TABLE posts MODIFY COLUMN content TEXT");
     }
 }

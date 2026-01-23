@@ -93,10 +93,17 @@ pub enum Commands {
     ///
     ///   # Generate with auto-generated description
     ///   stratum generate
+    ///
+    ///   # Dry run to preview SQL and type changes
+    ///   stratum generate --dry-run
     Generate {
         /// Description for the migration
         #[arg(short, long, value_name = "DESCRIPTION")]
         description: Option<String>,
+
+        /// Dry run - show SQL without creating files
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Apply pending migrations to the database

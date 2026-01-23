@@ -3,8 +3,10 @@
 // スキーマ定義からSQLite用のDDL文を生成します。
 // SQLiteはALTER TABLEの機能が制限されているため、制約はCREATE TABLE内で定義します。
 
-use crate::adapters::sql_generator::SqlGenerator;
+use crate::adapters::sql_generator::sqlite_table_recreator::SqliteTableRecreator;
+use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
+use crate::core::schema_diff::ColumnDiff;
 
 /// SQLite用SQLジェネレーター
 #[derive(Debug, Clone)]
@@ -174,6 +176,56 @@ impl SqlGenerator for SqliteSqlGenerator {
         // すべての制約はCREATE TABLE内で定義する必要がある
         String::new()
     }
+
+    /// カラム型変更のALTER TABLE文を生成（SQLite）
+    ///
+    /// SQLiteはALTER COLUMN TYPEをサポートしていないため、
+    /// テーブル再作成パターンを使用します。
+    ///
+    /// # Arguments
+    ///
+    /// * `table` - 対象テーブルの完全な定義（direction=Upなら新定義、Downなら旧定義）
+    /// * `column_diff` - カラム差分情報
+    /// * `direction` - マイグレーション方向（Up/Down）
+    ///
+    /// # Returns
+    ///
+    /// テーブル再作成SQLのベクター
+    fn generate_alter_column_type(
+        &self,
+        table: &Table,
+        column_diff: &ColumnDiff,
+        direction: MigrationDirection,
+    ) -> Vec<String> {
+        let recreator = SqliteTableRecreator::new();
+        recreator.generate_table_recreation(table, column_diff, direction)
+    }
+
+    /// カラム型変更のALTER TABLE文を生成（旧テーブル情報付き、SQLite）
+    ///
+    /// SQLiteはテーブル再作成パターンを使用するため、旧テーブル情報を活用して
+    /// 列交差ベースのデータコピーSQLを生成します。
+    ///
+    /// # Arguments
+    ///
+    /// * `table` - 対象テーブルの新しい定義
+    /// * `old_table` - 対象テーブルの古い定義（列交差のための参照）
+    /// * `column_diff` - カラム差分情報
+    /// * `direction` - マイグレーション方向（Up/Down）
+    ///
+    /// # Returns
+    ///
+    /// テーブル再作成SQLのベクター
+    fn generate_alter_column_type_with_old_table(
+        &self,
+        table: &Table,
+        old_table: Option<&Table>,
+        _column_diff: &ColumnDiff,
+        _direction: MigrationDirection,
+    ) -> Vec<String> {
+        let recreator = SqliteTableRecreator::new();
+        recreator.generate_table_recreation_with_old_table(table, old_table)
+    }
 }
 
 impl Default for SqliteSqlGenerator {
@@ -185,6 +237,7 @@ impl Default for SqliteSqlGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::schema_diff::ColumnChange;
 
     #[test]
     fn test_new_generator() {
@@ -324,5 +377,189 @@ mod tests {
         // SQLiteはALTER TABLE ADD CONSTRAINTをサポートしていない
         let sql = generator.generate_alter_table_add_constraint(&table, 0);
         assert_eq!(sql, "");
+    }
+
+    // ==========================================================
+    // generate_alter_column_type テスト
+    // ==========================================================
+
+    fn create_test_table_with_columns() -> Table {
+        let mut table = Table::new("users".to_string());
+        table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.columns.push(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        ));
+        table.columns.push(Column::new(
+            "age".to_string(),
+            ColumnType::INTEGER { precision: None },
+            true,
+        ));
+        table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        table
+    }
+
+    #[test]
+    fn test_generate_alter_column_type_up_direction() {
+        let generator = SqliteSqlGenerator::new();
+        let table = create_test_table_with_columns();
+
+        let old_column = Column::new(
+            "age".to_string(),
+            ColumnType::INTEGER { precision: None },
+            true,
+        );
+        let new_column = Column::new("age".to_string(), ColumnType::VARCHAR { length: 50 }, true);
+
+        let column_diff = ColumnDiff {
+            column_name: "age".to_string(),
+            old_column,
+            new_column,
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "INTEGER".to_string(),
+                new_type: "VARCHAR(50)".to_string(),
+            }],
+        };
+
+        let statements =
+            generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
+
+        // テーブル再作成パターンを使用するため、複数のSQL文が生成される
+        assert!(statements.len() >= 9);
+        assert_eq!(statements[0], "PRAGMA foreign_keys=off");
+        assert_eq!(statements[1], "BEGIN TRANSACTION");
+        assert!(statements[2].contains("CREATE TABLE new_users"));
+        assert!(statements[3].contains("INSERT INTO new_users"));
+        assert!(statements[4].contains("DROP TABLE users"));
+        assert!(statements[5].contains("ALTER TABLE new_users RENAME TO users"));
+    }
+
+    #[test]
+    fn test_generate_alter_column_type_down_direction() {
+        let generator = SqliteSqlGenerator::new();
+
+        // Down方向では古いスキーマを使用
+        let mut table = Table::new("users".to_string());
+        table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.columns.push(Column::new(
+            "age".to_string(),
+            ColumnType::INTEGER { precision: None },
+            true,
+        ));
+        table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+
+        let old_column = Column::new(
+            "age".to_string(),
+            ColumnType::INTEGER { precision: None },
+            true,
+        );
+        let new_column = Column::new("age".to_string(), ColumnType::VARCHAR { length: 50 }, true);
+
+        let column_diff = ColumnDiff {
+            column_name: "age".to_string(),
+            old_column,
+            new_column,
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "INTEGER".to_string(),
+                new_type: "VARCHAR(50)".to_string(),
+            }],
+        };
+
+        let statements =
+            generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Down);
+
+        // テーブル再作成パターンを使用
+        assert!(statements.len() >= 9);
+        assert_eq!(statements[0], "PRAGMA foreign_keys=off");
+
+        // Down方向なのでINTEGERに戻す
+        assert!(statements[2].contains("INTEGER"));
+    }
+
+    #[test]
+    fn test_generate_alter_column_type_with_indexes() {
+        let generator = SqliteSqlGenerator::new();
+        let mut table = create_test_table_with_columns();
+
+        // インデックスを追加
+        table.indexes.push(Index {
+            name: "idx_users_name".to_string(),
+            columns: vec!["name".to_string()],
+            unique: false,
+        });
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new("name".to_string(), ColumnType::TEXT, false);
+
+        let column_diff = ColumnDiff {
+            column_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "VARCHAR(100)".to_string(),
+                new_type: "TEXT".to_string(),
+            }],
+        };
+
+        let statements =
+            generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
+
+        // インデックスがある場合、再作成ステートメントが含まれる
+        assert!(statements.len() >= 10);
+
+        // インデックス再作成が含まれているか確認
+        let has_create_index = statements.iter().any(|s| s.contains("CREATE INDEX"));
+        assert!(has_create_index);
+    }
+
+    #[test]
+    fn test_generate_alter_column_type_preserves_constraints() {
+        let generator = SqliteSqlGenerator::new();
+        let table = create_test_table_with_columns();
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        );
+
+        let column_diff = ColumnDiff {
+            column_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "VARCHAR(100)".to_string(),
+                new_type: "VARCHAR(255)".to_string(),
+            }],
+        };
+
+        let statements =
+            generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
+
+        // PRIMARY KEY制約が保持されていることを確認
+        let create_table_stmt = &statements[2];
+        assert!(create_table_stmt.contains("PRIMARY KEY"));
     }
 }

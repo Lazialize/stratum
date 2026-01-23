@@ -42,6 +42,28 @@ pub enum ValidationError {
         /// 修正提案
         suggestion: Option<String>,
     },
+
+    /// Type conversion error (incompatible type change)
+    #[error("Type conversion error: {message}{}", format_location_opt(.location))]
+    TypeConversion {
+        /// エラーメッセージ
+        message: String,
+        /// エラー発生位置
+        location: Option<ErrorLocation>,
+        /// 修正提案
+        suggestion: Option<String>,
+    },
+
+    /// Dialect constraint error (type not supported in specific database)
+    #[error("Dialect constraint error ({dialect}): {message}{}", format_location_opt(.location))]
+    DialectConstraint {
+        /// エラーメッセージ
+        message: String,
+        /// エラー発生位置
+        location: Option<ErrorLocation>,
+        /// 対象のデータベース方言
+        dialect: String,
+    },
 }
 
 impl ValidationError {
@@ -60,12 +82,24 @@ impl ValidationError {
         matches!(self, ValidationError::Constraint { .. })
     }
 
+    /// 型変換エラーかどうか
+    pub fn is_type_conversion(&self) -> bool {
+        matches!(self, ValidationError::TypeConversion { .. })
+    }
+
+    /// 方言制約エラーかどうか
+    pub fn is_dialect_constraint(&self) -> bool {
+        matches!(self, ValidationError::DialectConstraint { .. })
+    }
+
     /// エラー発生位置を取得
     pub fn location(&self) -> Option<&ErrorLocation> {
         match self {
             ValidationError::Syntax { location, .. }
             | ValidationError::Reference { location, .. }
-            | ValidationError::Constraint { location, .. } => location.as_ref(),
+            | ValidationError::Constraint { location, .. }
+            | ValidationError::TypeConversion { location, .. }
+            | ValidationError::DialectConstraint { location, .. } => location.as_ref(),
         }
     }
 
@@ -74,7 +108,9 @@ impl ValidationError {
         match self {
             ValidationError::Syntax { suggestion, .. }
             | ValidationError::Reference { suggestion, .. }
-            | ValidationError::Constraint { suggestion, .. } => suggestion.as_deref(),
+            | ValidationError::Constraint { suggestion, .. }
+            | ValidationError::TypeConversion { suggestion, .. } => suggestion.as_deref(),
+            ValidationError::DialectConstraint { .. } => None,
         }
     }
 }
@@ -102,6 +138,8 @@ pub enum WarningKind {
     PrecisionLoss,
     /// 互換性に関する警告
     Compatibility,
+    /// データ損失の可能性に関する警告（型変更時）
+    DataLoss,
 }
 
 impl ValidationWarning {
@@ -122,6 +160,16 @@ impl ValidationWarning {
     /// 精度損失の警告を作成
     pub fn precision_loss(message: String, location: Option<ErrorLocation>) -> Self {
         Self::new(message, location, WarningKind::PrecisionLoss)
+    }
+
+    /// データ損失の警告を作成
+    pub fn data_loss(message: String, location: Option<ErrorLocation>) -> Self {
+        Self::new(message, location, WarningKind::DataLoss)
+    }
+
+    /// 互換性の警告を作成
+    pub fn compatibility(message: String, location: Option<ErrorLocation>) -> Self {
+        Self::new(message, location, WarningKind::Compatibility)
     }
 
     /// 位置情報をフォーマット
