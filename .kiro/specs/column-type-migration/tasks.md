@@ -2,14 +2,14 @@
 
 ## Tasks
 
-- [ ] 1. 型カテゴリ分類と検証基盤の構築
-- [ ] 1.1 (P) 型カテゴリ列挙型とカテゴリ判定機能を実装する
+- [x] 1. 型カテゴリ分類と検証基盤の構築
+- [x] 1.1 (P) 型カテゴリ列挙型とカテゴリ判定機能を実装する
   - ColumnTypeから型カテゴリ（Numeric, String, DateTime, Binary, Json, Boolean, Uuid, Other）を分類する機能を追加
   - カテゴリ間の変換が警告対象かエラー対象かを判定するメソッドを実装
   - 型互換性マトリクスに基づいた変換ルールを定義
   - _Requirements: 3.1, 4.1, 4.2, 4.3_
 
-- [ ] 1.2 (P) マイグレーション方向を表す列挙型を追加する
+- [x] 1.2 (P) マイグレーション方向を表す列挙型を追加する
   - up/down方向を区別するためのMigrationDirection列挙型を定義
   - 各SqlGenerator実装で方向に応じた適切なSQL生成ができるよう準備
   - _Requirements: 2.1, 2.2_
@@ -28,8 +28,8 @@
   - テーブル名・カラム名を含む位置情報付きの警告を出力
   - _Requirements: 4.2_
 
-- [ ] 3. SqlGeneratorトレイトの拡張
-- [ ] 3.1 ALTER COLUMN TYPE生成APIをトレイトに追加する
+- [x] 3. SqlGeneratorトレイトの拡張
+- [x] 3.1 ALTER COLUMN TYPE生成APIをトレイトに追加する
   - SqlGeneratorトレイトにgenerate_alter_column_typeメソッドを追加
   - テーブル定義、カラム差分、マイグレーション方向を引数として受け取る
   - デフォルト実装で空のVecを返し、既存実装への影響を最小化
