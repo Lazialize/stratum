@@ -1,6 +1,6 @@
-# Building Stratum
+# Building Strata
 
-This document describes how to build Stratum from source for different platforms.
+This document describes how to build Strata from source for different platforms.
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ For development and testing:
 cargo build
 ```
 
-The binary will be located at `target/debug/stratum`.
+The binary will be located at `target/debug/strata`.
 
 ### Release Build
 
@@ -28,7 +28,7 @@ For optimized production builds:
 cargo build --release
 ```
 
-The binary will be located at `target/release/stratum`.
+The binary will be located at `target/release/strata`.
 
 ## Release Profile Optimizations
 
@@ -47,7 +47,7 @@ These settings prioritize:
 
 ## Cross-Compilation
 
-Stratum supports building for multiple platforms from a single development machine.
+Strata supports building for multiple platforms from a single development machine.
 
 ### Installing Cross-Compilation Targets
 
@@ -114,7 +114,7 @@ xcode-select --install
 cargo build --release --target x86_64-unknown-linux-gnu
 ```
 
-Binary location: `target/x86_64-unknown-linux-gnu/release/stratum`
+Binary location: `target/x86_64-unknown-linux-gnu/release/strata`
 
 #### Linux x86_64 (musl - Static Binary)
 
@@ -124,7 +124,7 @@ cargo build --release --target x86_64-unknown-linux-musl
 
 This creates a fully static binary with no glibc dependency, ideal for Docker containers or portable distributions.
 
-Binary location: `target/x86_64-unknown-linux-musl/release/stratum`
+Binary location: `target/x86_64-unknown-linux-musl/release/strata`
 
 #### Linux ARM64
 
@@ -132,7 +132,7 @@ Binary location: `target/x86_64-unknown-linux-musl/release/stratum`
 cargo build --release --target aarch64-unknown-linux-gnu
 ```
 
-Binary location: `target/aarch64-unknown-linux-gnu/release/stratum`
+Binary location: `target/aarch64-unknown-linux-gnu/release/strata`
 
 #### macOS Intel (x86_64)
 
@@ -140,7 +140,7 @@ Binary location: `target/aarch64-unknown-linux-gnu/release/stratum`
 cargo build --release --target x86_64-apple-darwin
 ```
 
-Binary location: `target/x86_64-apple-darwin/release/stratum`
+Binary location: `target/x86_64-apple-darwin/release/strata`
 
 #### macOS Apple Silicon (ARM64)
 
@@ -148,7 +148,7 @@ Binary location: `target/x86_64-apple-darwin/release/stratum`
 cargo build --release --target aarch64-apple-darwin
 ```
 
-Binary location: `target/aarch64-apple-darwin/release/stratum`
+Binary location: `target/aarch64-apple-darwin/release/strata`
 
 #### Windows (MinGW)
 
@@ -156,7 +156,7 @@ Binary location: `target/aarch64-apple-darwin/release/stratum`
 cargo build --release --target x86_64-pc-windows-gnu
 ```
 
-Binary location: `target/x86_64-pc-windows-gnu/release/stratum.exe`
+Binary location: `target/x86_64-pc-windows-gnu/release/strata.exe`
 
 #### Windows (MSVC)
 
@@ -164,7 +164,7 @@ Binary location: `target/x86_64-pc-windows-gnu/release/stratum.exe`
 cargo build --release --target x86_64-pc-windows-msvc
 ```
 
-Binary location: `target/x86_64-pc-windows-msvc/release/stratum.exe`
+Binary location: `target/x86_64-pc-windows-msvc/release/strata.exe`
 
 ## Universal Binaries (macOS)
 
@@ -177,12 +177,12 @@ cargo build --release --target aarch64-apple-darwin
 
 # Combine into universal binary
 lipo -create \
-  target/x86_64-apple-darwin/release/stratum \
-  target/aarch64-apple-darwin/release/stratum \
-  -output stratum-universal
+  target/x86_64-apple-darwin/release/strata \
+  target/aarch64-apple-darwin/release/strata \
+  -output strata-universal
 
 # Verify
-lipo -info stratum-universal
+lipo -info strata-universal
 ```
 
 ## Build Automation with cargo-make
@@ -204,7 +204,7 @@ The release profile already includes aggressive size optimizations. Additional t
 ### 1. Strip Debug Symbols (if not using strip = true)
 
 ```bash
-strip target/release/stratum
+strip target/release/strata
 ```
 
 ### 2. Use UPX Compression (Optional)
@@ -215,7 +215,7 @@ brew install upx  # macOS
 apt-get install upx  # Linux
 
 # Compress binary
-upx --best --lzma target/release/stratum
+upx --best --lzma target/release/strata
 ```
 
 **Note**: UPX-compressed binaries may trigger antivirus false positives.
@@ -254,7 +254,7 @@ brew install messense/macos-cross-toolchains/x86_64-unknown-linux-musl
 If binary size is larger than expected:
 
 1. Verify `strip = true` in `[profile.release]`
-2. Check for debug symbols: `file target/release/stratum`
+2. Check for debug symbols: `file target/release/strata`
 3. Use `cargo bloat` to analyze binary size:
 
 ```bash
@@ -317,10 +317,10 @@ cargo test --release --test database_integration_test
 
 ```bash
 # Linux/macOS
-tar -czf stratum-linux-x86_64.tar.gz -C target/x86_64-unknown-linux-gnu/release stratum
+tar -czf strata-linux-x86_64.tar.gz -C target/x86_64-unknown-linux-gnu/release strata
 
 # Windows (using 7zip or similar)
-7z a stratum-windows-x86_64.zip target/x86_64-pc-windows-gnu/release/stratum.exe
+7z a strata-windows-x86_64.zip target/x86_64-pc-windows-gnu/release/strata.exe
 ```
 
 ### Checksums
@@ -329,10 +329,10 @@ Generate checksums for distribution:
 
 ```bash
 # SHA256
-shasum -a 256 stratum-linux-x86_64.tar.gz > stratum-linux-x86_64.tar.gz.sha256
+shasum -a 256 strata-linux-x86_64.tar.gz > strata-linux-x86_64.tar.gz.sha256
 
 # MD5
-md5sum stratum-linux-x86_64.tar.gz > stratum-linux-x86_64.tar.gz.md5
+md5sum strata-linux-x86_64.tar.gz > strata-linux-x86_64.tar.gz.md5
 ```
 
 ## References

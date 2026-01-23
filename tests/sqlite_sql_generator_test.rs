@@ -3,9 +3,9 @@
 /// スキーマ定義からSQLite用のDDL文を正しく生成することを確認します。
 #[cfg(test)]
 mod sqlite_sql_generator_tests {
-    use stratum::adapters::sql_generator::sqlite::SqliteSqlGenerator;
-    use stratum::adapters::sql_generator::SqlGenerator;
-    use stratum::core::schema::{Column, ColumnType, Constraint, Index, Table};
+    use strata::adapters::sql_generator::sqlite::SqliteSqlGenerator;
+    use strata::adapters::sql_generator::SqlGenerator;
+    use strata::core::schema::{Column, ColumnType, Constraint, Index, Table};
 
     /// ジェネレーターの作成テスト
     #[test]

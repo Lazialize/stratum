@@ -1,10 +1,10 @@
 // DialectSpecific型のSQL生成テスト
 
-use stratum::adapters::sql_generator::mysql::MysqlSqlGenerator;
-use stratum::adapters::sql_generator::postgres::PostgresSqlGenerator;
-use stratum::adapters::sql_generator::sqlite::SqliteSqlGenerator;
-use stratum::adapters::sql_generator::SqlGenerator;
-use stratum::core::schema::{Column, ColumnType, Table};
+use strata::adapters::sql_generator::mysql::MysqlSqlGenerator;
+use strata::adapters::sql_generator::postgres::PostgresSqlGenerator;
+use strata::adapters::sql_generator::sqlite::SqliteSqlGenerator;
+use strata::adapters::sql_generator::SqlGenerator;
+use strata::core::schema::{Column, ColumnType, Table};
 
 #[cfg(test)]
 mod postgres_dialect_specific_tests {

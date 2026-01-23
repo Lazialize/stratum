@@ -1,11 +1,11 @@
-# Stratum
+# Strata
 
 > Database schema management CLI tool - Infrastructure as Code for database schemas
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org)
 
-Stratum is a modern database schema management tool that treats your database schema as code. Define your schemas in declarative YAML files, automatically generate migrations, and apply them with confidence across multiple environments.
+Strata is a modern database schema management tool that treats your database schema as code. Define your schemas in declarative YAML files, automatically generate migrations, and apply them with confidence across multiple environments.
 
 See `ROADMAP.md` for planned features and TODOs.
 
@@ -25,8 +25,8 @@ See `ROADMAP.md` for planned features and TODOs.
 
 ```bash
 # Clone the repository
-git clone https://github.com/Lazialize/stratum.git
-cd stratum
+git clone https://github.com/Lazialize/strata.git
+cd strata
 
 # Build and install
 cargo build --release
@@ -38,7 +38,7 @@ For detailed build instructions, cross-compilation, and platform-specific guides
 ### Using Cargo
 
 ```bash
-cargo install stratum
+cargo install strata
 ```
 
 ## Quick Start
@@ -47,17 +47,17 @@ cargo install stratum
 
 ```bash
 # Initialize with SQLite
-stratum init --dialect sqlite
+strata init --dialect sqlite
 
 # Or with PostgreSQL
-stratum init --dialect postgresql
+strata init --dialect postgresql
 
 # Or with MySQL
-stratum init --dialect mysql
+strata init --dialect mysql
 ```
 
 This creates:
-- `.stratum.yaml` - Configuration file
+- `.strata.yaml` - Configuration file
 - `schema/` - Directory for schema definitions
 - `migrations/` - Directory for generated migrations
 
@@ -107,10 +107,10 @@ tables:
 
 ```bash
 # Generate migration with description
-stratum generate --description "create users table"
+strata generate --description "create users table"
 
 # Or with auto-generated description
-stratum generate
+strata generate
 ```
 
 This creates a migration in `migrations/` directory with:
@@ -122,23 +122,23 @@ This creates a migration in `migrations/` directory with:
 
 ```bash
 # Apply to development environment
-stratum apply
+strata apply
 
 # Dry run to preview SQL
-stratum apply --dry-run
+strata apply --dry-run
 
 # Apply to production
-stratum apply --env production
+strata apply --env production
 ```
 
 ### 5. Check Status
 
 ```bash
 # Show migration status
-stratum status
+strata status
 
 # Check production status
-stratum status --env production
+strata status --env production
 ```
 
 ## Commands
@@ -149,10 +149,10 @@ Initialize a new schema management project.
 
 ```bash
 # Basic initialization
-stratum init --dialect sqlite
+strata init --dialect sqlite
 
 # Force re-initialization
-stratum init --force
+strata init --force
 ```
 
 **Options:**
@@ -165,10 +165,10 @@ Generate migration files from schema changes.
 
 ```bash
 # With description
-stratum generate --description "add user email column"
+strata generate --description "add user email column"
 
 # Auto-generate description
-stratum generate
+strata generate
 ```
 
 **Options:**
@@ -180,13 +180,13 @@ Apply pending migrations to the database.
 
 ```bash
 # Apply to development
-stratum apply
+strata apply
 
 # Dry run (preview only)
-stratum apply --dry-run
+strata apply --dry-run
 
 # Apply to production with timeout
-stratum apply --env production --timeout 30
+strata apply --env production --timeout 30
 ```
 
 **Options:**
@@ -200,13 +200,13 @@ Rollback applied migrations.
 
 ```bash
 # Rollback last migration
-stratum rollback
+strata rollback
 
 # Rollback last 3 migrations
-stratum rollback --steps 3
+strata rollback --steps 3
 
 # Rollback in production
-stratum rollback --env production --steps 1
+strata rollback --env production --steps 1
 ```
 
 **Options:**
@@ -219,10 +219,10 @@ Validate schema definition files.
 
 ```bash
 # Validate default schema directory
-stratum validate
+strata validate
 
 # Validate specific directory
-stratum validate --schema-dir ./custom-schema
+strata validate --schema-dir ./custom-schema
 ```
 
 **Options:**
@@ -234,10 +234,10 @@ Display migration status information.
 
 ```bash
 # Show status for development
-stratum status
+strata status
 
 # Show status for production
-stratum status --env production
+strata status --env production
 ```
 
 **Options:**
@@ -249,16 +249,16 @@ Export existing database schema to code.
 
 ```bash
 # Export to default schema directory
-stratum export
+strata export
 
 # Export to custom directory
-stratum export --output ./exported-schema
+strata export --output ./exported-schema
 
 # Export from production
-stratum export --env production --output ./prod-schema
+strata export --env production --output ./prod-schema
 
 # Overwrite existing files
-stratum export --force
+strata export --force
 ```
 
 **Options:**
@@ -268,7 +268,7 @@ stratum export --force
 
 ## Configuration
 
-The `.stratum.yaml` configuration file defines database connections and project settings.
+The `.strata.yaml` configuration file defines database connections and project settings.
 
 ### Example Configuration
 
@@ -312,11 +312,11 @@ environments:
 
 ## Schema Definition Format
 
-Stratum uses YAML for schema definitions. Each table is defined with its columns, indexes, and constraints.
+Strata uses YAML for schema definitions. Each table is defined with its columns, indexes, and constraints.
 
 ### IDE Setup for YAML Completion
 
-For better development experience with IDE auto-completion, configure your editor to use the Stratum YAML schema:
+For better development experience with IDE auto-completion, configure your editor to use the Strata YAML schema:
 
 #### VSCode
 
@@ -325,7 +325,7 @@ Install the [YAML extension by Red Hat](https://marketplace.visualstudio.com/ite
 ```json
 {
   "yaml.schemas": {
-    "./resources/schemas/stratum-schema.json": "schema/**/*.yaml"
+    "./resources/schemas/strata-schema.json": "schema/**/*.yaml"
   }
 }
 ```
@@ -339,14 +339,14 @@ This enables:
 
 1. Open Settings → Languages & Frameworks → Schemas and DTDs → JSON Schema Mappings
 2. Add a new mapping:
-   - Name: `Stratum Schema`
-   - Schema file: `resources/schemas/stratum-schema.json`
+   - Name: `Strata Schema`
+   - Schema file: `resources/schemas/strata-schema.json`
    - Schema version: `JSON Schema version 2020-12`
    - File path pattern: `schema/**/*.yaml`
 
 ### Dialect-Specific Column Types
 
-In addition to common column types that work across all databases, Stratum supports dialect-specific types that leverage database-specific features:
+In addition to common column types that work across all databases, Strata supports dialect-specific types that leverage database-specific features:
 
 #### PostgreSQL-Specific Types
 
@@ -467,9 +467,9 @@ Supported constraints:
 
 ### Database Dialect Type Mapping
 
-Stratum automatically maps column types to the appropriate native type for each database:
+Strata automatically maps column types to the appropriate native type for each database:
 
-| Stratum Type | PostgreSQL | MySQL | SQLite |
+| Strata Type | PostgreSQL | MySQL | SQLite |
 |--------------|------------|-------|--------|
 | INTEGER | INTEGER/SERIAL | INT | INTEGER |
 | DECIMAL | NUMERIC(p,s) | DECIMAL(p,s) | TEXT |
@@ -487,7 +487,7 @@ Stratum automatically maps column types to the appropriate native type for each 
 | JSON | JSON | JSON | TEXT |
 | JSONB | JSONB | JSON | TEXT |
 
-**Note:** SQLite has limited native type support. Stratum stores some types as TEXT to preserve precision (e.g., DECIMAL, DATE).
+**Note:** SQLite has limited native type support. Strata stores some types as TEXT to preserve precision (e.g., DECIMAL, DATE).
 
 ### Column Type Examples
 
@@ -672,8 +672,8 @@ The checksum ensures migration integrity - any modification to the migration aft
 
 ### 2. Migration Workflow
 
-1. **Always validate** before generating migrations: `stratum validate`
-2. **Review generated SQL** before applying: `stratum apply --dry-run`
+1. **Always validate** before generating migrations: `strata validate`
+2. **Review generated SQL** before applying: `strata apply --dry-run`
 3. **Test in development** before production
 4. **Never modify** applied migrations - create new ones instead
 5. **Keep migrations small** - one logical change per migration
@@ -689,7 +689,7 @@ The checksum ensures migration integrity - any modification to the migration aft
 
 - **Commit schema files** to version control
 - **Commit migration files** to version control
-- **Don't commit** `.stratum.yaml` if it contains sensitive data
+- **Don't commit** `.strata.yaml` if it contains sensitive data
 - Use **`.gitignore`** for database files and credentials
 
 ## Troubleshooting
@@ -706,7 +706,7 @@ If you see a checksum mismatch warning:
 
 If database connections timeout:
 
-1. Increase timeout in `.stratum.yaml`
+1. Increase timeout in `.strata.yaml`
 2. Check network connectivity
 3. Verify database credentials
 4. Ensure database is running
@@ -726,8 +726,8 @@ If schema validation fails:
 
 ```bash
 # Clone repository
-git clone https://github.com/Lazialize/stratum.git
-cd stratum
+git clone https://github.com/Lazialize/strata.git
+cd strata
 
 # Build
 cargo build
@@ -783,4 +783,4 @@ at your option.
 
 ---
 
-Made with ❤️ by the Stratum Contributors
+Made with ❤️ by the Strata Contributors

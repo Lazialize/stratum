@@ -5,15 +5,15 @@
 
 #[cfg(test)]
 mod type_change_migration_tests {
-    use stratum::adapters::sql_generator::mysql::MysqlSqlGenerator;
-    use stratum::adapters::sql_generator::postgres::PostgresSqlGenerator;
-    use stratum::adapters::sql_generator::sqlite::SqliteSqlGenerator;
-    use stratum::adapters::sql_generator::{MigrationDirection, SqlGenerator};
-    use stratum::core::config::Dialect;
-    use stratum::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
-    use stratum::core::schema_diff::{ColumnDiff, SchemaDiff, TableDiff};
-    use stratum::services::migration_generator::MigrationGenerator;
-    use stratum::services::type_change_validator::TypeChangeValidator;
+    use strata::adapters::sql_generator::mysql::MysqlSqlGenerator;
+    use strata::adapters::sql_generator::postgres::PostgresSqlGenerator;
+    use strata::adapters::sql_generator::sqlite::SqliteSqlGenerator;
+    use strata::adapters::sql_generator::{MigrationDirection, SqlGenerator};
+    use strata::core::config::Dialect;
+    use strata::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
+    use strata::core::schema_diff::{ColumnDiff, SchemaDiff, TableDiff};
+    use strata::services::migration_generator::MigrationGenerator;
+    use strata::services::type_change_validator::TypeChangeValidator;
 
     // ==========================================
     // Task 9.1: PostgreSQL型変更統合テスト

@@ -279,7 +279,7 @@ pub enum ColumnType {
     /// 方言固有型
     ///
     /// データベース方言固有の型を直接指定する際に使用します。
-    /// Stratum内部では検証せず、SQL生成時にそのまま出力します。
+    /// Strata内部では検証せず、SQL生成時にそのまま出力します。
     /// 型の妥当性はデータベース実行時に検証されます。
     #[serde(untagged)]
     DialectSpecific {

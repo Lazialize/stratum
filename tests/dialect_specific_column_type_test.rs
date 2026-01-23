@@ -1,6 +1,6 @@
 // DialectSpecific カラム型のシリアライゼーション・デシリアライゼーションテスト
 
-use stratum::core::schema::{Column, ColumnType};
+use strata::core::schema::{Column, ColumnType};
 
 #[cfg(test)]
 mod dialect_specific_tests {

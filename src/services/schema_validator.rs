@@ -1104,7 +1104,7 @@ mod tests {
         let validator = SchemaValidatorService::new();
         let result = validator.validate(&schema);
 
-        // Stratum内部では検証しない（データベースに委譲）
+        // Strata内部では検証しない（データベースに委譲）
         assert!(result.is_valid());
         assert_eq!(result.error_count(), 0);
     }

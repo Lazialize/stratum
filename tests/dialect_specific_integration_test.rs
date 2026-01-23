@@ -151,7 +151,7 @@ async fn test_postgres_array_type_table_creation() {
 
     // データを挿入してARRAY型が正しく動作することを確認
     sqlx::query("INSERT INTO test_array_table (tags) VALUES ($1)")
-        .bind(vec!["rust", "postgresql", "stratum"])
+        .bind(vec!["rust", "postgresql", "strata"])
         .execute(&mut conn)
         .await
         .expect("Failed to insert ARRAY data");
@@ -162,7 +162,7 @@ async fn test_postgres_array_type_table_creation() {
         .expect("Failed to fetch ARRAY data");
 
     let tags: Vec<String> = result.get("tags");
-    assert_eq!(tags, vec!["rust", "postgresql", "stratum"]);
+    assert_eq!(tags, vec!["rust", "postgresql", "strata"]);
 }
 
 /// PostgreSQL: 共通型と方言固有型の混在スキーマの統合テスト

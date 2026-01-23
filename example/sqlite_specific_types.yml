@@ -4,7 +4,7 @@
 # However, it has some special behaviors with certain type combinations.
 #
 # Note: SQLite stores most types as TEXT, INTEGER, REAL, or BLOB.
-# The common column types defined in Stratum work well with SQLite.
+# The common column types defined in Strata work well with SQLite.
 
 version: "1.0"
 tables:
@@ -133,7 +133,7 @@ tables:
           - id
 
 # Note: SQLite doesn't require dialect-specific types for most use cases.
-# The common types defined in Stratum (INTEGER, TEXT, REAL, BLOB) map
+# The common types defined in Strata (INTEGER, TEXT, REAL, BLOB) map
 # directly to SQLite's native type system.
 #
 # For more information on SQLite's type system, see:

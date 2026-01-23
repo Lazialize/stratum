@@ -19,9 +19,9 @@ Cargo.lock
 .env
 .env.local
 
-# Stratum specific
-.stratum/logs/
-.stratum/snapshots/
+# Strata specific
+.strata/logs/
+.strata/snapshots/
 
 # Distribution directory
 dist/

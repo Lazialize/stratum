@@ -5,7 +5,7 @@
 #[cfg(test)]
 mod error_tests {
     use std::io;
-    use stratum::core::error::{
+    use strata::core::error::{
         DatabaseError, ErrorLocation, IoError, MigrationError, ValidationError, ValidationResult,
     };
 

@@ -1,10 +1,10 @@
 # Dialect-Specific Column Types
 
-This document explains how to use database-specific column types in Stratum schema definitions.
+This document explains how to use database-specific column types in Strata schema definitions.
 
 ## Overview
 
-Stratum supports two approaches to defining column types:
+Strata supports two approaches to defining column types:
 
 1. **Common Types**: Work across all databases (PostgreSQL, MySQL, SQLite)
 2. **Dialect-Specific Types**: Leverage database-specific features
@@ -23,9 +23,9 @@ Use common types when:
 
 ## YAML Schema Reference
 
-For IDE auto-completion and validation, Stratum provides a JSON Schema file that defines all supported column types (both common and dialect-specific):
+For IDE auto-completion and validation, Strata provides a JSON Schema file that defines all supported column types (both common and dialect-specific):
 
-- **Schema File**: [`resources/schemas/stratum-schema.json`](../resources/schemas/stratum-schema.json)
+- **Schema File**: [`resources/schemas/strata-schema.json`](../resources/schemas/strata-schema.json)
 - **Format**: JSON Schema Draft 2020-12
 - **Usage**: Configure your IDE to use this schema for YAML files in the `schema/` directory
 
@@ -283,7 +283,7 @@ For the best development experience with auto-completion:
 
 1. Go to Settings → Languages & Frameworks → Schemas and DTDs → JSON Schema Mappings
 2. Add mapping:
-   - Schema file: `resources/schemas/stratum-schema.json`
+   - Schema file: `resources/schemas/strata-schema.json`
    - File pattern: `schema/**/*.yaml`
 
 ## Best Practices
@@ -298,7 +298,7 @@ For the best development experience with auto-completion:
 To migrate from common types to dialect-specific types:
 
 1. Update the type in your YAML schema
-2. Generate a new migration: `stratum generate`
+2. Generate a new migration: `strata generate`
 3. Review the generated SQL
 4. Test in development before production
 

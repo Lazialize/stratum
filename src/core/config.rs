@@ -62,7 +62,7 @@ fn default_migrations_dir() -> PathBuf {
 
 impl Config {
     /// デフォルトの設定ファイルパス
-    pub const DEFAULT_CONFIG_PATH: &'static str = ".stratum.yaml";
+    pub const DEFAULT_CONFIG_PATH: &'static str = crate::core::naming::CONFIG_FILE;
 
     /// YAMLファイルから設定を読み込む
     pub fn from_file(path: &std::path::Path) -> Result<Self> {

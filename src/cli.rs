@@ -6,21 +6,21 @@ pub mod commands;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-/// Stratum - Database Schema Management CLI
+/// Strata - Database Schema Management CLI
 ///
 /// Infrastructure as Code for database schemas.
 /// Manage database schema definitions as code with version control.
 #[derive(Parser, Debug)]
-#[command(name = "stratum")]
-#[command(author = "Stratum Contributors")]
+#[command(name = "strata")]
+#[command(author = "Strata Contributors")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Database schema management CLI tool")]
-#[command(long_about = "Stratum - Database Schema Management CLI
+#[command(long_about = "Strata - Database Schema Management CLI
 
 Infrastructure as Code for database schemas.
 Manage database schema definitions as code with version control.
 
-Stratum helps you:
+Strata helps you:
   • Define database schemas in declarative YAML files
   • Generate migration files automatically from schema changes
   • Apply and rollback migrations with confidence
@@ -30,13 +30,13 @@ Stratum helps you:
 Supported databases: PostgreSQL, MySQL, SQLite")]
 #[command(propagate_version = true)]
 #[command(after_help = "GETTING STARTED:
-  1. Initialize a new project:     stratum init --dialect sqlite
+  1. Initialize a new project:     strata init --dialect sqlite
   2. Define your schema:            Edit files in schema/ directory
-  3. Generate migrations:           stratum generate
-  4. Apply migrations:              stratum apply
-  5. Check migration status:        stratum status
+  3. Generate migrations:           strata generate
+  4. Apply migrations:              strata apply
+  5. Check migration status:        strata status
 
-For detailed help on each command, use: stratum <command> --help")]
+For detailed help on each command, use: strata <command> --help")]
 pub struct Cli {
     /// Path to configuration file
     #[arg(short, long, global = true, value_name = "FILE")]
@@ -61,17 +61,17 @@ pub enum Commands {
     /// Initialize a new schema management project
     ///
     /// Creates the necessary directory structure and configuration files
-    /// for managing database schemas with Stratum.
+    /// for managing database schemas with Strata.
     ///
     /// EXAMPLES:
     ///   # Initialize with SQLite
-    ///   stratum init --dialect sqlite
+    ///   strata init --dialect sqlite
     ///
     ///   # Initialize with PostgreSQL
-    ///   stratum init --dialect postgresql
+    ///   strata init --dialect postgresql
     ///
     ///   # Force re-initialization
-    ///   stratum init --force
+    ///   strata init --force
     Init {
         /// Database dialect (postgresql, mysql, sqlite)
         #[arg(short, long, value_name = "DIALECT")]
@@ -89,13 +89,13 @@ pub enum Commands {
     ///
     /// EXAMPLES:
     ///   # Generate migration with description
-    ///   stratum generate --description "add user email column"
+    ///   strata generate --description "add user email column"
     ///
     ///   # Generate with auto-generated description
-    ///   stratum generate
+    ///   strata generate
     ///
     ///   # Dry run to preview SQL and type changes
-    ///   stratum generate --dry-run
+    ///   strata generate --dry-run
     Generate {
         /// Description for the migration
         #[arg(short, long, value_name = "DESCRIPTION")]
@@ -113,13 +113,13 @@ pub enum Commands {
     ///
     /// EXAMPLES:
     ///   # Apply to development environment
-    ///   stratum apply
+    ///   strata apply
     ///
     ///   # Dry run to preview SQL
-    ///   stratum apply --dry-run
+    ///   strata apply --dry-run
     ///
     ///   # Apply to production with timeout
-    ///   stratum apply --env production --timeout 30
+    ///   strata apply --env production --timeout 30
     Apply {
         /// Dry run - show SQL without executing
         #[arg(long)]
@@ -141,13 +141,13 @@ pub enum Commands {
     ///
     /// EXAMPLES:
     ///   # Rollback last migration
-    ///   stratum rollback
+    ///   strata rollback
     ///
     ///   # Rollback last 3 migrations
-    ///   stratum rollback --steps 3
+    ///   strata rollback --steps 3
     ///
     ///   # Rollback in production
-    ///   stratum rollback --env production --steps 1
+    ///   strata rollback --env production --steps 1
     Rollback {
         /// Number of migrations to rollback
         #[arg(long, value_name = "N")]
@@ -165,10 +165,10 @@ pub enum Commands {
     ///
     /// EXAMPLES:
     ///   # Validate default schema directory
-    ///   stratum validate
+    ///   strata validate
     ///
     ///   # Validate specific directory
-    ///   stratum validate --schema-dir ./custom-schema
+    ///   strata validate --schema-dir ./custom-schema
     Validate {
         /// Path to schema directory
         #[arg(short, long, value_name = "DIR")]
@@ -183,10 +183,10 @@ pub enum Commands {
     ///
     /// EXAMPLES:
     ///   # Show status for development
-    ///   stratum status
+    ///   strata status
     ///
     ///   # Show status for production
-    ///   stratum status --env production
+    ///   strata status --env production
     Status {
         /// Target environment
         #[arg(short, long, value_name = "ENV", default_value = "development")]
@@ -200,16 +200,16 @@ pub enum Commands {
     ///
     /// EXAMPLES:
     ///   # Export to default schema directory
-    ///   stratum export
+    ///   strata export
     ///
     ///   # Export to custom directory
-    ///   stratum export --output ./exported-schema
+    ///   strata export --output ./exported-schema
     ///
     ///   # Export from production
-    ///   stratum export --env production --output ./prod-schema
+    ///   strata export --env production --output ./prod-schema
     ///
     ///   # Overwrite existing files
-    ///   stratum export --force
+    ///   strata export --force
     Export {
         /// Output directory for schema files
         #[arg(short, long, value_name = "DIR")]

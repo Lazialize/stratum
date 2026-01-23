@@ -4,11 +4,11 @@
 
 #[cfg(test)]
 mod migration_generator_tests {
-    use stratum::core::config::Dialect;
-    use stratum::core::schema::{Column, ColumnType, Schema, Table};
-    use stratum::core::schema_diff::SchemaDiff;
-    use stratum::services::migration_generator::MigrationGenerator;
-    use stratum::services::schema_diff_detector::SchemaDiffDetector;
+    use strata::core::config::Dialect;
+    use strata::core::schema::{Column, ColumnType, Schema, Table};
+    use strata::core::schema_diff::SchemaDiff;
+    use strata::services::migration_generator::MigrationGenerator;
+    use strata::services::schema_diff_detector::SchemaDiffDetector;
 
     /// サービスの作成テスト
     #[test]

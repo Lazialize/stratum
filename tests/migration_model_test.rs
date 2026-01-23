@@ -12,8 +12,8 @@ mod migration_model_tests {
     /// MigrationFile構造体のデシリアライゼーションのテスト
     #[test]
     fn test_migration_file_deserialization() {
-        use stratum::core::config::Dialect;
-        use stratum::core::migration::MigrationFile;
+        use strata::core::config::Dialect;
+        use strata::core::migration::MigrationFile;
 
         let yaml = r#"
 version: "20260121120000"
@@ -39,8 +39,8 @@ checksum: "abc123def456"
     /// MigrationFile構造体のシリアライゼーションのテスト
     #[test]
     fn test_migration_file_serialization() {
-        use stratum::core::config::Dialect;
-        use stratum::core::migration::MigrationFile;
+        use strata::core::config::Dialect;
+        use strata::core::migration::MigrationFile;
 
         let migration = MigrationFile {
             version: "20260121120000".to_string(),
@@ -61,7 +61,7 @@ checksum: "abc123def456"
     /// MigrationRecord構造体のデシリアライゼーションのテスト
     #[test]
     fn test_migration_record_deserialization() {
-        use stratum::core::migration::MigrationRecord;
+        use strata::core::migration::MigrationRecord;
 
         let yaml = r#"
 version: "20260121120000"
@@ -81,7 +81,7 @@ checksum: "abc123def456"
     /// AppliedMigration構造体の作成テスト
     #[test]
     fn test_applied_migration_creation() {
-        use stratum::core::migration::AppliedMigration;
+        use strata::core::migration::AppliedMigration;
 
         let now = Utc::now();
         let duration = Duration::seconds(5);
@@ -101,7 +101,7 @@ checksum: "abc123def456"
     /// MigrationStatus列挙型のテスト
     #[test]
     fn test_migration_status_variants() {
-        use stratum::core::migration::MigrationStatus;
+        use strata::core::migration::MigrationStatus;
 
         let pending = MigrationStatus::Pending;
         let applied = MigrationStatus::Applied;
@@ -121,7 +121,7 @@ checksum: "abc123def456"
     /// Migration構造体の作成と検証のテスト
     #[test]
     fn test_migration_struct() {
-        use stratum::core::migration::Migration;
+        use strata::core::migration::Migration;
 
         let migration = Migration {
             version: "20260121120000".to_string(),
@@ -138,7 +138,7 @@ checksum: "abc123def456"
     /// MigrationHistory構造体のテスト
     #[test]
     fn test_migration_history() {
-        use stratum::core::migration::{MigrationHistory, MigrationRecord};
+        use strata::core::migration::{MigrationHistory, MigrationRecord};
 
         let mut history = MigrationHistory::new();
         assert_eq!(history.records.len(), 0);
@@ -160,12 +160,12 @@ checksum: "abc123def456"
     /// MigrationFileのバージョン形式検証のテスト
     #[test]
     fn test_migration_file_version_format() {
-        use stratum::core::migration::MigrationFile;
+        use strata::core::migration::MigrationFile;
 
         let migration = MigrationFile {
             version: "20260121120000".to_string(),
             description: "Test".to_string(),
-            dialect: stratum::core::config::Dialect::PostgreSQL,
+            dialect: strata::core::config::Dialect::PostgreSQL,
             up_sql: "".to_string(),
             down_sql: "".to_string(),
             file_path: PathBuf::from("test.sql"),

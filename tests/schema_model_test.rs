@@ -6,7 +6,7 @@
 #[cfg(test)]
 mod schema_model_tests {
     use std::collections::HashMap;
-    use stratum::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
+    use strata::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
 
     /// Schema構造体が正しくデシリアライズできることを確認
     #[test]

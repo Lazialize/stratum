@@ -4,8 +4,8 @@
 
 #[cfg(test)]
 mod schema_checksum_tests {
-    use stratum::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
-    use stratum::services::schema_checksum::SchemaChecksumService;
+    use strata::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
+    use strata::services::schema_checksum::SchemaChecksumService;
 
     /// チェックサムサービスの作成テスト
     #[test]

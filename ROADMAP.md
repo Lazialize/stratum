@@ -9,8 +9,8 @@ This file captures potential future features and improvements. Items are not in 
 - Add checksum verification gates for production applies.
 
 ## Developer Experience
-- Improve `stratum status` output with diff summaries and hints.
-- Support environment overrides in config (e.g., `.stratum.yaml` + `.stratum.<env>.yaml`).
+- Improve `strata status` output with diff summaries and hints.
+- Support environment overrides in config (e.g., `.strata.yaml` + `.strata.<env>.yaml`).
 - Provide clearer error messages with actionable suggestions.
 - Add interactive prompts for initialization and dangerous operations.
 - Add a VS Code Language Server for YAML schema files (completion, diagnostics, go-to-definition).
@@ -44,7 +44,7 @@ This file captures potential future features and improvements. Items are not in 
 
 ## CI/CD Integration
 - Provide GitHub Actions templates for validate/diff.
-- Add a `stratum check` command for CI (validate + diff + lint).
+- Add a `strata check` command for CI (validate + diff + lint).
 - Machine-readable output (JSON) for CI tooling.
 
 ## Documentation

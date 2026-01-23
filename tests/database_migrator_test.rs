@@ -4,9 +4,9 @@
 
 #[cfg(test)]
 mod database_migrator_tests {
-    use stratum::adapters::database_migrator::DatabaseMigratorService;
-    use stratum::core::config::Dialect;
-    use stratum::core::migration::Migration;
+    use strata::adapters::database_migrator::DatabaseMigratorService;
+    use strata::core::config::Dialect;
+    use strata::core::migration::Migration;
 
     /// サービスの作成テスト
     #[test]

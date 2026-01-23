@@ -4,9 +4,9 @@
 
 #[cfg(test)]
 mod mysql_sql_generator_tests {
-    use stratum::adapters::sql_generator::mysql::MysqlSqlGenerator;
-    use stratum::adapters::sql_generator::SqlGenerator;
-    use stratum::core::schema::{Column, ColumnType, Constraint, Index, Table};
+    use strata::adapters::sql_generator::mysql::MysqlSqlGenerator;
+    use strata::adapters::sql_generator::SqlGenerator;
+    use strata::core::schema::{Column, ColumnType, Constraint, Index, Table};
 
     /// ジェネレーターの作成テスト
     #[test]

@@ -1,6 +1,6 @@
-# Contributing to Stratum
+# Contributing to Strata
 
-Thank you for your interest in contributing to Stratum! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to Strata! This document provides guidelines and instructions for contributing to the project.
 
 ## Table of Contents
 
@@ -53,14 +53,14 @@ Project maintainers are responsible for clarifying standards and may take approp
 2. Clone your fork:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/stratum.git
-cd stratum
+git clone https://github.com/YOUR_USERNAME/strata.git
+cd strata
 ```
 
 3. Add the upstream remote:
 
 ```bash
-git remote add upstream https://github.com/Lazialize/stratum.git
+git remote add upstream https://github.com/Lazialize/strata.git
 ```
 
 ### Build and Test
@@ -259,7 +259,7 @@ pub fn read_config(path: &Path) -> Result<Config> {
 /// # 例
 ///
 /// ```
-/// use stratum::services::SchemaValidator;
+/// use strata::services::SchemaValidator;
 ///
 /// let validator = SchemaValidator::new();
 /// let result = validator.validate(&schema);
@@ -393,8 +393,8 @@ Migration fails when table name contains hyphens.
 
 **Steps to Reproduce**
 1. Create schema with table name `user-profiles`
-2. Run `stratum generate`
-3. Run `stratum apply`
+2. Run `strata generate`
+3. Run `strata apply`
 
 **Expected Behavior**
 Migration should apply successfully.
@@ -447,7 +447,7 @@ Use `cargo flamegraph` for profiling:
 
 ```bash
 cargo install flamegraph
-cargo flamegraph --bin stratum
+cargo flamegraph --bin strata
 ```
 
 ### Cross-Compilation
@@ -456,7 +456,7 @@ See [BUILDING.md](BUILDING.md) for cross-compilation instructions.
 
 ## License
 
-By contributing to Stratum, you agree that your contributions will be licensed under the same terms as the project (MIT OR Apache-2.0).
+By contributing to Strata, you agree that your contributions will be licensed under the same terms as the project (MIT OR Apache-2.0).
 
 ## Questions?
 
@@ -466,4 +466,4 @@ If you have questions about contributing, feel free to:
 - Ask in a Pull Request
 - Open an issue for clarification
 
-Thank you for contributing to Stratum! 🚀
+Thank you for contributing to Strata! 🚀

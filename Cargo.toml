@@ -1,11 +1,11 @@
 [package]
-name = "stratum"
+name = "strata"
 version = "0.1.0"
 edition = "2021"
-authors = ["Stratum Contributors"]
+authors = ["Strata Contributors"]
 description = "Database schema management CLI tool - Infrastructure as Code for database schemas"
 license = "MIT"
-repository = "https://github.com/Lazialize/stratum"
+repository = "https://github.com/Lazialize/strata"
 readme = "README.md"
 keywords = ["database", "schema", "migration", "cli", "devops"]
 categories = ["command-line-utilities", "database"]

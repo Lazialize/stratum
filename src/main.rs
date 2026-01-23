@@ -2,15 +2,15 @@ use anyhow::Result;
 use clap::Parser;
 use std::env;
 use std::process;
-use stratum::cli::commands::apply::{ApplyCommand, ApplyCommandHandler};
-use stratum::cli::commands::export::{ExportCommand, ExportCommandHandler};
-use stratum::cli::commands::generate::{GenerateCommand, GenerateCommandHandler};
-use stratum::cli::commands::init::{InitCommand, InitCommandHandler};
-use stratum::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
-use stratum::cli::commands::status::{StatusCommand, StatusCommandHandler};
-use stratum::cli::commands::validate::{ValidateCommand, ValidateCommandHandler};
-use stratum::cli::{Cli, Commands};
-use stratum::core::config::Dialect;
+use strata::cli::commands::apply::{ApplyCommand, ApplyCommandHandler};
+use strata::cli::commands::export::{ExportCommand, ExportCommandHandler};
+use strata::cli::commands::generate::{GenerateCommand, GenerateCommandHandler};
+use strata::cli::commands::init::{InitCommand, InitCommandHandler};
+use strata::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
+use strata::cli::commands::status::{StatusCommand, StatusCommandHandler};
+use strata::cli::commands::validate::{ValidateCommand, ValidateCommandHandler};
+use strata::cli::{Cli, Commands};
+use strata::core::config::Dialect;
 
 fn main() {
     sqlx::any::install_default_drivers();

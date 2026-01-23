@@ -6,7 +6,7 @@
 #[cfg(test)]
 mod config_tests {
     use std::path::Path;
-    use stratum::core::config::{Config, DatabaseConfig, Dialect};
+    use strata::core::config::{Config, DatabaseConfig, Dialect};
 
     /// Config構造体が正しくデシリアライズできることを確認
     #[test]
@@ -21,7 +21,7 @@ environments:
   development:
     host: localhost
     port: 5432
-    database: stratum_dev
+    database: strata_dev
     user: postgres
     password: password
 "#;
@@ -47,14 +47,14 @@ environments:
   development:
     host: localhost
     port: 5432
-    database: stratum_dev
+    database: strata_dev
     user: postgres
     password: password
 
   production:
     host: prod.example.com
     port: 5432
-    database: stratum_prod
+    database: strata_prod
     user: app_user
     password: secure_password
 "#;
@@ -64,11 +64,11 @@ environments:
         let dev_config = config.get_database_config("development").unwrap();
         assert_eq!(dev_config.host, "localhost");
         assert_eq!(dev_config.port, 5432);
-        assert_eq!(dev_config.database, "stratum_dev");
+        assert_eq!(dev_config.database, "strata_dev");
 
         let prod_config = config.get_database_config("production").unwrap();
         assert_eq!(prod_config.host, "prod.example.com");
-        assert_eq!(prod_config.database, "stratum_prod");
+        assert_eq!(prod_config.database, "strata_prod");
     }
 
     /// 存在しない環境名でエラーが返されることを確認
@@ -84,7 +84,7 @@ environments:
   development:
     host: localhost
     port: 5432
-    database: stratum_dev
+    database: strata_dev
     user: postgres
     password: password
 "#;
@@ -129,7 +129,7 @@ dialect: sqlite
 
 environments:
   development:
-    database: stratum.db
+    database: strata.db
 "#;
 
         let config: Config = serde_saphyr::from_str(minimal_yaml).unwrap();
@@ -145,7 +145,7 @@ environments:
         let config = DatabaseConfig {
             host: "localhost".to_string(),
             port: 5432,
-            database: "stratum_dev".to_string(),
+            database: "strata_dev".to_string(),
             user: Some("postgres".to_string()),
             password: None,
             timeout: None,
@@ -155,7 +155,7 @@ environments:
         let merged = config.merge_with_env();
 
         assert_eq!(merged.host, "localhost");
-        assert_eq!(merged.database, "stratum_dev");
+        assert_eq!(merged.database, "strata_dev");
     }
 
     /// バリデーションが正しく動作することを確認
@@ -171,7 +171,7 @@ environments:
   development:
     host: localhost
     port: 5432
-    database: stratum_dev
+    database: strata_dev
     user: postgres
     password: password
 "#;

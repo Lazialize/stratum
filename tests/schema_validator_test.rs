@@ -4,9 +4,9 @@
 
 #[cfg(test)]
 mod schema_validator_tests {
-    use stratum::core::error::ValidationError;
-    use stratum::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
-    use stratum::services::schema_validator::SchemaValidatorService;
+    use strata::core::error::ValidationError;
+    use strata::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
+    use strata::services::schema_validator::SchemaValidatorService;
 
     /// 有効なスキーマの検証テスト
     #[test]
@@ -558,7 +558,7 @@ mod schema_validator_tests {
 
     #[test]
     fn test_sqlite_decimal_warning() {
-        use stratum::core::config::Dialect;
+        use strata::core::config::Dialect;
 
         let mut schema = Schema::new("1.0".to_string());
         let mut table = Table::new("products".to_string());
@@ -584,7 +584,7 @@ mod schema_validator_tests {
 
     #[test]
     fn test_jsonb_fallback_warning() {
-        use stratum::core::config::Dialect;
+        use strata::core::config::Dialect;
 
         let mut schema = Schema::new("1.0".to_string());
         let mut table = Table::new("documents".to_string());

@@ -4,9 +4,9 @@
 
 #[cfg(test)]
 mod postgres_sql_generator_tests {
-    use stratum::adapters::sql_generator::postgres::PostgresSqlGenerator;
-    use stratum::adapters::sql_generator::SqlGenerator;
-    use stratum::core::schema::{Column, ColumnType, Constraint, Index, Table};
+    use strata::adapters::sql_generator::postgres::PostgresSqlGenerator;
+    use strata::adapters::sql_generator::SqlGenerator;
+    use strata::core::schema::{Column, ColumnType, Constraint, Index, Table};
 
     /// ジェネレーターの作成テスト
     #[test]

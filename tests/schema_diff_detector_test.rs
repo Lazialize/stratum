@@ -4,8 +4,8 @@
 
 #[cfg(test)]
 mod schema_diff_detector_tests {
-    use stratum::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
-    use stratum::services::schema_diff_detector::SchemaDiffDetector;
+    use strata::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
+    use strata::services::schema_diff_detector::SchemaDiffDetector;
 
     /// サービスの作成テスト
     #[test]

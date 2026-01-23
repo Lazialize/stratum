@@ -1,0 +1,22 @@
+{
+  "feature_name": "app-rename-strata",
+  "created_at": "2026-01-23T22:40:48Z",
+  "updated_at": "2026-01-23T23:40:12Z",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": false
+}

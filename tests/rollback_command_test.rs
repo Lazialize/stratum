@@ -5,8 +5,8 @@ use sqlx::any::install_default_drivers;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use stratum::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
-use stratum::core::config::{Config, DatabaseConfig, Dialect};
+use strata::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
+use strata::core::config::{Config, DatabaseConfig, Dialect};
 use tempfile::TempDir;
 
 /// テスト用のConfig作成ヘルパー
@@ -205,8 +205,8 @@ async fn test_rollback_single_migration_sqlite() {
     .unwrap();
 
     // マイグレーションを適用（データベースとマイグレーション履歴を準備）
-    use stratum::adapters::database::DatabaseConnectionService;
-    use stratum::adapters::database_migrator::DatabaseMigratorService;
+    use strata::adapters::database::DatabaseConnectionService;
+    use strata::adapters::database_migrator::DatabaseMigratorService;
 
     let config = Config::from_file(&project_path.join(Config::DEFAULT_CONFIG_PATH)).unwrap();
     let db_config = config.get_database_config("development").unwrap();
@@ -230,7 +230,7 @@ async fn test_rollback_single_migration_sqlite() {
         .unwrap();
 
     // マイグレーション履歴を記録
-    let migration = stratum::core::migration::Migration::new(
+    let migration = strata::core::migration::Migration::new(
         "20260121120000".to_string(),
         "create_users".to_string(),
         "test_checksum".to_string(),
@@ -268,7 +268,7 @@ async fn test_rollback_single_migration_sqlite() {
 #[tokio::test]
 async fn test_generate_summary() {
     use chrono::Duration;
-    use stratum::core::migration::AppliedMigration;
+    use strata::core::migration::AppliedMigration;
 
     let handler = RollbackCommandHandler::new();
 

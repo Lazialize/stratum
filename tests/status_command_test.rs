@@ -5,8 +5,8 @@ use sqlx::any::install_default_drivers;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use stratum::cli::commands::status::{StatusCommand, StatusCommandHandler};
-use stratum::core::config::{Config, DatabaseConfig, Dialect};
+use strata::cli::commands::status::{StatusCommand, StatusCommandHandler};
+use strata::core::config::{Config, DatabaseConfig, Dialect};
 use tempfile::TempDir;
 
 /// テスト用のConfig作成ヘルパー
@@ -235,8 +235,8 @@ async fn test_status_with_applied_migrations() {
     .unwrap();
 
     // データベースとマイグレーション履歴を準備
-    use stratum::adapters::database::DatabaseConnectionService;
-    use stratum::adapters::database_migrator::DatabaseMigratorService;
+    use strata::adapters::database::DatabaseConnectionService;
+    use strata::adapters::database_migrator::DatabaseMigratorService;
 
     let config_loaded = Config::from_file(&project_path.join(Config::DEFAULT_CONFIG_PATH)).unwrap();
     let db_config = config_loaded.get_database_config("development").unwrap();
@@ -260,7 +260,7 @@ async fn test_status_with_applied_migrations() {
         .unwrap();
 
     // マイグレーション履歴を記録
-    let migration = stratum::core::migration::Migration::new(
+    let migration = strata::core::migration::Migration::new(
         "20260121120000".to_string(),
         "create_users".to_string(),
         "test_checksum_20260121120000".to_string(),

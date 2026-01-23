@@ -5,8 +5,8 @@
 #[cfg(test)]
 mod generate_command_tests {
     use std::fs;
-    use stratum::cli::commands::generate::{GenerateCommand, GenerateCommandHandler};
-    use stratum::core::config::Dialect;
+    use strata::cli::commands::generate::{GenerateCommand, GenerateCommandHandler};
+    use strata::core::config::Dialect;
     use tempfile::TempDir;
 
     /// コマンドハンドラーの作成テスト
@@ -295,7 +295,7 @@ environments:
             }
         );
 
-        fs::write(project_path.join(".stratum.yaml"), config_content).unwrap();
+        fs::write(project_path.join(".strata.yaml"), config_content).unwrap();
     }
 
     /// 簡単なスキーマファイルを作成

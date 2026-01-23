@@ -5,8 +5,8 @@ use sqlx::any::install_default_drivers;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use stratum::cli::commands::export::{ExportCommand, ExportCommandHandler};
-use stratum::core::config::{Config, DatabaseConfig, Dialect};
+use strata::cli::commands::export::{ExportCommand, ExportCommandHandler};
+use strata::core::config::{Config, DatabaseConfig, Dialect};
 use tempfile::TempDir;
 
 /// テスト用のConfig作成ヘルパー
@@ -123,7 +123,7 @@ async fn test_export_from_sqlite_database() {
     fs::write(&config_path, config_yaml).unwrap();
 
     // テスト用のテーブルを作成
-    use stratum::adapters::database::DatabaseConnectionService;
+    use strata::adapters::database::DatabaseConnectionService;
 
     let db_service = DatabaseConnectionService::new();
     let db_config = config.get_database_config("development").unwrap();
@@ -206,7 +206,7 @@ async fn test_export_to_stdout() {
     fs::write(&config_path, config_yaml).unwrap();
 
     // テスト用のテーブルを作成
-    use stratum::adapters::database::DatabaseConnectionService;
+    use strata::adapters::database::DatabaseConnectionService;
 
     let db_service = DatabaseConnectionService::new();
     let db_config = config.get_database_config("development").unwrap();

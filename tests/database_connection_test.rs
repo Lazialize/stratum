@@ -4,8 +4,8 @@
 
 #[cfg(test)]
 mod database_connection_tests {
-    use stratum::adapters::database::DatabaseConnectionService;
-    use stratum::core::config::{DatabaseConfig, Dialect};
+    use strata::adapters::database::DatabaseConnectionService;
+    use strata::core::config::{DatabaseConfig, Dialect};
 
     /// サービスの作成テスト
     #[test]

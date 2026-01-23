@@ -10,8 +10,8 @@ use sqlx::any::install_default_drivers;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use stratum::cli::commands::apply::{ApplyCommand, ApplyCommandHandler};
-use stratum::core::config::{Config, DatabaseConfig, Dialect};
+use strata::cli::commands::apply::{ApplyCommand, ApplyCommandHandler};
+use strata::core::config::{Config, DatabaseConfig, Dialect};
 
 // テスト用のConfig作成ヘルパー
 fn create_test_config(dialect: Dialect, database_path: Option<&str>) -> Config {

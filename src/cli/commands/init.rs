@@ -2,7 +2,7 @@
 //
 // プロジェクトの初期化処理を実装します。
 // - ディレクトリ構造の作成（schema/, migrations/）
-// - デフォルト設定ファイルの生成（.stratum.yaml）
+// - デフォルト設定ファイルの生成（.strata.yaml）
 // - 初期化済みプロジェクトの検出と警告
 
 use crate::core::config::{Config, DatabaseConfig, Dialect};
@@ -205,7 +205,11 @@ mod tests {
         assert!(!handler.is_already_initialized(project_path));
 
         // 設定ファイルを作成
-        fs::write(project_path.join(".stratum.yaml"), "version: 1.0\n").unwrap();
+        fs::write(
+            project_path.join(Config::DEFAULT_CONFIG_PATH),
+            "version: 1.0\n",
+        )
+        .unwrap();
 
         assert!(handler.is_already_initialized(project_path));
     }

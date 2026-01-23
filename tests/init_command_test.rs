@@ -6,8 +6,8 @@
 mod init_command_tests {
     use std::fs;
     use std::path::PathBuf;
-    use stratum::cli::commands::init::{ConfigFileParams, InitCommand, InitCommandHandler};
-    use stratum::core::config::{Config, Dialect};
+    use strata::cli::commands::init::{ConfigFileParams, InitCommand, InitCommandHandler};
+    use strata::core::config::{Config, Dialect};
     use tempfile::TempDir;
 
     /// コマンドハンドラーの作成テスト
@@ -40,7 +40,7 @@ mod init_command_tests {
     fn test_generate_config_file_postgresql() {
         let temp_dir = TempDir::new().unwrap();
         let project_path = temp_dir.path();
-        let config_path = project_path.join(".stratum.yaml");
+        let config_path = project_path.join(".strata.yaml");
 
         let handler = InitCommandHandler::new();
         let params = ConfigFileParams {
@@ -74,7 +74,7 @@ mod init_command_tests {
     fn test_generate_config_file_mysql() {
         let temp_dir = TempDir::new().unwrap();
         let project_path = temp_dir.path();
-        let config_path = project_path.join(".stratum.yaml");
+        let config_path = project_path.join(".strata.yaml");
 
         let handler = InitCommandHandler::new();
         let params = ConfigFileParams {
@@ -101,7 +101,7 @@ mod init_command_tests {
     fn test_generate_config_file_sqlite() {
         let temp_dir = TempDir::new().unwrap();
         let project_path = temp_dir.path();
-        let config_path = project_path.join(".stratum.yaml");
+        let config_path = project_path.join(".strata.yaml");
 
         let handler = InitCommandHandler::new();
         let params = ConfigFileParams {
@@ -136,7 +136,7 @@ mod init_command_tests {
 
         // 設定ファイルを作成
         fs::write(
-            project_path.join(".stratum.yaml"),
+            project_path.join(".strata.yaml"),
             "version: 1.0\ndialect: postgresql\n",
         )
         .unwrap();
@@ -217,7 +217,7 @@ mod init_command_tests {
         assert!(result.is_ok());
 
         // 設定ファイルが更新されているか確認
-        let config_path = project_path.join(".stratum.yaml");
+        let config_path = project_path.join(".strata.yaml");
         let content = fs::read_to_string(&config_path).unwrap();
         assert!(content.contains("dialect: mysql"));
         assert!(content.contains("database: newdb"));
@@ -249,7 +249,7 @@ mod init_command_tests {
         assert!(project_path.join("migrations").exists());
 
         // 設定ファイルが作成されているか
-        let config_path = project_path.join(".stratum.yaml");
+        let config_path = project_path.join(".strata.yaml");
         assert!(config_path.exists());
 
         // 設定ファイルが正しくパースできるか
@@ -279,7 +279,7 @@ mod init_command_tests {
         };
         handler.generate_config_file(project_path, params).unwrap();
 
-        let config_path = project_path.join(".stratum.yaml");
+        let config_path = project_path.join(".strata.yaml");
         let config = Config::from_file(&config_path).unwrap();
 
         // バリデーションが通ることを確認
@@ -308,7 +308,7 @@ mod init_command_tests {
         assert!(result.is_ok());
 
         // schema_dirとmigrations_dirが相対パスであることを確認
-        let config_path = project_path.join(".stratum.yaml");
+        let config_path = project_path.join(".strata.yaml");
         let config = Config::from_file(&config_path).unwrap();
         assert!(config.schema_dir.is_relative());
         assert!(config.migrations_dir.is_relative());

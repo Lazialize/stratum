@@ -12,26 +12,26 @@ mod cli_tests {
     #[test]
     fn test_cli_can_parse() {
         // CLIのメイン構造体をインポート
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
         // ヘルプフラグでパース可能であることを確認
-        let result = Cli::try_parse_from(["stratum", "--help"]);
+        let result = Cli::try_parse_from(["strata", "--help"]);
         // ヘルプは成功ではなくエラーを返すが、それは正常な動作
         assert!(result.is_err());
 
         // バージョンフラグでパース可能であることを確認
-        let result = Cli::try_parse_from(["stratum", "--version"]);
+        let result = Cli::try_parse_from(["strata", "--version"]);
         assert!(result.is_err());
     }
 
     /// initサブコマンドがパース可能であることを確認
     #[test]
     fn test_init_command_parses() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "init"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "init"]).unwrap();
         match cli.command {
-            stratum::cli::Commands::Init { .. } => {
+            strata::cli::Commands::Init { .. } => {
                 // initコマンドが正しくパースされた
                 assert!(true);
             }
@@ -42,11 +42,11 @@ mod cli_tests {
     /// generateサブコマンドがパース可能であることを確認
     #[test]
     fn test_generate_command_parses() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "generate"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "generate"]).unwrap();
         match cli.command {
-            stratum::cli::Commands::Generate { .. } => {
+            strata::cli::Commands::Generate { .. } => {
                 assert!(true);
             }
             _ => panic!("Expected Generate command"),
@@ -56,11 +56,11 @@ mod cli_tests {
     /// applyサブコマンドがパース可能であることを確認
     #[test]
     fn test_apply_command_parses() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "apply"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "apply"]).unwrap();
         match cli.command {
-            stratum::cli::Commands::Apply { .. } => {
+            strata::cli::Commands::Apply { .. } => {
                 assert!(true);
             }
             _ => panic!("Expected Apply command"),
@@ -70,11 +70,11 @@ mod cli_tests {
     /// rollbackサブコマンドがパース可能であることを確認
     #[test]
     fn test_rollback_command_parses() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "rollback"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "rollback"]).unwrap();
         match cli.command {
-            stratum::cli::Commands::Rollback { .. } => {
+            strata::cli::Commands::Rollback { .. } => {
                 assert!(true);
             }
             _ => panic!("Expected Rollback command"),
@@ -84,11 +84,11 @@ mod cli_tests {
     /// validateサブコマンドがパース可能であることを確認
     #[test]
     fn test_validate_command_parses() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "validate"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "validate"]).unwrap();
         match cli.command {
-            stratum::cli::Commands::Validate { .. } => {
+            strata::cli::Commands::Validate { .. } => {
                 assert!(true);
             }
             _ => panic!("Expected Validate command"),
@@ -98,11 +98,11 @@ mod cli_tests {
     /// statusサブコマンドがパース可能であることを確認
     #[test]
     fn test_status_command_parses() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "status"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "status"]).unwrap();
         match cli.command {
-            stratum::cli::Commands::Status { .. } => {
+            strata::cli::Commands::Status { .. } => {
                 assert!(true);
             }
             _ => panic!("Expected Status command"),
@@ -112,11 +112,11 @@ mod cli_tests {
     /// exportサブコマンドがパース可能であることを確認
     #[test]
     fn test_export_command_parses() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "export"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "export"]).unwrap();
         match cli.command {
-            stratum::cli::Commands::Export { .. } => {
+            strata::cli::Commands::Export { .. } => {
                 assert!(true);
             }
             _ => panic!("Expected Export command"),
@@ -127,10 +127,10 @@ mod cli_tests {
     #[test]
     fn test_global_config_option() {
         use std::path::Path;
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
         let cli =
-            Cli::try_parse_from(["stratum", "--config", "/path/to/config.yaml", "status"]).unwrap();
+            Cli::try_parse_from(["strata", "--config", "/path/to/config.yaml", "status"]).unwrap();
 
         assert_eq!(
             cli.config.as_deref(),
@@ -141,9 +141,9 @@ mod cli_tests {
     /// グローバルオプション --verbose がパース可能であることを確認
     #[test]
     fn test_global_verbose_option() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "--verbose", "status"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "--verbose", "status"]).unwrap();
 
         assert!(cli.verbose);
     }
@@ -151,9 +151,9 @@ mod cli_tests {
     /// グローバルオプション --no-color がパース可能であることを確認
     #[test]
     fn test_global_no_color_option() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "--no-color", "status"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "--no-color", "status"]).unwrap();
 
         assert!(cli.no_color);
     }
@@ -161,12 +161,12 @@ mod cli_tests {
     /// apply コマンドの --dry-run オプションがパース可能であることを確認
     #[test]
     fn test_apply_dry_run_option() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "apply", "--dry-run"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "apply", "--dry-run"]).unwrap();
 
         match cli.command {
-            stratum::cli::Commands::Apply { dry_run, .. } => {
+            strata::cli::Commands::Apply { dry_run, .. } => {
                 assert!(dry_run);
             }
             _ => panic!("Expected Apply command"),
@@ -176,12 +176,12 @@ mod cli_tests {
     /// rollback コマンドの --steps オプションがパース可能であることを確認
     #[test]
     fn test_rollback_steps_option() {
-        use stratum::cli::Cli;
+        use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["stratum", "rollback", "--steps", "3"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "rollback", "--steps", "3"]).unwrap();
 
         match cli.command {
-            stratum::cli::Commands::Rollback { steps, .. } => {
+            strata::cli::Commands::Rollback { steps, .. } => {
                 assert_eq!(steps, Some(3));
             }
             _ => panic!("Expected Rollback command"),

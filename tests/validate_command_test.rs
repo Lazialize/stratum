@@ -4,8 +4,8 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use stratum::cli::commands::validate::{ValidateCommand, ValidateCommandHandler};
-use stratum::core::config::{Config, DatabaseConfig, Dialect};
+use strata::cli::commands::validate::{ValidateCommand, ValidateCommandHandler};
+use strata::core::config::{Config, DatabaseConfig, Dialect};
 use tempfile::TempDir;
 
 /// テスト用のConfig作成ヘルパー
@@ -322,7 +322,7 @@ tables:
 
 #[test]
 fn test_format_validation_summary() {
-    use stratum::cli::commands::validate::ValidationSummary;
+    use strata::cli::commands::validate::ValidationSummary;
     let handler = ValidateCommandHandler::new();
 
     // Format validation summary

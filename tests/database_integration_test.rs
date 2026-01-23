@@ -31,11 +31,11 @@ mod database_integration_tests {
         // ディレクトリが存在することを確認
         assert!(project_path.join("schema").exists());
         assert!(project_path.join("migrations").exists());
-        assert!(project_path.join(".stratum.yaml").exists());
+        assert!(project_path.join(".strata.yaml").exists());
         assert!(project_path.join("schema").join("users.yaml").exists());
 
         // 設定ファイルの内容を確認
-        let config_content = fs::read_to_string(project_path.join(".stratum.yaml")).unwrap();
+        let config_content = fs::read_to_string(project_path.join(".strata.yaml")).unwrap();
         assert!(config_content.contains("dialect: postgresql"));
         assert!(config_content.contains("schema_dir: schema"));
 
@@ -75,7 +75,7 @@ environments:
     password: postgres
     timeout: 30
 "#;
-        fs::write(project_path.join(".stratum.yaml"), config_content)?;
+        fs::write(project_path.join(".strata.yaml"), config_content)?;
 
         // テスト用のスキーマファイルを作成
         let schema_content = r#"

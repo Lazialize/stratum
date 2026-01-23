@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial release of Stratum - Database Schema Management CLI
+- Initial release of Strata - Database Schema Management CLI
 - Schema definition in declarative YAML format
 - Automatic migration generation from schema changes
 - Multi-database support (PostgreSQL, MySQL, SQLite)
@@ -81,7 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Initial Development
 
-This is the first development version of Stratum, implementing the core schema management functionality.
+This is the first development version of Strata, implementing the core schema management functionality.
 
 #### Implemented Components
 
@@ -208,5 +208,5 @@ at your option.
 - YAML parsing with [serde-saphyr](https://github.com/Ethiraric/saphyr)
 - Testing with [testcontainers-rs](https://github.com/testcontainers/testcontainers-rs)
 
-[Unreleased]: https://github.com/Lazialize/stratum/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Lazialize/stratum/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Lazialize/strata/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Lazialize/strata/releases/tag/v0.1.0

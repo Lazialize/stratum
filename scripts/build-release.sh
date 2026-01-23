@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build script for creating optimized release binaries
-# This script builds Stratum for multiple platforms and creates distribution archives
+# This script builds Strata for multiple platforms and creates distribution archives
 
 set -e  # Exit on error
 
@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 
 # Get version from Cargo.toml
 VERSION=$(grep "^version" Cargo.toml | head -1 | cut -d '"' -f 2)
-echo -e "${GREEN}Building Stratum v${VERSION}${NC}"
+echo -e "${GREEN}Building Strata v${VERSION}${NC}"
 
 # Create dist directory
 DIST_DIR="dist"
@@ -42,14 +42,14 @@ build_target() {
 create_archive() {
     local target=$1
     local name=$2
-    local binary_name="stratum"
-    local archive_name="stratum-${VERSION}-${name}"
+    local binary_name="strata"
+    local archive_name="strata-${VERSION}-${name}"
 
     echo -e "${YELLOW}Creating archive for ${name}...${NC}"
 
     # Windows uses .exe extension
     if [[ "${target}" == *"windows"* ]]; then
-        binary_name="stratum.exe"
+        binary_name="strata.exe"
         archive_name="${archive_name}.zip"
 
         # Create zip archive
@@ -91,16 +91,16 @@ if [[ "$CURRENT_OS" == "Darwin" ]]; then
         # Create universal binary
         echo -e "${YELLOW}Creating universal binary...${NC}"
         lipo -create \
-            target/aarch64-apple-darwin/release/stratum \
-            target/x86_64-apple-darwin/release/stratum \
-            -output "${DIST_DIR}/stratum-universal"
+            target/aarch64-apple-darwin/release/strata \
+            target/x86_64-apple-darwin/release/strata \
+            -output "${DIST_DIR}/strata-universal"
 
         # Create universal archive
-        tar -czf "${DIST_DIR}/stratum-${VERSION}-macos-universal.tar.gz" \
+        tar -czf "${DIST_DIR}/strata-${VERSION}-macos-universal.tar.gz" \
             -C "${DIST_DIR}" \
-            stratum-universal
-        shasum -a 256 "${DIST_DIR}/stratum-${VERSION}-macos-universal.tar.gz" \
-            > "${DIST_DIR}/stratum-${VERSION}-macos-universal.tar.gz.sha256"
+            strata-universal
+        shasum -a 256 "${DIST_DIR}/strata-${VERSION}-macos-universal.tar.gz" \
+            > "${DIST_DIR}/strata-${VERSION}-macos-universal.tar.gz.sha256"
 
         echo -e "${GREEN}✓ Created universal binary${NC}"
     else

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Lazialize/stratum/schemas/stratum-schema.json",
-  "title": "Stratum Schema Definition",
-  "description": "JSON Schema for Stratum database schema YAML files with IDE completion support",
+  "$id": "https://github.com/Lazialize/strata/schemas/strata-schema.json",
+  "title": "Strata Schema Definition",
+  "description": "JSON Schema for Strata database schema YAML files with IDE completion support",
   "type": "object",
   "required": ["version", "tables"],
   "properties": {
