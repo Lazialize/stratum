@@ -505,13 +505,14 @@ impl DatabaseMigratorService {
     ) -> Result<bool, DatabaseError> {
         let sql = self.generate_check_migration_table_exists_sql(dialect);
 
-        let row_result = sqlx::query(&sql)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| DatabaseError::Query {
-                message: format!("Failed to check migration table existence: {}", e),
-                sql: Some(sql),
-            })?;
+        let row_result =
+            sqlx::query(&sql)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| DatabaseError::Query {
+                    message: format!("Failed to check migration table existence: {}", e),
+                    sql: Some(sql),
+                })?;
 
         Ok(row_result.is_some())
     }

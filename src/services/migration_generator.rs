@@ -836,8 +836,16 @@ mod tests {
         let rename_pos = sql.find("ALTER TABLE users RENAME COLUMN age TO age_years");
         let type_pos = sql.find("ALTER TABLE users ALTER COLUMN age_years TYPE");
 
-        assert!(rename_pos.is_some(), "SQL should contain RENAME COLUMN, got: {}", sql);
-        assert!(type_pos.is_some(), "SQL should contain ALTER COLUMN TYPE, got: {}", sql);
+        assert!(
+            rename_pos.is_some(),
+            "SQL should contain RENAME COLUMN, got: {}",
+            sql
+        );
+        assert!(
+            type_pos.is_some(),
+            "SQL should contain ALTER COLUMN TYPE, got: {}",
+            sql
+        );
 
         // リネームが型変更より先に来ることを確認
         assert!(
@@ -866,8 +874,16 @@ mod tests {
         let type_pos = sql.find("ALTER TABLE users ALTER COLUMN age_years TYPE INTEGER");
         let rename_pos = sql.find("ALTER TABLE users RENAME COLUMN age_years TO age");
 
-        assert!(type_pos.is_some(), "SQL should contain TYPE change reversal, got: {}", sql);
-        assert!(rename_pos.is_some(), "SQL should contain RENAME reversal, got: {}", sql);
+        assert!(
+            type_pos.is_some(),
+            "SQL should contain TYPE change reversal, got: {}",
+            sql
+        );
+        assert!(
+            rename_pos.is_some(),
+            "SQL should contain RENAME reversal, got: {}",
+            sql
+        );
 
         // Down方向では型変更がリネームより先に来ることを確認
         assert!(

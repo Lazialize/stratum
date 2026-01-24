@@ -4,7 +4,6 @@
 /// パース → 差分検出 → 検証 → SQL生成
 ///
 /// Task 7.1: YAMLスキーマからの完全なリネームフローテスト
-
 use std::fs;
 use tempfile::TempDir;
 
@@ -234,7 +233,11 @@ tables:
         let new_schema_path = temp_dir.path().join("new_schema.yaml");
 
         fs::write(&old_schema_path, create_old_schema_yaml()).unwrap();
-        fs::write(&new_schema_path, create_new_schema_rename_with_type_change_yaml()).unwrap();
+        fs::write(
+            &new_schema_path,
+            create_new_schema_rename_with_type_change_yaml(),
+        )
+        .unwrap();
 
         let parser = SchemaParserService::new();
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
@@ -293,7 +296,11 @@ tables:
         let new_schema_path = temp_dir.path().join("new_schema.yaml");
 
         fs::write(&old_schema_path, create_old_schema_yaml()).unwrap();
-        fs::write(&new_schema_path, create_new_schema_invalid_renamed_from_yaml()).unwrap();
+        fs::write(
+            &new_schema_path,
+            create_new_schema_invalid_renamed_from_yaml(),
+        )
+        .unwrap();
 
         let parser = SchemaParserService::new();
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
@@ -370,7 +377,11 @@ tables:
         let new_schema_path = temp_dir.path().join("new_schema.yaml");
 
         fs::write(&old_schema_path, create_old_schema_yaml()).unwrap();
-        fs::write(&new_schema_path, create_new_schema_rename_with_type_change_yaml()).unwrap();
+        fs::write(
+            &new_schema_path,
+            create_new_schema_rename_with_type_change_yaml(),
+        )
+        .unwrap();
 
         let parser = SchemaParserService::new();
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
@@ -430,8 +441,8 @@ tables:
         let detector = SchemaDiffDetector::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
-        let pipeline = MigrationPipeline::new(&diff, Dialect::MySQL)
-            .with_schemas(&old_schema, &new_schema);
+        let pipeline =
+            MigrationPipeline::new(&diff, Dialect::MySQL).with_schemas(&old_schema, &new_schema);
 
         let (up_sql, _) = pipeline.generate_up().unwrap();
         let (down_sql, _) = pipeline.generate_down().unwrap();
@@ -467,8 +478,8 @@ tables:
         let detector = SchemaDiffDetector::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
-        let pipeline = MigrationPipeline::new(&diff, Dialect::MySQL)
-            .with_schemas(&old_schema, &new_schema);
+        let pipeline =
+            MigrationPipeline::new(&diff, Dialect::MySQL).with_schemas(&old_schema, &new_schema);
 
         let (up_sql, _) = pipeline.generate_up().unwrap();
 
@@ -502,8 +513,8 @@ tables:
         let detector = SchemaDiffDetector::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
-        let pipeline = MigrationPipeline::new(&diff, Dialect::SQLite)
-            .with_schemas(&old_schema, &new_schema);
+        let pipeline =
+            MigrationPipeline::new(&diff, Dialect::SQLite).with_schemas(&old_schema, &new_schema);
 
         let (up_sql, _) = pipeline.generate_up().unwrap();
         let (down_sql, _) = pipeline.generate_down().unwrap();
@@ -539,8 +550,8 @@ tables:
         let detector = SchemaDiffDetector::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
-        let pipeline = MigrationPipeline::new(&diff, Dialect::SQLite)
-            .with_schemas(&old_schema, &new_schema);
+        let pipeline =
+            MigrationPipeline::new(&diff, Dialect::SQLite).with_schemas(&old_schema, &new_schema);
 
         let (up_sql, _) = pipeline.generate_up().unwrap();
 
@@ -767,7 +778,9 @@ tables:
         let schema = parser.parse_schema_file(&original_path).unwrap();
 
         let serializer = SchemaSerializerService::new();
-        serializer.serialize_to_file(&schema, &serialized_path).unwrap();
+        serializer
+            .serialize_to_file(&schema, &serialized_path)
+            .unwrap();
 
         let serialized_content = fs::read_to_string(&serialized_path).unwrap();
 

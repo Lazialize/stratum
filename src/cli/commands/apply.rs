@@ -268,10 +268,13 @@ impl ApplyCommandHandler {
             query = query.bind(param);
         }
 
-        query
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| anyhow!("Failed to record migration history: SQL={}, Error={}", record_sql, e))?;
+        query.execute(&mut *tx).await.map_err(|e| {
+            anyhow!(
+                "Failed to record migration history: SQL={}, Error={}",
+                record_sql,
+                e
+            )
+        })?;
 
         // トランザクションをコミット
         tx.commit()

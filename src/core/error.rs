@@ -193,7 +193,11 @@ impl ValidationWarning {
         message: String,
         location: Option<ErrorLocation>,
     ) -> Self {
-        Self::new(message, location, WarningKind::RenamedFromRemoveRecommendation)
+        Self::new(
+            message,
+            location,
+            WarningKind::RenamedFromRemoveRecommendation,
+        )
     }
 
     /// 位置情報をフォーマット
@@ -420,7 +424,9 @@ pub enum DatabaseError {
     },
 
     /// Column rename operation failed
-    #[error("Failed to rename column '{old_name}' to '{new_name}' in table '{table_name}': {reason}")]
+    #[error(
+        "Failed to rename column '{old_name}' to '{new_name}' in table '{table_name}': {reason}"
+    )]
     RenameColumnFailed {
         /// テーブル名
         table_name: String,
@@ -489,41 +495,38 @@ impl DatabaseError {
             || lower_msg.contains("unknown column")
         {
             (
-                format!("Column '{}' does not exist in table '{}'", old_name, table_name),
+                format!(
+                    "Column '{}' does not exist in table '{}'",
+                    old_name, table_name
+                ),
                 Some(format!(
                     "Check if column '{}' exists or if it was already renamed",
                     old_name
                 )),
             )
-        } else if lower_msg.contains("permission denied")
-            || lower_msg.contains("access denied")
-        {
+        } else if lower_msg.contains("permission denied") || lower_msg.contains("access denied") {
             (
                 "Insufficient privileges to rename column".to_string(),
                 Some("Ensure the database user has ALTER TABLE privileges".to_string()),
             )
-        } else if lower_msg.contains("duplicate column")
-            || lower_msg.contains("already exists")
-        {
+        } else if lower_msg.contains("duplicate column") || lower_msg.contains("already exists") {
             (
-                format!("Column '{}' already exists in table '{}'", new_name, table_name),
+                format!(
+                    "Column '{}' already exists in table '{}'",
+                    new_name, table_name
+                ),
                 Some(format!(
                     "Choose a different name or drop the existing column '{}' first",
                     new_name
                 )),
             )
-        } else if lower_msg.contains("foreign key")
-            || lower_msg.contains("constraint")
-        {
+        } else if lower_msg.contains("foreign key") || lower_msg.contains("constraint") {
             (
                 "Column is referenced by a foreign key constraint".to_string(),
                 Some("Consider dropping or updating the foreign key constraint first".to_string()),
             )
         } else {
-            (
-                error_message.to_string(),
-                None,
-            )
+            (error_message.to_string(), None)
         };
 
         DatabaseError::RenameColumnFailed {

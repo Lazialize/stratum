@@ -1851,8 +1851,7 @@ mod tests {
         assert!(result
             .errors
             .iter()
-            .any(|e| e.to_string().contains("old_email")
-                && e.to_string().contains("duplicate")));
+            .any(|e| e.to_string().contains("old_email") && e.to_string().contains("duplicate")));
     }
 
     #[test]
@@ -1913,11 +1912,7 @@ mod tests {
             false,
         ));
         // リネームされるカラム（FK参照されている）
-        let mut renamed_column = Column::new(
-            "user_uuid".to_string(),
-            ColumnType::UUID,
-            false,
-        );
+        let mut renamed_column = Column::new("user_uuid".to_string(), ColumnType::UUID, false);
         renamed_column.renamed_from = Some("uuid".to_string());
         users_table.add_column(renamed_column);
         users_table.add_constraint(Constraint::PRIMARY_KEY {
@@ -1956,8 +1951,7 @@ mod tests {
         assert!(result
             .warnings
             .iter()
-            .any(|w| w.message.contains("foreign key")
-                || w.message.contains("FK")));
+            .any(|w| w.message.contains("foreign key") || w.message.contains("FK")));
     }
 
     #[test]

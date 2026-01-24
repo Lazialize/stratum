@@ -212,10 +212,12 @@ mod tests {
             changes: vec![],
         };
 
-        let result = generator.generate_rename_column(&table, &renamed_column, MigrationDirection::Up);
+        let result =
+            generator.generate_rename_column(&table, &renamed_column, MigrationDirection::Up);
         assert!(result.is_empty());
 
-        let result = generator.generate_rename_column(&table, &renamed_column, MigrationDirection::Down);
+        let result =
+            generator.generate_rename_column(&table, &renamed_column, MigrationDirection::Down);
         assert!(result.is_empty());
     }
 

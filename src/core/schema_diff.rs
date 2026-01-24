@@ -482,10 +482,7 @@ pub enum ColumnChange {
     },
 
     /// カラム名の変更
-    Renamed {
-        old_name: String,
-        new_name: String,
-    },
+    Renamed { old_name: String, new_name: String },
 }
 
 #[cfg(test)]

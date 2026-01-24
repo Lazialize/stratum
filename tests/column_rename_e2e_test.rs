@@ -216,15 +216,13 @@ mod column_rename_e2e_tests {
         .unwrap();
 
         // テストデータを挿入
-        sqlx::query(
-            "INSERT INTO employees (first_name, last_name, dept) VALUES ($1, $2, $3)",
-        )
-        .bind("John")
-        .bind("Doe")
-        .bind("Engineering")
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("INSERT INTO employees (first_name, last_name, dept) VALUES ($1, $2, $3)")
+            .bind("John")
+            .bind("Doe")
+            .bind("Engineering")
+            .execute(&pool)
+            .await
+            .unwrap();
 
         // Up: 複数カラムをリネーム
         sqlx::query("ALTER TABLE employees RENAME COLUMN first_name TO given_name")
@@ -241,12 +239,11 @@ mod column_rename_e2e_tests {
             .unwrap();
 
         // リネーム後のデータ確認
-        let row = sqlx::query(
-            "SELECT given_name, family_name, department FROM employees WHERE id = 1",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row =
+            sqlx::query("SELECT given_name, family_name, department FROM employees WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
 
         assert_eq!(row.get::<String, _>("given_name"), "John");
         assert_eq!(row.get::<String, _>("family_name"), "Doe");
@@ -284,10 +281,7 @@ mod column_rename_e2e_tests {
     /// MySQLコンテナを起動して接続プールを作成
     async fn setup_mysql_container(
     ) -> Result<(ContainerAsync<MysqlImage>, MySqlPool), Box<dyn std::error::Error>> {
-        let container = MysqlImage::default()
-            .with_tag("8.0")
-            .start()
-            .await?;
+        let container = MysqlImage::default().with_tag("8.0").start().await?;
 
         let host = container.get_host().await?;
         let port = container.get_host_port_ipv4(3306).await?;
@@ -479,12 +473,11 @@ mod column_rename_e2e_tests {
             .unwrap();
 
         // リネーム後のデータ確認
-        let row = sqlx::query(
-            "SELECT given_name, family_name, department FROM employees WHERE id = 1",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row =
+            sqlx::query("SELECT given_name, family_name, department FROM employees WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
 
         assert_eq!(row.get::<String, _>("given_name"), "John");
         assert_eq!(row.get::<String, _>("family_name"), "Doe");
@@ -701,12 +694,11 @@ mod column_rename_e2e_tests {
             .unwrap();
 
         // リネーム後のデータ確認
-        let row = sqlx::query(
-            "SELECT given_name, family_name, department FROM employees WHERE id = 1",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row =
+            sqlx::query("SELECT given_name, family_name, department FROM employees WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
 
         assert_eq!(row.get::<String, _>("given_name"), "John");
         assert_eq!(row.get::<String, _>("family_name"), "Doe");
@@ -851,10 +843,12 @@ mod column_rename_e2e_tests {
             .unwrap();
 
         // 全データが保持されていることを確認
-        let rows = sqlx::query("SELECT buyer_name, item_name, quantity, total_price FROM orders ORDER BY id")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+        let rows = sqlx::query(
+            "SELECT buyer_name, item_name, quantity, total_price FROM orders ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
 
         assert_eq!(rows.len(), 3);
 

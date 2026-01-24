@@ -482,12 +482,8 @@ mod error_tests {
     #[test]
     fn test_parse_rename_error_unknown_pattern() {
         let original_message = "Some unexpected database error occurred";
-        let error = DatabaseError::parse_rename_error(
-            original_message,
-            "users",
-            "old_col",
-            "new_col",
-        );
+        let error =
+            DatabaseError::parse_rename_error(original_message, "users", "old_col", "new_col");
 
         if let DatabaseError::RenameColumnFailed {
             reason, suggestion, ..

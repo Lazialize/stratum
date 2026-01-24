@@ -597,7 +597,11 @@ tables:
         // Step 3: commentsテーブルを追加してgenerate
         project.add_table(
             "comments",
-            &[("id", "INTEGER"), ("content", "VARCHAR"), ("post_id", "INTEGER")],
+            &[
+                ("id", "INTEGER"),
+                ("content", "VARCHAR"),
+                ("post_id", "INTEGER"),
+            ],
         );
         let result = project.generate("create_comments");
         assert!(result.is_ok(), "Failed to generate: {:?}", result);
@@ -722,7 +726,10 @@ tables:
         // --steps 5 でrollback（適用数3を超える）
         let result = project.rollback(5).await;
         // 適用数を超えるstepsの場合、適用済み全て（3つ）がロールバックされるべき
-        assert!(result.is_ok(), "Rollback should succeed even with steps exceeding applied count");
+        assert!(
+            result.is_ok(),
+            "Rollback should succeed even with steps exceeding applied count"
+        );
         let output = result.unwrap();
         assert!(
             output.contains("3 migration(s) rolled back"),
@@ -838,11 +845,19 @@ tables:
         std::thread::sleep(std::time::Duration::from_secs(1));
         project.add_table("comments", &[("id", "INTEGER"), ("content", "VARCHAR")]);
         let result = project.generate("create_comments");
-        assert!(result.is_ok(), "Failed to generate after rollback: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Failed to generate after rollback: {:?}",
+            result
+        );
 
         // apply (posts + comments)
         let result = project.apply().await;
-        assert!(result.is_ok(), "Failed to apply after adding new migration: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Failed to apply after adding new migration: {:?}",
+            result
+        );
 
         // 最終的に3つのマイグレーションが存在
         assert_eq!(project.migration_count(), 3);
@@ -980,10 +995,14 @@ tables:
         let result = project.rollback(1).await;
 
         // エラーになるべき（ロールバックするマイグレーションがない）
-        assert!(result.is_err(), "Rollback should fail when no migrations are applied");
+        assert!(
+            result.is_err(),
+            "Rollback should fail when no migrations are applied"
+        );
         let err_msg = result.unwrap_err();
         assert!(
-            err_msg.to_lowercase().contains("no migrations") || err_msg.to_lowercase().contains("does not exist"),
+            err_msg.to_lowercase().contains("no migrations")
+                || err_msg.to_lowercase().contains("does not exist"),
             "Error should indicate no migrations to rollback, got: {}",
             err_msg
         );

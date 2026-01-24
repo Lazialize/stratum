@@ -240,10 +240,13 @@ impl SqlGenerator for MysqlSqlGenerator {
         // Down方向: new_name → old_name (old_columnの定義を使用)
         let (from_name, to_column) = match direction {
             MigrationDirection::Up => (&renamed_column.old_name, &renamed_column.new_column),
-            MigrationDirection::Down => (&renamed_column.new_column.name, &renamed_column.old_column),
+            MigrationDirection::Down => {
+                (&renamed_column.new_column.name, &renamed_column.old_column)
+            }
         };
 
-        let column_def = self.generate_column_definition_for_modify(table, &to_column.name, to_column);
+        let column_def =
+            self.generate_column_definition_for_modify(table, &to_column.name, to_column);
 
         vec![format!(
             "ALTER TABLE {} CHANGE COLUMN {} {}",
@@ -681,7 +684,7 @@ mod tests {
         let new_column = Column::new(
             "user_name".to_string(),
             ColumnType::VARCHAR { length: 200 }, // 型変更
-            true,                                 // nullable変更
+            true,                                // nullable変更
         );
         let renamed = RenamedColumn {
             old_name: "name".to_string(),
