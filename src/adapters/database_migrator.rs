@@ -84,7 +84,7 @@ impl DatabaseMigratorService {
             .to_string(),
             Dialect::MySQL => r#"CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(255) PRIMARY KEY,
-    description TEXT NOT NULL,
+    description VARCHAR(1024) NOT NULL,
     applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     checksum VARCHAR(64) NOT NULL
 )"#
@@ -148,7 +148,7 @@ impl DatabaseMigratorService {
     ) -> (String, Vec<String>) {
         let sql = match dialect {
             Dialect::PostgreSQL => {
-                "INSERT INTO schema_migrations (version, description, applied_at, checksum) VALUES ($1, $2, $3, $4)".to_string()
+                "INSERT INTO schema_migrations (version, description, applied_at, checksum) VALUES ($1, $2, $3::timestamptz, $4)".to_string()
             }
             Dialect::MySQL | Dialect::SQLite => {
                 "INSERT INTO schema_migrations (version, description, applied_at, checksum) VALUES (?, ?, ?, ?)".to_string()
@@ -284,7 +284,7 @@ impl DatabaseMigratorService {
                     .to_string()
             }
             Dialect::MySQL => {
-                "SELECT version, description, CAST(applied_at AS CHAR) AS applied_at, checksum FROM schema_migrations ORDER BY version"
+                "SELECT version, CAST(description AS CHAR) AS description, CAST(applied_at AS CHAR) AS applied_at, CAST(checksum AS CHAR) AS checksum FROM schema_migrations ORDER BY version"
                     .to_string()
             }
             Dialect::SQLite => {
@@ -367,7 +367,7 @@ impl DatabaseMigratorService {
                 "SELECT version, description, applied_at::text AS applied_at, checksum FROM schema_migrations WHERE version = $1".to_string()
             }
             Dialect::MySQL => {
-                "SELECT version, description, CAST(applied_at AS CHAR) AS applied_at, checksum FROM schema_migrations WHERE version = ?".to_string()
+                "SELECT version, CAST(description AS CHAR) AS description, CAST(applied_at AS CHAR) AS applied_at, CAST(checksum AS CHAR) AS checksum FROM schema_migrations WHERE version = ?".to_string()
             }
             Dialect::SQLite => {
                 "SELECT version, description, applied_at, checksum FROM schema_migrations WHERE version = ?".to_string()
@@ -473,8 +473,12 @@ impl DatabaseMigratorService {
     /// テーブル存在確認のSQL文字列
     pub fn generate_check_migration_table_exists_sql(&self, dialect: Dialect) -> String {
         match dialect {
-            Dialect::PostgreSQL | Dialect::MySQL => {
-                "SELECT table_name FROM information_schema.tables WHERE table_name = 'schema_migrations'"
+            Dialect::PostgreSQL => {
+                "SELECT table_name::text FROM information_schema.tables WHERE table_schema = ANY(current_schemas(false)) AND table_name = 'schema_migrations'"
+                    .to_string()
+            }
+            Dialect::MySQL => {
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'schema_migrations'"
                     .to_string()
             }
             Dialect::SQLite => {
@@ -501,14 +505,13 @@ impl DatabaseMigratorService {
     ) -> Result<bool, DatabaseError> {
         let sql = self.generate_check_migration_table_exists_sql(dialect);
 
-        let row_result =
-            sqlx::query(&sql)
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| DatabaseError::Query {
-                    message: format!("Failed to check migration table existence: {}", e),
-                    sql: Some(sql),
-                })?;
+        let row_result = sqlx::query(&sql)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| DatabaseError::Query {
+                message: format!("Failed to check migration table existence: {}", e),
+                sql: Some(sql),
+            })?;
 
         Ok(row_result.is_some())
     }
@@ -635,7 +638,9 @@ mod tests {
         assert!(sql.contains("FROM schema_migrations"));
         assert!(sql.contains("ORDER BY"));
         assert!(sql.contains("version"));
+        assert!(sql.contains("CAST(description AS CHAR)"));
         assert!(sql.contains("CAST(applied_at AS CHAR)"));
+        assert!(sql.contains("CAST(checksum AS CHAR)"));
     }
 
     #[test]
@@ -682,6 +687,7 @@ mod tests {
         assert!(sql.contains("information_schema.tables"));
         assert!(sql.contains("table_name"));
         assert!(sql.contains("schema_migrations"));
+        assert!(sql.contains("table_schema = ANY(current_schemas(false))"));
     }
 
     #[test]
@@ -693,6 +699,7 @@ mod tests {
         assert!(sql.contains("information_schema.tables"));
         assert!(sql.contains("table_name"));
         assert!(sql.contains("schema_migrations"));
+        assert!(sql.contains("table_schema = DATABASE()"));
     }
 
     #[test]

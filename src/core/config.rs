@@ -196,18 +196,24 @@ impl DatabaseConfig {
         match dialect {
             Dialect::PostgreSQL => {
                 let user = self.user.as_deref().unwrap_or("postgres");
-                let password = self.password.as_deref().unwrap_or("");
+                let auth = match self.password.as_deref() {
+                    Some(password) if !password.is_empty() => format!("{}:{}", user, password),
+                    _ => user.to_string(),
+                };
                 format!(
-                    "postgresql://{}:{}@{}:{}/{}",
-                    user, password, self.host, self.port, self.database
+                    "postgresql://{}@{}:{}/{}",
+                    auth, self.host, self.port, self.database
                 )
             }
             Dialect::MySQL => {
                 let user = self.user.as_deref().unwrap_or("root");
-                let password = self.password.as_deref().unwrap_or("");
+                let auth = match self.password.as_deref() {
+                    Some(password) if !password.is_empty() => format!("{}:{}", user, password),
+                    _ => user.to_string(),
+                };
                 format!(
-                    "mysql://{}:{}@{}:{}/{}",
-                    user, password, self.host, self.port, self.database
+                    "mysql://{}@{}:{}/{}",
+                    auth, self.host, self.port, self.database
                 )
             }
             Dialect::SQLite => {

@@ -111,8 +111,9 @@ mod database_connection_tests {
         let service = DatabaseConnectionService::new();
         let conn_str = service.build_connection_string(Dialect::PostgreSQL, &config);
 
-        // 空のパスワードフィールドが含まれる
-        assert!(conn_str.contains("postgresql://testuser:@"));
+        // パスワードなしの場合、:@ は含まれない
+        assert!(conn_str.contains("postgresql://testuser@"));
+        assert!(!conn_str.contains("testuser:@"));
     }
 
     /// デフォルトユーザー名の使用テスト（PostgreSQL）
