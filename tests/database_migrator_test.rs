@@ -133,8 +133,7 @@ mod database_migrator_tests {
         let service = DatabaseMigratorService::new();
         let version = "20240101_120000";
 
-        let sql =
-            service.generate_get_migration_by_version_sql(Dialect::PostgreSQL, version);
+        let sql = service.generate_get_migration_by_version_sql(Dialect::PostgreSQL, version);
 
         assert!(sql.contains("SELECT"));
         assert!(sql.contains("FROM schema_migrations"));

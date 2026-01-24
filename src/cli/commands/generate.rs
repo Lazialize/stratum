@@ -12,6 +12,7 @@ use crate::services::migration_generator::MigrationGenerator;
 use crate::services::schema_checksum::SchemaChecksumService;
 use crate::services::schema_diff_detector::SchemaDiffDetector;
 use crate::services::schema_parser::SchemaParserService;
+use crate::services::schema_serializer::SchemaSerializerService;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use std::fs;
@@ -428,7 +429,7 @@ impl GenerateCommandHandler {
         serde_saphyr::from_str(&content).with_context(|| "Failed to parse schema snapshot")
     }
 
-    /// 現在のスキーマを保存
+    /// 現在のスキーマを保存（新構文形式を使用）
     fn save_current_schema(
         &self,
         project_path: &Path,
@@ -439,7 +440,11 @@ impl GenerateCommandHandler {
             .join(&config.migrations_dir)
             .join(".schema_snapshot.yaml");
 
-        let yaml = serde_saphyr::to_string(schema).with_context(|| "Failed to serialize schema")?;
+        // SchemaSerializerServiceを使用して新構文形式でシリアライズ
+        let serializer = SchemaSerializerService::new();
+        let yaml = serializer
+            .serialize_to_string(schema)
+            .with_context(|| "Failed to serialize schema")?;
 
         fs::write(&snapshot_path, yaml)
             .with_context(|| format!("Failed to write schema snapshot: {:?}", snapshot_path))?;
@@ -633,5 +638,52 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Type Changes") || err.contains("Errors"));
+    }
+
+    // ======================================
+    // Task 4.2: スナップショット保存の新構文テスト
+    // ======================================
+
+    #[test]
+    fn test_snapshot_serialization_uses_new_syntax() {
+        use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
+        use crate::services::schema_serializer::SchemaSerializerService;
+
+        // 内部モデルを作成
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        table.add_index(Index::new(
+            "idx_name".to_string(),
+            vec!["name".to_string()],
+            false,
+        ));
+        schema.add_table(table);
+
+        // シリアライザーサービスを使用してシリアライズ
+        let serializer = SchemaSerializerService::new();
+        let yaml = serializer.serialize_to_string(&schema).unwrap();
+
+        // 新構文形式の確認
+        // 1. テーブル名がキーとして出力される
+        assert!(yaml.contains("products:"));
+        // 2. nameフィールドは出力されない
+        assert!(!yaml.contains("name: products"));
+        // 3. primary_keyフィールドが出力される
+        assert!(yaml.contains("primary_key:"));
+        // 4. constraints内にPRIMARY_KEYは含まれない
+        assert!(!yaml.contains("type: PRIMARY_KEY"));
     }
 }

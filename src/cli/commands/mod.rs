@@ -78,7 +78,10 @@ pub(crate) fn split_sql_statements(sql: &str) -> Vec<String> {
                 if let Some(end) = sql[i + 1..].find('$') {
                     let tag = &sql[i..=i + end + 1];
                     let inner = &tag[1..tag.len() - 1];
-                    if inner.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+                    if inner
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+                    {
                         dollar_tag = Some(tag.to_string());
                         current.push_str(tag);
                         i += tag.len();

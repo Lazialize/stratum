@@ -131,36 +131,29 @@ fn test_validate_empty_schema_dir() {
 fn test_validate_valid_schema() {
     let (_temp_dir, project_path) = setup_test_project().unwrap();
 
-    // 有効なスキーマファイルを作成
+    // 有効なスキーマファイルを作成（新構文）
     let schema_yaml = r#"
 version: "1.0"
 tables:
   users:
-    name: users
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
         auto_increment: true
       - name: name
         type:
           kind: VARCHAR
           length: 255
         nullable: false
-        default_value: null
-        auto_increment: null
+    primary_key:
+      - id
     indexes:
       - name: idx_users_name
         columns:
           - name
         unique: false
-    constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
 "#;
     fs::write(project_path.join("schema/users.yaml"), schema_yaml).unwrap();
 
@@ -183,29 +176,21 @@ tables:
 fn test_validate_invalid_schema_no_primary_key() {
     let (_temp_dir, project_path) = setup_test_project().unwrap();
 
-    // プライマリキーがないスキーマファイルを作成
+    // プライマリキーがないスキーマファイルを作成（新構文）
     let schema_yaml = r#"
 version: "1.0"
 tables:
   users:
-    name: users
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
-        auto_increment: null
       - name: name
         type:
           kind: VARCHAR
           length: 255
         nullable: false
-        default_value: null
-        auto_increment: null
-    indexes: []
-    constraints: []
 "#;
     fs::write(project_path.join("schema/users.yaml"), schema_yaml).unwrap();
 
@@ -227,32 +212,23 @@ tables:
 fn test_validate_invalid_foreign_key() {
     let (_temp_dir, project_path) = setup_test_project().unwrap();
 
-    // 存在しないテーブルを参照する外部キーを持つスキーマを作成
+    // 存在しないテーブルを参照する外部キーを持つスキーマを作成（新構文）
     let schema_yaml = r#"
 version: "1.0"
 tables:
   posts:
-    name: posts
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
-        auto_increment: null
       - name: user_id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
-        auto_increment: null
-    indexes: []
+    primary_key:
+      - id
     constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
       - type: FOREIGN_KEY
         columns:
           - user_id
@@ -284,25 +260,18 @@ fn test_validate_custom_schema_dir() {
     let custom_schema_dir = project_path.join("custom_schema");
     fs::create_dir_all(&custom_schema_dir).unwrap();
 
-    // スキーマファイルを作成
+    // スキーマファイルを作成（新構文）
     let schema_yaml = r#"
 version: "1.0"
 tables:
   users:
-    name: users
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
-        auto_increment: null
-    indexes: []
-    constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
+    primary_key:
+      - id
 "#;
     fs::write(custom_schema_dir.join("users.yaml"), schema_yaml).unwrap();
 

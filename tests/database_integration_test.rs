@@ -77,36 +77,29 @@ environments:
 "#;
         fs::write(project_path.join(".strata.yaml"), config_content)?;
 
-        // テスト用のスキーマファイルを作成
+        // テスト用のスキーマファイルを作成（新構文）
         let schema_content = r#"
 version: "1.0"
 tables:
   users:
-    name: users
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
         auto_increment: true
       - name: email
         type:
           kind: VARCHAR
           length: 255
         nullable: false
-        default_value: null
-        auto_increment: null
+    primary_key:
+      - id
     indexes:
       - name: idx_users_email
         columns:
           - email
         unique: true
-    constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
 "#;
         fs::write(schema_dir.join("users.yaml"), schema_content)?;
 

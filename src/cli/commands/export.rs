@@ -9,6 +9,7 @@
 use crate::adapters::database::DatabaseConnectionService;
 use crate::core::config::Config;
 use crate::core::schema::{Column, ColumnType, Constraint, EnumDefinition, Index, Schema, Table};
+use crate::services::schema_serializer::SchemaSerializerService;
 use anyhow::{anyhow, Context, Result};
 use sqlx::{AnyPool, Row};
 use std::collections::{HashMap, HashSet};
@@ -85,8 +86,10 @@ impl ExportCommandHandler {
         // テーブル名のリストを取得
         let table_names: Vec<String> = schema.tables.keys().cloned().collect();
 
-        // YAML形式にシリアライズ
-        let yaml_content = serde_saphyr::to_string(&schema)
+        // YAML形式にシリアライズ（新構文形式を使用）
+        let serializer = SchemaSerializerService::new();
+        let yaml_content = serializer
+            .serialize_to_string(&schema)
             .with_context(|| "Failed to serialize schema to YAML")?;
 
         // 出力先に応じて処理
@@ -609,6 +612,53 @@ mod tests {
     fn test_new_handler() {
         let handler = ExportCommandHandler::new();
         assert!(format!("{:?}", handler).contains("ExportCommandHandler"));
+    }
+
+    // ======================================
+    // Task 4.1: 新構文形式でのシリアライズテスト
+    // ======================================
+
+    #[test]
+    fn test_serialize_schema_new_syntax_format() {
+        use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
+        use crate::services::schema_serializer::SchemaSerializerService;
+
+        // 内部モデルを作成
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        table.add_index(Index::new(
+            "idx_email".to_string(),
+            vec!["email".to_string()],
+            true,
+        ));
+        schema.add_table(table);
+
+        // シリアライザーサービスを使用してシリアライズ
+        let serializer = SchemaSerializerService::new();
+        let yaml = serializer.serialize_to_string(&schema).unwrap();
+
+        // 新構文形式の確認
+        // 1. テーブル名がキーとして出力される
+        assert!(yaml.contains("users:"));
+        // 2. nameフィールドは出力されない
+        assert!(!yaml.contains("name: users"));
+        // 3. primary_keyフィールドが出力される
+        assert!(yaml.contains("primary_key:"));
+        // 4. constraints内にPRIMARY_KEYは含まれない
+        assert!(!yaml.contains("type: PRIMARY_KEY"));
     }
 
     #[test]

@@ -5,11 +5,24 @@
   "description": "JSON Schema for Strata database schema YAML files with IDE completion support",
   "type": "object",
   "required": ["version", "tables"],
+  "additionalProperties": false,
   "properties": {
     "version": {
       "type": "string",
       "const": "1.0",
       "description": "Schema definition version"
+    },
+    "enum_recreate_allowed": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow ENUM type recreation during migration (PostgreSQL only)"
+    },
+    "enums": {
+      "type": "object",
+      "description": "ENUM type definitions (PostgreSQL only)",
+      "additionalProperties": {
+        "$ref": "#/$defs/enumDefinition"
+      }
     },
     "tables": {
       "type": "object",
@@ -22,17 +35,22 @@
   "$defs": {
     "table": {
       "type": "object",
-      "required": ["name", "columns"],
+      "required": ["columns"],
+      "additionalProperties": false,
       "properties": {
-        "name": {
-          "type": "string",
-          "description": "Table name"
-        },
         "columns": {
           "type": "array",
           "description": "Table columns",
           "items": {
             "$ref": "#/$defs/column"
+          },
+          "minItems": 1
+        },
+        "primary_key": {
+          "type": "array",
+          "description": "Primary key column names",
+          "items": {
+            "type": "string"
           },
           "minItems": 1
         },
@@ -45,7 +63,7 @@
         },
         "constraints": {
           "type": "array",
-          "description": "Table constraints",
+          "description": "Table constraints (FOREIGN_KEY, UNIQUE, CHECK)",
           "items": {
             "$ref": "#/$defs/constraint"
           }
@@ -55,6 +73,7 @@
     "column": {
       "type": "object",
       "required": ["name", "type", "nullable"],
+      "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string",
@@ -279,6 +298,21 @@
           "additionalProperties": false
         },
         {
+          "type": "object",
+          "required": ["kind", "name"],
+          "properties": {
+            "kind": {
+              "const": "ENUM",
+              "description": "Reference to a defined ENUM type (PostgreSQL only)"
+            },
+            "name": {
+              "type": "string",
+              "description": "Name of the ENUM type to reference"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "$ref": "#/$defs/postgresqlDialectSpecificType"
         },
         {
@@ -358,6 +392,7 @@
         {
           "type": "object",
           "required": ["kind"],
+          "additionalProperties": false,
           "properties": {
             "kind": {
               "const": "VARBIT",
@@ -395,6 +430,7 @@
         {
           "type": "object",
           "required": ["kind"],
+          "additionalProperties": false,
           "properties": {
             "kind": {
               "const": "ARRAY",
@@ -414,6 +450,7 @@
         {
           "type": "object",
           "required": ["kind"],
+          "additionalProperties": false,
           "properties": {
             "kind": {
               "const": "TINYINT",
@@ -428,6 +465,7 @@
         {
           "type": "object",
           "required": ["kind"],
+          "additionalProperties": false,
           "properties": {
             "kind": {
               "const": "MEDIUMINT",
@@ -493,6 +531,7 @@
     "index": {
       "type": "object",
       "required": ["name", "columns", "unique"],
+      "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string",
@@ -513,32 +552,89 @@
       }
     },
     "constraint": {
+      "description": "Table constraint (PRIMARY_KEY is defined via primary_key field)",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "columns", "referenced_table", "referenced_columns"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "FOREIGN_KEY",
+              "description": "Foreign key constraint"
+            },
+            "columns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Source columns"
+            },
+            "referenced_table": {
+              "type": "string",
+              "description": "Referenced table name"
+            },
+            "referenced_columns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Referenced columns"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "columns"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "UNIQUE",
+              "description": "Unique constraint"
+            },
+            "columns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Columns that must be unique"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "columns", "check_expression"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "CHECK",
+              "description": "Check constraint"
+            },
+            "columns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Columns involved in the check"
+            },
+            "check_expression": {
+              "type": "string",
+              "description": "SQL check expression"
+            }
+          }
+        }
+      ]
+    },
+    "enumDefinition": {
       "type": "object",
-      "required": ["type"],
+      "required": ["name", "values"],
+      "additionalProperties": false,
       "properties": {
-        "type": {
+        "name": {
           "type": "string",
-          "enum": ["PRIMARY_KEY", "FOREIGN_KEY", "UNIQUE"],
-          "description": "Constraint type"
+          "description": "ENUM type name"
         },
-        "columns": {
+        "values": {
           "type": "array",
-          "items": {
-            "type": "string"
-          },
+          "items": { "type": "string" },
           "minItems": 1,
-          "description": "Columns involved in the constraint"
-        },
-        "referenced_table": {
-          "type": "string",
-          "description": "Referenced table (for FOREIGN_KEY)"
-        },
-        "referenced_columns": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Referenced columns (for FOREIGN_KEY)"
+          "description": "Allowed values for the ENUM"
         }
       }
     }

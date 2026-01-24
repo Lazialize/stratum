@@ -1,7 +1,6 @@
 version: "1.0"
 tables:
   products:
-    name: products
     columns:
       # INTEGER - Primary key with auto-increment
       - name: id
@@ -114,6 +113,9 @@ tables:
           kind: JSONB
         nullable: true
 
+    primary_key:
+      - id
+
     indexes:
       # Index on product name for searching
       - name: idx_products_name
@@ -140,11 +142,6 @@ tables:
         unique: false
 
     constraints:
-      # Primary key constraint
-      - type: PRIMARY_KEY
-        columns:
-          - id
-
       # Unique constraint on external_id
       - type: UNIQUE
         columns:

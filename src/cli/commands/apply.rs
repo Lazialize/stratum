@@ -9,9 +9,9 @@
 
 use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
+use crate::cli::commands::split_sql_statements;
 use crate::core::config::Config;
 use crate::core::migration::{AppliedMigration, Migration};
-use crate::cli::commands::split_sql_statements;
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use std::fs;

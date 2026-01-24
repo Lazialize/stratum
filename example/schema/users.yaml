@@ -1,7 +1,6 @@
 version: "1.0"
 tables:
   users:
-    name: users
     columns:
       - name: id
         type:
@@ -23,12 +22,10 @@ tables:
           kind: TIMESTAMP
         nullable: true
         default_value: "CURRENT_TIMESTAMP"
+    primary_key:
+      - id
     indexes:
       - name: idx_users_email
         columns:
           - email
         unique: true
-    constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id

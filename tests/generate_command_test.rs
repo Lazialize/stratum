@@ -298,7 +298,7 @@ environments:
         fs::write(project_path.join(".strata.yaml"), config_content).unwrap();
     }
 
-    /// 簡単なスキーマファイルを作成
+    /// 簡単なスキーマファイルを作成（新構文）
     fn create_simple_schema_file(
         project_path: &std::path::Path,
         table_name: &str,
@@ -327,20 +327,16 @@ environments:
             }
         }
 
+        // 新構文: name フィールドなし、primary_key は独立フィールド
         let schema_content = format!(
             r#"version: "1.0"
 tables:
   {}:
-    name: {}
     columns:
 {}
-    indexes: []
-    constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
+    primary_key:
+      - id
 "#,
-            table_name,
             table_name,
             column_defs.join("\n")
         );

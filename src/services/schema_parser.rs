@@ -4,8 +4,10 @@
 // ディレクトリ全体のスキーマファイルをスキャンし、統合されたスキーマを生成します。
 
 use crate::core::error::IoError;
-use crate::core::schema::Schema;
+use crate::core::schema::{Constraint, Schema, Table};
+use crate::services::dto::{ConstraintDto, SchemaDto, TableDto};
 use anyhow::{Context, Result};
+use regex::Regex;
 use std::fs;
 use std::path::Path;
 
@@ -113,11 +115,104 @@ impl SchemaParserService {
             cause: e.to_string(),
         })?;
 
-        // YAMLを解析
-        let schema: Schema = serde_saphyr::from_str(&content)
-            .with_context(|| format!("Failed to parse YAML: {:?}", file_path))?;
+        // YAMLをDTOにデシリアライズ
+        let dto: SchemaDto =
+            serde_saphyr::from_str(&content).map_err(|e| self.format_parse_error(file_path, e))?;
+
+        // DTOを内部モデルに変換
+        self.convert_dto_to_schema(dto)
+    }
+
+    /// SchemaDto → Schema 変換
+    fn convert_dto_to_schema(&self, dto: SchemaDto) -> Result<Schema> {
+        let mut schema = Schema::new(dto.version);
+        schema.enum_recreate_allowed = dto.enum_recreate_allowed;
+
+        // ENUM定義をコピー
+        for (name, enum_def) in dto.enums {
+            schema.enums.insert(name, enum_def);
+        }
+
+        // テーブルを変換
+        for (table_name, table_dto) in dto.tables {
+            let table = self.convert_table_dto(table_name, table_dto)?;
+            schema.add_table(table);
+        }
 
         Ok(schema)
+    }
+
+    /// TableDto → Table 変換
+    ///
+    /// キー名をテーブル名として設定し、primary_keyをConstraint::PRIMARY_KEYに変換します。
+    fn convert_table_dto(&self, table_name: String, dto: TableDto) -> Result<Table> {
+        let mut table = Table::new(table_name);
+
+        // カラムをコピー
+        table.columns = dto.columns;
+
+        // インデックスをコピー
+        table.indexes = dto.indexes;
+
+        // primary_key → Constraint::PRIMARY_KEY 変換
+        if let Some(pk_columns) = dto.primary_key {
+            table.add_constraint(Constraint::PRIMARY_KEY {
+                columns: pk_columns,
+            });
+        }
+
+        // ConstraintDto → Constraint 変換
+        for constraint_dto in dto.constraints {
+            let constraint = self.convert_constraint_dto(constraint_dto);
+            table.add_constraint(constraint);
+        }
+
+        Ok(table)
+    }
+
+    /// ConstraintDto → Constraint 変換
+    fn convert_constraint_dto(&self, dto: ConstraintDto) -> Constraint {
+        match dto {
+            ConstraintDto::FOREIGN_KEY {
+                columns,
+                referenced_table,
+                referenced_columns,
+            } => Constraint::FOREIGN_KEY {
+                columns,
+                referenced_table,
+                referenced_columns,
+            },
+            ConstraintDto::UNIQUE { columns } => Constraint::UNIQUE { columns },
+            ConstraintDto::CHECK {
+                columns,
+                check_expression,
+            } => Constraint::CHECK {
+                columns,
+                check_expression,
+            },
+        }
+    }
+
+    /// serde_saphyrエラーから行番号を抽出
+    fn extract_line_from_error(&self, error: &serde_saphyr::Error) -> Option<usize> {
+        let error_msg = error.to_string();
+        let re = Regex::new(r"line (\d+)").ok()?;
+        re.captures(&error_msg)
+            .and_then(|caps| caps.get(1))
+            .and_then(|m| m.as_str().parse().ok())
+    }
+
+    /// エラーメッセージのフォーマット
+    fn format_parse_error(&self, file_path: &Path, error: serde_saphyr::Error) -> anyhow::Error {
+        match self.extract_line_from_error(&error) {
+            Some(line) => anyhow::anyhow!(
+                "Failed to parse YAML at {}:{}: {}",
+                file_path.display(),
+                line,
+                error
+            ),
+            None => anyhow::anyhow!("Failed to parse YAML at {}: {}", file_path.display(), error),
+        }
     }
 
     /// ディレクトリ内のYAMLファイルをスキャン
@@ -239,6 +334,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let schema_file = temp_dir.path().join("schema.yaml");
 
+        // 新構文: name フィールドなし、primary_key は独立フィールド
         let schema_content = r#"
 version: "1.0"
 enums:
@@ -247,22 +343,19 @@ enums:
     values: ["active", "inactive"]
 tables:
   users:
-    name: users
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
         auto_increment: true
       - name: status
         type:
           kind: ENUM
           name: status
         nullable: false
-    indexes: []
-    constraints: []
+    primary_key:
+      - id
 "#;
         fs::write(&schema_file, schema_content).unwrap();
 
@@ -273,5 +366,313 @@ tables:
         assert_eq!(schema.tables.len(), 1);
         assert_eq!(schema.enums.len(), 1);
         assert!(schema.has_table("users"));
+    }
+
+    // ======================================
+    // Task 2.1 & 2.2: DTO → 内部モデル変換テスト
+    // ======================================
+
+    #[test]
+    fn test_parse_new_syntax_table_name_from_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // 新構文: テーブル名はキー名から取得
+        let schema_content = r#"
+version: "1.0"
+tables:
+  users:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+"#;
+        fs::write(&schema_file, schema_content).unwrap();
+
+        let service = SchemaParserService::new();
+        let schema = service.parse_schema_file(&schema_file).unwrap();
+
+        assert!(schema.has_table("users"));
+        let table = schema.get_table("users").unwrap();
+        assert_eq!(table.name, "users");
+    }
+
+    #[test]
+    fn test_parse_new_syntax_primary_key_to_constraint() {
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // 新構文: primary_keyフィールドが独立している
+        let schema_content = r#"
+version: "1.0"
+tables:
+  users:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - id
+"#;
+        fs::write(&schema_file, schema_content).unwrap();
+
+        let service = SchemaParserService::new();
+        let schema = service.parse_schema_file(&schema_file).unwrap();
+
+        let table = schema.get_table("users").unwrap();
+        let pk_columns = table.get_primary_key_columns();
+        assert!(pk_columns.is_some());
+        assert_eq!(pk_columns.unwrap(), vec!["id"]);
+    }
+
+    #[test]
+    fn test_parse_new_syntax_composite_primary_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        let schema_content = r#"
+version: "1.0"
+tables:
+  user_roles:
+    columns:
+      - name: user_id
+        type:
+          kind: INTEGER
+        nullable: false
+      - name: role_id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - user_id
+      - role_id
+"#;
+        fs::write(&schema_file, schema_content).unwrap();
+
+        let service = SchemaParserService::new();
+        let schema = service.parse_schema_file(&schema_file).unwrap();
+
+        let table = schema.get_table("user_roles").unwrap();
+        let pk_columns = table.get_primary_key_columns();
+        assert!(pk_columns.is_some());
+        assert_eq!(pk_columns.unwrap(), vec!["user_id", "role_id"]);
+    }
+
+    #[test]
+    fn test_parse_new_syntax_constraint_dto_to_constraint() {
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        let schema_content = r#"
+version: "1.0"
+tables:
+  posts:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+      - name: user_id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - id
+    constraints:
+      - type: FOREIGN_KEY
+        columns:
+          - user_id
+        referenced_table: users
+        referenced_columns:
+          - id
+"#;
+        fs::write(&schema_file, schema_content).unwrap();
+
+        let service = SchemaParserService::new();
+        let schema = service.parse_schema_file(&schema_file).unwrap();
+
+        let table = schema.get_table("posts").unwrap();
+        // 2つの制約: PRIMARY_KEY と FOREIGN_KEY
+        assert_eq!(table.constraints.len(), 2);
+
+        // FOREIGN_KEY制約を確認
+        let fk = table.constraints.iter().find(|c| c.kind() == "FOREIGN_KEY");
+        assert!(fk.is_some());
+    }
+
+    #[test]
+    fn test_parse_new_syntax_optional_indexes() {
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // indexesフィールドを省略
+        let schema_content = r#"
+version: "1.0"
+tables:
+  users:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - id
+"#;
+        fs::write(&schema_file, schema_content).unwrap();
+
+        let service = SchemaParserService::new();
+        let schema = service.parse_schema_file(&schema_file).unwrap();
+
+        let table = schema.get_table("users").unwrap();
+        assert!(table.indexes.is_empty());
+    }
+
+    #[test]
+    fn test_parse_new_syntax_optional_constraints() {
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // constraintsフィールドを省略（primary_keyのみ）
+        let schema_content = r#"
+version: "1.0"
+tables:
+  users:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - id
+"#;
+        fs::write(&schema_file, schema_content).unwrap();
+
+        let service = SchemaParserService::new();
+        let schema = service.parse_schema_file(&schema_file).unwrap();
+
+        let table = schema.get_table("users").unwrap();
+        // PRIMARY_KEY制約のみ
+        assert_eq!(table.constraints.len(), 1);
+        assert_eq!(table.constraints[0].kind(), "PRIMARY_KEY");
+    }
+
+    // ======================================
+    // Task 2.3: 行番号抽出テスト
+    // ======================================
+
+    #[test]
+    fn test_parse_error_contains_line_number() {
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // 不正なYAML（line 5でエラー）
+        let invalid_content = r#"
+version: "1.0"
+tables:
+  users:
+    columns: invalid_not_a_list
+"#;
+        fs::write(&schema_file, invalid_content).unwrap();
+
+        let service = SchemaParserService::new();
+        let result = service.parse_schema_file(&schema_file);
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        // エラーメッセージに行番号が含まれることを確認
+        assert!(
+            error_msg.contains("line") || error_msg.contains(":"),
+            "Error message should contain line info: {}",
+            error_msg
+        );
+    }
+
+    // ======================================
+    // Task 6.2: カラム未定義エラーテスト
+    // ======================================
+
+    #[test]
+    fn test_parse_error_columns_missing() {
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // columnsフィールドが存在しない不正なスキーマ
+        let invalid_content = r#"
+version: "1.0"
+tables:
+  users:
+    primary_key:
+      - id
+"#;
+        fs::write(&schema_file, invalid_content).unwrap();
+
+        let service = SchemaParserService::new();
+        let result = service.parse_schema_file(&schema_file);
+
+        // serde_saphyrはcolumnsが必須なのでデシリアライズエラーになる
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        // エラーメッセージにcolumns関連の情報が含まれることを確認
+        assert!(
+            error_msg.contains("columns") || error_msg.contains("missing"),
+            "Error message should indicate columns is required: {}",
+            error_msg
+        );
+    }
+
+    #[test]
+    fn test_parse_columns_empty_array() {
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // columnsフィールドが空配列のスキーマ
+        // パース自体は成功するが、バリデーションでエラーになるべき
+        let content = r#"
+version: "1.0"
+tables:
+  users:
+    columns: []
+    primary_key:
+      - id
+"#;
+        fs::write(&schema_file, content).unwrap();
+
+        let service = SchemaParserService::new();
+        let result = service.parse_schema_file(&schema_file);
+
+        // 空のcolumnsでもパースは成功する
+        assert!(result.is_ok());
+        let schema = result.unwrap();
+        let table = schema.get_table("users").unwrap();
+        assert!(table.columns.is_empty());
+    }
+
+    #[test]
+    fn test_extract_line_from_error_format() {
+        let service = SchemaParserService::new();
+
+        // serde_saphyrのエラーメッセージ形式をテスト
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // 明確に行番号が出るエラーを発生させる
+        let invalid_content = "version: \"1.0\"\ntables:\n  users:\n    columns:\n      - invalid";
+        fs::write(&schema_file, invalid_content).unwrap();
+
+        let result = service.parse_schema_file(&schema_file);
+        assert!(result.is_err());
+
+        // エラーメッセージをキャプチャ
+        let error_msg = result.unwrap_err().to_string();
+        // serde_saphyrは"line X"形式でエラーを報告するはず
+        assert!(
+            error_msg.contains("line")
+                || error_msg
+                    .contains(schema_file.display().to_string().as_str()),
+            "Error should contain file path or line info: {}",
+            error_msg
+        );
     }
 }

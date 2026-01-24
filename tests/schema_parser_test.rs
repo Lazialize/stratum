@@ -16,72 +16,55 @@ mod schema_parser_tests {
         let temp_dir = TempDir::new().unwrap();
         let schema_dir = temp_dir.path();
 
-        // users.yaml を作成
+        // users.yaml を作成（新構文）
         let users_yaml = r#"
 version: "1.0"
 tables:
   users:
-    name: users
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
         auto_increment: true
       - name: email
         type:
           kind: VARCHAR
           length: 255
         nullable: false
-        default_value: null
-        auto_increment: null
+    primary_key:
+      - id
     indexes:
       - name: idx_users_email
         columns:
           - email
         unique: true
-    constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
 "#;
         fs::write(schema_dir.join("users.yaml"), users_yaml).unwrap();
 
-        // posts.yaml を作成
+        // posts.yaml を作成（新構文）
         let posts_yaml = r#"
 version: "1.0"
 tables:
   posts:
-    name: posts
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
         auto_increment: true
       - name: user_id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
-        auto_increment: null
       - name: title
         type:
           kind: VARCHAR
           length: 200
         nullable: false
-        default_value: null
-        auto_increment: null
-    indexes: []
+    primary_key:
+      - id
     constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
       - type: FOREIGN_KEY
         columns:
           - user_id
@@ -187,22 +170,19 @@ tables:
         let temp_dir = TempDir::new().unwrap();
         let schema_dir = temp_dir.path();
 
-        // 複数のスキーマファイルを作成
+        // 複数のスキーマファイルを作成（新構文）
         let schema1 = r#"
 version: "1.0"
 tables:
   table1:
-    name: table1
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
         auto_increment: true
-    indexes: []
-    constraints: []
+    primary_key:
+      - id
 "#;
         fs::write(schema_dir.join("schema1.yaml"), schema1).unwrap();
 
@@ -210,17 +190,14 @@ tables:
 version: "1.0"
 tables:
   table2:
-    name: table2
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
         auto_increment: true
-    indexes: []
-    constraints: []
+    primary_key:
+      - id
 "#;
         fs::write(schema_dir.join("schema2.yaml"), schema2).unwrap();
 
@@ -240,15 +217,16 @@ tables:
         let temp_dir = TempDir::new().unwrap();
         let schema_dir = temp_dir.path();
 
-        // .yaml ファイル
+        // .yaml ファイル（新構文）
         let schema_yaml = r#"
 version: "1.0"
 tables:
   users:
-    name: users
-    columns: []
-    indexes: []
-    constraints: []
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
 "#;
         fs::write(schema_dir.join("users.yaml"), schema_yaml).unwrap();
 
@@ -277,10 +255,11 @@ tables:
 version: "2.5.1"
 tables:
   users:
-    name: users
-    columns: []
-    indexes: []
-    constraints: []
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
 "#;
         fs::write(&schema_file, schema_yaml).unwrap();
 
@@ -305,12 +284,13 @@ tables:
 version: "1.0"
 tables:
   table{}:
-    name: table{}
-    columns: []
-    indexes: []
-    constraints: []
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
 "#,
-                i, i
+                i
             );
             fs::write(schema_dir.join(format!("schema{}.yaml", i)), content).unwrap();
         }
@@ -325,5 +305,257 @@ tables:
         for i in 1..=5 {
             assert!(schema.tables.contains_key(&format!("table{}", i)));
         }
+    }
+
+    // ======================================
+    // Task 6.4: 統合テスト - バリデーション連携
+    // ======================================
+
+    /// 新構文でパースしたスキーマのバリデーション連携テスト
+    #[test]
+    fn test_parse_and_validate_new_syntax_valid_schema() {
+        use strata::services::schema_validator::SchemaValidatorService;
+
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // 有効な新構文スキーマ
+        let valid_schema = r#"
+version: "1.0"
+tables:
+  users:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        auto_increment: true
+      - name: email
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: false
+    primary_key:
+      - id
+    indexes:
+      - name: idx_users_email
+        columns:
+          - email
+        unique: true
+"#;
+        fs::write(&schema_file, valid_schema).unwrap();
+
+        let parser = SchemaParserService::new();
+        let schema = parser.parse_schema_file(&schema_file).unwrap();
+
+        // バリデーション実行
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        // 有効なスキーマはバリデーション成功
+        assert!(result.is_valid(), "Validation errors: {:?}", result.errors);
+    }
+
+    /// PRIMARY_KEYに存在しないカラムを指定した場合のバリデーションエラー
+    #[test]
+    fn test_parse_and_validate_invalid_primary_key_column() {
+        use strata::services::schema_validator::SchemaValidatorService;
+
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // primary_keyに存在しないカラムを指定
+        let invalid_schema = r#"
+version: "1.0"
+tables:
+  users:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - nonexistent_column
+"#;
+        fs::write(&schema_file, invalid_schema).unwrap();
+
+        let parser = SchemaParserService::new();
+        let schema = parser.parse_schema_file(&schema_file).unwrap();
+
+        // バリデーション実行
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        // 存在しないカラムを参照するPRIMARY_KEYはエラー
+        assert!(!result.is_valid());
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.to_string().contains("nonexistent_column")),
+            "Expected error about nonexistent_column, got: {:?}",
+            result.errors
+        );
+    }
+
+    /// 外部キー制約のバリデーション連携テスト
+    #[test]
+    fn test_parse_and_validate_foreign_key_constraint() {
+        use strata::services::schema_validator::SchemaValidatorService;
+
+        let temp_dir = TempDir::new().unwrap();
+        let schema_file = temp_dir.path().join("schema.yaml");
+
+        // 参照先テーブルが存在しない外部キー
+        let invalid_schema = r#"
+version: "1.0"
+tables:
+  posts:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+      - name: user_id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - id
+    constraints:
+      - type: FOREIGN_KEY
+        columns:
+          - user_id
+        referenced_table: users
+        referenced_columns:
+          - id
+"#;
+        fs::write(&schema_file, invalid_schema).unwrap();
+
+        let parser = SchemaParserService::new();
+        let schema = parser.parse_schema_file(&schema_file).unwrap();
+
+        // バリデーション実行
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        // 存在しないテーブルへの参照はエラー
+        assert!(!result.is_valid());
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.to_string().contains("users")),
+            "Expected error about missing users table, got: {:?}",
+            result.errors
+        );
+    }
+
+    /// 往復テスト: パース→シリアライズ→パース
+    #[test]
+    fn test_round_trip_parse_serialize_parse() {
+        use strata::services::schema_serializer::SchemaSerializerService;
+
+        let temp_dir = TempDir::new().unwrap();
+        let original_file = temp_dir.path().join("original.yaml");
+        let serialized_file = temp_dir.path().join("serialized.yaml");
+
+        // 複雑なスキーマを作成
+        let original_schema = r#"
+version: "1.0"
+tables:
+  users:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        auto_increment: true
+      - name: email
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: false
+      - name: age
+        type:
+          kind: INTEGER
+        nullable: true
+    primary_key:
+      - id
+    indexes:
+      - name: idx_users_email
+        columns:
+          - email
+        unique: true
+    constraints:
+      - type: UNIQUE
+        columns:
+          - email
+  posts:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+      - name: user_id
+        type:
+          kind: INTEGER
+        nullable: false
+      - name: title
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: false
+    primary_key:
+      - id
+    constraints:
+      - type: FOREIGN_KEY
+        columns:
+          - user_id
+        referenced_table: users
+        referenced_columns:
+          - id
+"#;
+        fs::write(&original_file, original_schema).unwrap();
+
+        // パース
+        let parser = SchemaParserService::new();
+        let schema = parser.parse_schema_file(&original_file).unwrap();
+
+        // シリアライズ
+        let serializer = SchemaSerializerService::new();
+        serializer
+            .serialize_to_file(&schema, &serialized_file)
+            .unwrap();
+
+        // 再パース
+        let reparsed_schema = parser.parse_schema_file(&serialized_file).unwrap();
+
+        // 比較
+        assert_eq!(schema.version, reparsed_schema.version);
+        assert_eq!(schema.tables.len(), reparsed_schema.tables.len());
+
+        // usersテーブル
+        let original_users = schema.get_table("users").unwrap();
+        let reparsed_users = reparsed_schema.get_table("users").unwrap();
+        assert_eq!(original_users.columns.len(), reparsed_users.columns.len());
+        assert_eq!(
+            original_users.get_primary_key_columns(),
+            reparsed_users.get_primary_key_columns()
+        );
+        assert_eq!(original_users.indexes.len(), reparsed_users.indexes.len());
+        assert_eq!(
+            original_users.constraints.len(),
+            reparsed_users.constraints.len()
+        );
+
+        // postsテーブル
+        let original_posts = schema.get_table("posts").unwrap();
+        let reparsed_posts = reparsed_schema.get_table("posts").unwrap();
+        assert_eq!(original_posts.columns.len(), reparsed_posts.columns.len());
+        assert_eq!(
+            original_posts.constraints.len(),
+            reparsed_posts.constraints.len()
+        );
     }
 }
