@@ -180,9 +180,21 @@ impl DatabaseMigratorService {
     /// # Returns
     ///
     /// SELECT文のSQL文字列
-    pub fn generate_get_migrations_sql(&self) -> String {
-        "SELECT version, description, applied_at, checksum FROM schema_migrations ORDER BY version"
-            .to_string()
+    pub fn generate_get_migrations_sql(&self, dialect: Dialect) -> String {
+        match dialect {
+            Dialect::PostgreSQL => {
+                "SELECT version, description, applied_at::text AS applied_at, checksum FROM schema_migrations ORDER BY version"
+                    .to_string()
+            }
+            Dialect::MySQL => {
+                "SELECT version, description, CAST(applied_at AS CHAR) AS applied_at, checksum FROM schema_migrations ORDER BY version"
+                    .to_string()
+            }
+            Dialect::SQLite => {
+                "SELECT version, description, applied_at, checksum FROM schema_migrations ORDER BY version"
+                    .to_string()
+            }
+        }
     }
 
     /// データベースからすべてのマイグレーション記録を取得
@@ -197,8 +209,9 @@ impl DatabaseMigratorService {
     pub async fn get_migrations(
         &self,
         pool: &AnyPool,
+        dialect: Dialect,
     ) -> Result<Vec<MigrationRecord>, DatabaseError> {
-        let sql = self.generate_get_migrations_sql();
+        let sql = self.generate_get_migrations_sql(dialect);
 
         let rows = sqlx::query(&sql)
             .fetch_all(pool)
@@ -242,11 +255,21 @@ impl DatabaseMigratorService {
     /// # Returns
     ///
     /// SELECT文のSQL文字列
-    pub fn generate_get_migration_by_version_sql(&self, version: &str) -> String {
-        format!(
-            "SELECT version, description, applied_at, checksum FROM schema_migrations WHERE version = '{}'",
-            version
-        )
+    pub fn generate_get_migration_by_version_sql(&self, dialect: Dialect, version: &str) -> String {
+        match dialect {
+            Dialect::PostgreSQL => format!(
+                "SELECT version, description, applied_at::text AS applied_at, checksum FROM schema_migrations WHERE version = '{}'",
+                version
+            ),
+            Dialect::MySQL => format!(
+                "SELECT version, description, CAST(applied_at AS CHAR) AS applied_at, checksum FROM schema_migrations WHERE version = '{}'",
+                version
+            ),
+            Dialect::SQLite => format!(
+                "SELECT version, description, applied_at, checksum FROM schema_migrations WHERE version = '{}'",
+                version
+            ),
+        }
     }
 
     /// 指定されたバージョンのマイグレーション記録を取得
@@ -262,9 +285,10 @@ impl DatabaseMigratorService {
     pub async fn get_migration_by_version(
         &self,
         pool: &AnyPool,
+        dialect: Dialect,
         version: &str,
     ) -> Result<Option<MigrationRecord>, DatabaseError> {
-        let sql = self.generate_get_migration_by_version_sql(version);
+        let sql = self.generate_get_migration_by_version_sql(dialect, version);
 
         let row_result =
             sqlx::query(&sql)
@@ -475,9 +499,33 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_get_migrations_sql() {
+    fn test_generate_get_migrations_sql_postgres() {
         let service = DatabaseMigratorService::new();
-        let sql = service.generate_get_migrations_sql();
+        let sql = service.generate_get_migrations_sql(Dialect::PostgreSQL);
+
+        assert!(sql.contains("SELECT"));
+        assert!(sql.contains("FROM schema_migrations"));
+        assert!(sql.contains("ORDER BY"));
+        assert!(sql.contains("version"));
+        assert!(sql.contains("applied_at::text"));
+    }
+
+    #[test]
+    fn test_generate_get_migrations_sql_mysql() {
+        let service = DatabaseMigratorService::new();
+        let sql = service.generate_get_migrations_sql(Dialect::MySQL);
+
+        assert!(sql.contains("SELECT"));
+        assert!(sql.contains("FROM schema_migrations"));
+        assert!(sql.contains("ORDER BY"));
+        assert!(sql.contains("version"));
+        assert!(sql.contains("CAST(applied_at AS CHAR)"));
+    }
+
+    #[test]
+    fn test_generate_get_migrations_sql_sqlite() {
+        let service = DatabaseMigratorService::new();
+        let sql = service.generate_get_migrations_sql(Dialect::SQLite);
 
         assert!(sql.contains("SELECT"));
         assert!(sql.contains("FROM schema_migrations"));
@@ -510,16 +558,17 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_get_migration_by_version_sql() {
+    fn test_generate_get_migration_by_version_sql_postgres() {
         let service = DatabaseMigratorService::new();
         let version = "20240101120000";
 
-        let sql = service.generate_get_migration_by_version_sql(version);
+        let sql = service.generate_get_migration_by_version_sql(Dialect::PostgreSQL, version);
 
         assert!(sql.contains("SELECT"));
         assert!(sql.contains("FROM schema_migrations"));
         assert!(sql.contains("WHERE version ="));
         assert!(sql.contains("20240101120000"));
+        assert!(sql.contains("applied_at::text"));
     }
 
     #[test]

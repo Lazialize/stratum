@@ -253,7 +253,10 @@ async fn test_rollback_single_migration_sqlite() {
     assert!(summary.contains("20260121120000"));
 
     // マイグレーション履歴が削除されたことを確認
-    let records = migrator.get_migrations(&pool).await.unwrap();
+    let records = migrator
+        .get_migrations(&pool, Dialect::SQLite)
+        .await
+        .unwrap();
     assert_eq!(records.len(), 0);
 
     // テーブルが削除されたことを確認

@@ -100,7 +100,7 @@ impl RollbackCommandHandler {
 
         // 適用済みマイグレーションを取得
         let applied_migrations = migrator
-            .get_migrations(&pool)
+            .get_migrations(&pool, config.dialect)
             .await
             .with_context(|| "Failed to get applied migration history")?;
 
