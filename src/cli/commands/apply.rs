@@ -11,6 +11,7 @@ use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::core::config::Config;
 use crate::core::migration::{AppliedMigration, Migration};
+use crate::cli::commands::split_sql_statements;
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use std::fs;
@@ -238,16 +239,18 @@ impl ApplyCommandHandler {
             .await
             .with_context(|| "Failed to start transaction")?;
 
-        // マイグレーションSQLを実行
-        sqlx::query(up_sql)
-            .execute(&mut *tx)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to execute migration SQL: {}\nSQL: {}",
-                    version, up_sql
-                )
-            })?;
+        // マイグレーションSQLを文単位で実行
+        for statement in split_sql_statements(up_sql) {
+            sqlx::query(&statement)
+                .execute(&mut *tx)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to execute migration SQL: {}\nSQL: {}",
+                        version, statement
+                    )
+                })?;
+        }
 
         // マイグレーション履歴を記録
         let migration = Migration::new(

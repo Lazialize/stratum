@@ -8,6 +8,7 @@
 
 use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
+use crate::cli::commands::split_sql_statements;
 use crate::core::config::Config;
 use crate::core::migration::AppliedMigration;
 use anyhow::{anyhow, Context, Result};
@@ -224,16 +225,18 @@ impl RollbackCommandHandler {
             .await
             .with_context(|| "Failed to start transaction")?;
 
-        // マイグレーションdown SQLを実行
-        sqlx::query(down_sql)
-            .execute(&mut *tx)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to execute migration down SQL: {}\nSQL: {}",
-                    version, down_sql
-                )
-            })?;
+        // マイグレーションdown SQLを文単位で実行
+        for statement in split_sql_statements(down_sql) {
+            sqlx::query(&statement)
+                .execute(&mut *tx)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to execute migration down SQL: {}\nSQL: {}",
+                        version, statement
+                    )
+                })?;
+        }
 
         // マイグレーション履歴から削除
         let remove_sql = migrator.generate_remove_migration_sql(version);
