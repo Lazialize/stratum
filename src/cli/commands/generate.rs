@@ -552,10 +552,11 @@ impl GenerateCommandHandler {
             return Ok(Schema::new("1.0".to_string()));
         }
 
-        let content = fs::read_to_string(&snapshot_path)
-            .with_context(|| format!("Failed to read schema snapshot: {:?}", snapshot_path))?;
-
-        serde_saphyr::from_str(&content).with_context(|| "Failed to parse schema snapshot")
+        // SchemaParserServiceを使って新構文形式のスナップショットを読み込む
+        let parser = SchemaParserService::new();
+        parser
+            .parse_schema_file(&snapshot_path)
+            .with_context(|| "Failed to parse schema snapshot")
     }
 
     /// 現在のスキーマを保存（新構文形式を使用）

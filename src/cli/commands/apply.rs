@@ -271,7 +271,7 @@ impl ApplyCommandHandler {
         query
             .execute(&mut *tx)
             .await
-            .with_context(|| "Failed to record migration history")?;
+            .map_err(|e| anyhow!("Failed to record migration history: SQL={}, Error={}", record_sql, e))?;
 
         // トランザクションをコミット
         tx.commit()
