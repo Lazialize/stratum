@@ -25,6 +25,7 @@ mod postgres_dialect_specific_tests {
             nullable: false,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         let sql = generator.generate_create_table(&table);
@@ -57,6 +58,7 @@ mod postgres_dialect_specific_tests {
             nullable: true,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         let sql = generator.generate_create_table(&table);
@@ -84,6 +86,7 @@ mod postgres_dialect_specific_tests {
             nullable: true,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         let sql = generator.generate_create_table(&table);
@@ -112,6 +115,7 @@ mod mysql_dialect_specific_tests {
             nullable: false,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         let sql = generator.generate_create_table(&table);
@@ -150,6 +154,7 @@ mod mysql_dialect_specific_tests {
             nullable: false,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         let sql = generator.generate_create_table(&table);
@@ -177,6 +182,7 @@ mod mysql_dialect_specific_tests {
             nullable: false,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         let sql = generator.generate_create_table(&table);
@@ -212,6 +218,7 @@ mod sqlite_dialect_specific_tests {
             nullable: true,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         let sql = generator.generate_create_table(&table);
@@ -246,6 +253,7 @@ mod mixed_types_tests {
             nullable: false,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         // 共通型（VARCHAR）
@@ -255,6 +263,7 @@ mod mixed_types_tests {
             nullable: false,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         // 共通型（DECIMAL）
@@ -267,6 +276,7 @@ mod mixed_types_tests {
             nullable: false,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         });
 
         let sql = generator.generate_create_table(&table);

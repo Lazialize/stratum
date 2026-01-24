@@ -275,4 +275,230 @@ mod error_tests {
         assert_eq!(result1.error_count(), 2);
         assert!(!result1.is_valid());
     }
+
+    /// DatabaseError::RenameColumnFailed test
+    #[test]
+    fn test_database_error_rename_column_failed() {
+        let error = DatabaseError::RenameColumnFailed {
+            table_name: "users".to_string(),
+            old_name: "email".to_string(),
+            new_name: "email_address".to_string(),
+            reason: "Column 'email' does not exist".to_string(),
+            suggestion: Some("Check if column exists".to_string()),
+        };
+
+        let error_str = error.to_string();
+        assert!(error_str.contains("email"));
+        assert!(error_str.contains("email_address"));
+        assert!(error_str.contains("users"));
+        assert!(error.is_rename_column_failed());
+        assert!(!error.is_query());
+    }
+
+    /// DatabaseError::RenameColumnFailed without suggestion test
+    #[test]
+    fn test_database_error_rename_column_failed_no_suggestion() {
+        let error = DatabaseError::RenameColumnFailed {
+            table_name: "posts".to_string(),
+            old_name: "title".to_string(),
+            new_name: "post_title".to_string(),
+            reason: "Unknown error".to_string(),
+            suggestion: None,
+        };
+
+        assert!(error.is_rename_column_failed());
+        let error_str = error.to_string();
+        assert!(error_str.contains("title"));
+        assert!(error_str.contains("post_title"));
+    }
+
+    /// DatabaseError::parse_rename_error column not found test
+    #[test]
+    fn test_parse_rename_error_column_not_found() {
+        // Test "does not exist" pattern
+        let error = DatabaseError::parse_rename_error(
+            "ERROR: column \"old_col\" does not exist",
+            "users",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed {
+            table_name,
+            old_name,
+            new_name,
+            reason,
+            suggestion,
+        } = error
+        {
+            assert_eq!(table_name, "users");
+            assert_eq!(old_name, "old_col");
+            assert_eq!(new_name, "new_col");
+            assert!(reason.contains("does not exist"));
+            assert!(suggestion.is_some());
+            assert!(suggestion.unwrap().contains("exists"));
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+
+        // Test "no such column" pattern (SQLite)
+        let error2 = DatabaseError::parse_rename_error(
+            "no such column: old_col",
+            "posts",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed { reason, .. } = error2 {
+            assert!(reason.contains("does not exist"));
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+
+        // Test "unknown column" pattern (MySQL)
+        let error3 = DatabaseError::parse_rename_error(
+            "Unknown column 'old_col' in 'field list'",
+            "comments",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed { reason, .. } = error3 {
+            assert!(reason.contains("does not exist"));
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+    }
+
+    /// DatabaseError::parse_rename_error permission denied test
+    #[test]
+    fn test_parse_rename_error_permission_denied() {
+        let error = DatabaseError::parse_rename_error(
+            "ERROR: permission denied for table users",
+            "users",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed {
+            reason, suggestion, ..
+        } = error
+        {
+            assert!(reason.contains("Insufficient privileges"));
+            assert!(suggestion.is_some());
+            assert!(suggestion.unwrap().contains("ALTER TABLE"));
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+
+        // Test "access denied" pattern (MySQL)
+        let error2 = DatabaseError::parse_rename_error(
+            "Access denied for user 'test'@'localhost'",
+            "posts",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed { reason, .. } = error2 {
+            assert!(reason.contains("Insufficient privileges"));
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+    }
+
+    /// DatabaseError::parse_rename_error duplicate column test
+    #[test]
+    fn test_parse_rename_error_duplicate_column() {
+        let error = DatabaseError::parse_rename_error(
+            "ERROR: column \"new_col\" already exists",
+            "users",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed {
+            reason, suggestion, ..
+        } = error
+        {
+            assert!(reason.contains("already exists"));
+            assert!(suggestion.is_some());
+            assert!(suggestion.unwrap().contains("different name"));
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+
+        // Test "duplicate column" pattern
+        let error2 = DatabaseError::parse_rename_error(
+            "Duplicate column name 'new_col'",
+            "posts",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed { reason, .. } = error2 {
+            assert!(reason.contains("already exists"));
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+    }
+
+    /// DatabaseError::parse_rename_error foreign key constraint test
+    #[test]
+    fn test_parse_rename_error_foreign_key_constraint() {
+        let error = DatabaseError::parse_rename_error(
+            "ERROR: cannot drop column old_col because other objects depend on it - foreign key constraint",
+            "users",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed {
+            reason, suggestion, ..
+        } = error
+        {
+            assert!(reason.contains("foreign key constraint"));
+            assert!(suggestion.is_some());
+            assert!(suggestion.unwrap().contains("constraint"));
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+
+        // Test "constraint" pattern
+        let error2 = DatabaseError::parse_rename_error(
+            "violates constraint on table",
+            "posts",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed { reason, .. } = error2 {
+            assert!(reason.contains("foreign key constraint"));
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+    }
+
+    /// DatabaseError::parse_rename_error unknown error pattern test
+    #[test]
+    fn test_parse_rename_error_unknown_pattern() {
+        let original_message = "Some unexpected database error occurred";
+        let error = DatabaseError::parse_rename_error(
+            original_message,
+            "users",
+            "old_col",
+            "new_col",
+        );
+
+        if let DatabaseError::RenameColumnFailed {
+            reason, suggestion, ..
+        } = error
+        {
+            // Unknown pattern should return original message as reason
+            assert_eq!(reason, original_message);
+            // No suggestion for unknown errors
+            assert!(suggestion.is_none());
+        } else {
+            panic!("Expected RenameColumnFailed variant");
+        }
+    }
 }

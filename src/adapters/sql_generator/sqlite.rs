@@ -8,7 +8,7 @@ use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
-use crate::core::schema_diff::ColumnDiff;
+use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
 
 /// SQLite用SQLジェネレーター
 #[derive(Debug, Clone)]
@@ -185,6 +185,24 @@ impl SqlGenerator for SqliteSqlGenerator {
     ) -> Vec<String> {
         let recreator = SqliteTableRecreator::new();
         recreator.generate_table_recreation_with_old_table(table, old_table)
+    }
+
+    fn generate_rename_column(
+        &self,
+        table: &Table,
+        renamed_column: &RenamedColumn,
+        direction: MigrationDirection,
+    ) -> Vec<String> {
+        // SQLite 3.25.0以降はALTER TABLE RENAME COLUMNをサポート
+        let (from_name, to_name) = match direction {
+            MigrationDirection::Up => (&renamed_column.old_name, &renamed_column.new_column.name),
+            MigrationDirection::Down => (&renamed_column.new_column.name, &renamed_column.old_name),
+        };
+
+        vec![format!(
+            "ALTER TABLE {} RENAME COLUMN {} TO {}",
+            table.name, from_name, to_name
+        )]
     }
 }
 
@@ -521,5 +539,90 @@ mod tests {
         // PRIMARY KEY制約が保持されていることを確認
         let create_table_stmt = &statements[2];
         assert!(create_table_stmt.contains("PRIMARY KEY"));
+    }
+
+    // ==========================================
+    // generate_rename_column のテスト
+    // ==========================================
+
+    use crate::core::schema_diff::RenamedColumn;
+
+    fn create_test_table() -> Table {
+        let mut table = Table::new("users".to_string());
+        table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.columns.push(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        table
+    }
+
+    #[test]
+    fn test_generate_rename_column_up() {
+        // Up方向：old_name → new_name
+        let generator = SqliteSqlGenerator::new();
+        let table = create_test_table();
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users RENAME COLUMN name TO user_name"
+        );
+    }
+
+    #[test]
+    fn test_generate_rename_column_down() {
+        // Down方向：new_name → old_name（逆リネーム）
+        let generator = SqliteSqlGenerator::new();
+        let table = create_test_table();
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Down);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users RENAME COLUMN user_name TO name"
+        );
     }
 }

@@ -13,6 +13,7 @@ use crate::services::schema_checksum::SchemaChecksumService;
 use crate::services::schema_diff_detector::SchemaDiffDetector;
 use crate::services::schema_parser::SchemaParserService;
 use crate::services::schema_serializer::SchemaSerializerService;
+use crate::services::schema_validator::SchemaValidatorService;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use std::fs;
@@ -36,6 +37,14 @@ struct TypeChangeInfo {
     column: String,
     old_type: String,
     new_type: String,
+}
+
+/// リネーム情報
+#[derive(Debug)]
+struct RenameInfo {
+    table: String,
+    old_name: String,
+    new_name: String,
 }
 
 /// generateコマンドハンドラー
@@ -85,9 +94,10 @@ impl GenerateCommandHandler {
         // 前回のスキーマ状態を読み込む（存在しない場合は空のスキーマ）
         let previous_schema = self.load_previous_schema(&command.project_path, &config)?;
 
-        // 差分を検出
+        // 差分を検出（警告付き）
         let detector = SchemaDiffDetector::new();
-        let diff = detector.detect_diff(&previous_schema, &current_schema);
+        let (diff, diff_warnings) =
+            detector.detect_diff_with_warnings(&previous_schema, &current_schema);
 
         // 差分がない場合はエラー
         if diff.is_empty() {
@@ -95,6 +105,14 @@ impl GenerateCommandHandler {
                 "No schema changes found. No migration files were generated."
             ));
         }
+
+        // リネーム検証を実行（旧スキーマ照合あり）
+        let validator = SchemaValidatorService::new();
+        let rename_validation =
+            validator.validate_renames_with_old_schema(&previous_schema, &current_schema);
+
+        // renamed_from属性削除推奨警告を収集
+        let renamed_from_warnings = self.generate_renamed_from_remove_warnings(&current_schema);
 
         // マイグレーションを生成
         let generator = MigrationGenerator::new();
@@ -109,6 +127,19 @@ impl GenerateCommandHandler {
         let sanitized_description = generator.sanitize_description(&description);
         let migration_name =
             generator.generate_migration_filename(&timestamp, &sanitized_description);
+
+        // リネーム検証エラーがある場合は処理を中止
+        if !rename_validation.errors.is_empty() {
+            let error_messages: Vec<String> = rename_validation
+                .errors
+                .iter()
+                .map(|e| e.to_string())
+                .collect();
+            return Err(anyhow::anyhow!(
+                "Rename validation errors:\n{}",
+                error_messages.join("\n")
+            ));
+        }
 
         // スキーマ付きでSQLを生成（型変更検証を含む）
         let sql_result = generator.generate_up_sql_with_schemas(
@@ -127,7 +158,18 @@ impl GenerateCommandHandler {
             return Err(anyhow::anyhow!("{}", e));
         }
 
-        let (up_sql, validation_result) = sql_result.unwrap();
+        let (up_sql, mut validation_result) = sql_result.unwrap();
+
+        // 全警告を統合
+        for warning in diff_warnings {
+            validation_result.add_warning(warning);
+        }
+        for warning in &rename_validation.warnings {
+            validation_result.add_warning(warning.clone());
+        }
+        for warning in renamed_from_warnings {
+            validation_result.add_warning(warning);
+        }
 
         let (down_sql, _) = generator
             .generate_down_sql_with_schemas(
@@ -209,6 +251,23 @@ impl GenerateCommandHandler {
         .unwrap();
         writeln!(&mut output, "Migration: {}", migration_name.cyan()).unwrap();
         writeln!(&mut output).unwrap();
+
+        // リネームのプレビュー
+        let rename_changes = self.collect_rename_changes(diff);
+        if !rename_changes.is_empty() {
+            writeln!(&mut output, "{}", "--- Column Renames ---".bold()).unwrap();
+            for rename in &rename_changes {
+                let table = rename.table.cyan();
+                let arrow = "→".bold();
+                writeln!(
+                    &mut output,
+                    "  {}: {} {} {}",
+                    table, rename.old_name, arrow, rename.new_name
+                )
+                .unwrap();
+            }
+            writeln!(&mut output).unwrap();
+        }
 
         // 型変更のプレビュー
         let type_changes = self.collect_type_changes(diff);
@@ -391,6 +450,7 @@ impl GenerateCommandHandler {
         let mut changes = Vec::new();
 
         for table_diff in &diff.modified_tables {
+            // 通常のカラム変更から型変更を収集
             for column_diff in &table_diff.modified_columns {
                 for change in &column_diff.changes {
                     if let crate::core::schema_diff::ColumnChange::TypeChanged {
@@ -407,9 +467,78 @@ impl GenerateCommandHandler {
                     }
                 }
             }
+
+            // リネームカラムからも型変更を収集
+            for renamed in &table_diff.renamed_columns {
+                for change in &renamed.changes {
+                    if let crate::core::schema_diff::ColumnChange::TypeChanged {
+                        old_type,
+                        new_type,
+                    } = change
+                    {
+                        changes.push(TypeChangeInfo {
+                            table: table_diff.table_name.clone(),
+                            column: renamed.new_column.name.clone(),
+                            old_type: old_type.clone(),
+                            new_type: new_type.clone(),
+                        });
+                    }
+                }
+            }
         }
 
         changes
+    }
+
+    /// リネーム情報を収集
+    fn collect_rename_changes(
+        &self,
+        diff: &crate::core::schema_diff::SchemaDiff,
+    ) -> Vec<RenameInfo> {
+        let mut renames = Vec::new();
+
+        for table_diff in &diff.modified_tables {
+            for renamed in &table_diff.renamed_columns {
+                renames.push(RenameInfo {
+                    table: table_diff.table_name.clone(),
+                    old_name: renamed.old_name.clone(),
+                    new_name: renamed.new_column.name.clone(),
+                });
+            }
+        }
+
+        renames
+    }
+
+    /// renamed_from属性削除推奨警告を生成
+    fn generate_renamed_from_remove_warnings(
+        &self,
+        schema: &Schema,
+    ) -> Vec<crate::core::error::ValidationWarning> {
+        use crate::core::error::{ErrorLocation, ValidationWarning};
+
+        let mut warnings = Vec::new();
+
+        for (table_name, table) in &schema.tables {
+            for column in &table.columns {
+                if column.renamed_from.is_some() {
+                    let location = Some(ErrorLocation {
+                        table: Some(table_name.clone()),
+                        column: Some(column.name.clone()),
+                        line: None,
+                    });
+                    warnings.push(ValidationWarning::renamed_from_remove_recommendation(
+                        format!(
+                            "Column '{}.{}' still has 'renamed_from' attribute. Consider removing it after migration is applied.",
+                            table_name, column.name
+                        ),
+                        location,
+                    ));
+                }
+            }
+        }
+
+        warnings
     }
 
     /// 前回のスキーマ状態を読み込む
@@ -638,6 +767,272 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Type Changes") || err.contains("Errors"));
+    }
+
+    // ==========================================
+    // Task 6.1: 警告統合とエラー表示のテスト
+    // ==========================================
+
+    #[test]
+    fn test_collect_rename_type_changes() {
+        // リネームカラムからも型変更情報を収集できることを確認
+        use crate::core::schema::{Column, ColumnType};
+        use crate::core::schema_diff::{ColumnChange, RenamedColumn, SchemaDiff, TableDiff};
+
+        let handler = GenerateCommandHandler::new();
+
+        let mut diff = SchemaDiff::new();
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 50 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "VARCHAR(50)".to_string(),
+                new_type: "VARCHAR(100)".to_string(),
+            }],
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(renamed);
+        diff.modified_tables.push(table_diff);
+
+        let changes = handler.collect_type_changes(&diff);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].table, "users");
+        assert_eq!(changes[0].column, "user_name");
+        assert_eq!(changes[0].old_type, "VARCHAR(50)");
+        assert_eq!(changes[0].new_type, "VARCHAR(100)");
+    }
+
+    #[test]
+    fn test_collect_rename_changes_only() {
+        // リネームのみ（型変更なし）の場合はTypeChangesに含まれない
+        use crate::core::schema::{Column, ColumnType};
+        use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
+
+        let handler = GenerateCommandHandler::new();
+
+        let mut diff = SchemaDiff::new();
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![], // 型変更なし
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(renamed);
+        diff.modified_tables.push(table_diff);
+
+        let changes = handler.collect_type_changes(&diff);
+        assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_collect_rename_info() {
+        // リネーム情報を収集できることを確認
+        use crate::core::schema::{Column, ColumnType};
+        use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
+
+        let handler = GenerateCommandHandler::new();
+
+        let mut diff = SchemaDiff::new();
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(renamed);
+        diff.modified_tables.push(table_diff);
+
+        let renames = handler.collect_rename_changes(&diff);
+        assert_eq!(renames.len(), 1);
+        assert_eq!(renames[0].table, "users");
+        assert_eq!(renames[0].old_name, "name");
+        assert_eq!(renames[0].new_name, "user_name");
+    }
+
+    #[test]
+    fn test_execute_dry_run_with_renames() {
+        use crate::core::error::ValidationResult;
+        use crate::core::schema::{Column, ColumnType};
+        use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
+
+        let handler = GenerateCommandHandler::new();
+
+        let mut diff = SchemaDiff::new();
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(renamed);
+        diff.modified_tables.push(table_diff);
+
+        let validation_result = ValidationResult::new();
+
+        let result = handler.execute_dry_run(
+            "20260124120000_rename_column",
+            "ALTER TABLE users RENAME COLUMN name TO user_name;",
+            "ALTER TABLE users RENAME COLUMN user_name TO name;",
+            &diff,
+            &validation_result,
+        );
+
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // リネーム情報セクションが表示されることを確認
+        assert!(
+            output.contains("Column Renames"),
+            "Should contain 'Column Renames' section, got: {}",
+            output
+        );
+        // リネーム情報が表示されることを確認
+        assert!(
+            output.contains("name") && output.contains("user_name"),
+            "Should contain rename info, got: {}",
+            output
+        );
+        // UP SQLにリネームSQLが含まれることを確認
+        assert!(
+            output.contains("RENAME COLUMN"),
+            "Should contain RENAME COLUMN SQL, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_dry_run_displays_rename_sql_preview() {
+        // Task 6.2: dry-runモードでリネームSQLがプレビュー表示されることを確認
+        use crate::core::error::ValidationResult;
+        use crate::core::schema::{Column, ColumnType};
+        use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
+
+        let handler = GenerateCommandHandler::new();
+
+        let mut diff = SchemaDiff::new();
+        let old_column = Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        );
+        let new_column = Column::new(
+            "email_address".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "email".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let mut table_diff = TableDiff::new("contacts".to_string());
+        table_diff.renamed_columns.push(renamed);
+        diff.modified_tables.push(table_diff);
+
+        let validation_result = ValidationResult::new();
+
+        let up_sql = "ALTER TABLE contacts RENAME COLUMN email TO email_address;";
+        let down_sql = "ALTER TABLE contacts RENAME COLUMN email_address TO email;";
+
+        let result = handler.execute_dry_run(
+            "20260124120000_rename_email",
+            up_sql,
+            down_sql,
+            &diff,
+            &validation_result,
+        );
+
+        assert!(result.is_ok());
+        let output = result.unwrap();
+
+        // Column Renamesセクションが表示される
+        assert!(output.contains("Column Renames"));
+        // リネーム元/先が表示される
+        assert!(output.contains("email"));
+        assert!(output.contains("email_address"));
+        // UP SQLセクションにリネームSQLが含まれる
+        assert!(output.contains("UP SQL"));
+        assert!(output.contains("RENAME COLUMN email TO email_address"));
+        // DOWN SQLセクションに逆リネームSQLが含まれる
+        assert!(output.contains("DOWN SQL"));
+        assert!(output.contains("RENAME COLUMN email_address TO email"));
+    }
+
+    #[test]
+    fn test_generate_renamed_from_remove_warnings() {
+        // renamed_from属性の削除推奨警告が生成されることを確認
+        use crate::core::error::WarningKind;
+        use crate::core::schema::{Column, ColumnType, Table};
+
+        let handler = GenerateCommandHandler::new();
+
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        let mut column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        column.renamed_from = Some("name".to_string());
+        table.columns.push(column);
+        schema.tables.insert("users".to_string(), table);
+
+        let warnings = handler.generate_renamed_from_remove_warnings(&schema);
+        assert_eq!(warnings.len(), 1);
+        assert!(matches!(
+            warnings[0].kind,
+            WarningKind::RenamedFromRemoveRecommendation
+        ));
+        assert!(warnings[0].message.contains("renamed_from"));
     }
 
     // ======================================

@@ -286,6 +286,10 @@ pub struct TableDiff {
     /// 変更されたカラム
     pub modified_columns: Vec<ColumnDiff>,
 
+    /// リネームされたカラム（旧名→新カラム定義）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub renamed_columns: Vec<RenamedColumn>,
+
     /// 追加されたインデックス
     pub added_indexes: Vec<Index>,
 
@@ -307,6 +311,7 @@ impl TableDiff {
             added_columns: Vec::new(),
             removed_columns: Vec::new(),
             modified_columns: Vec::new(),
+            renamed_columns: Vec::new(),
             added_indexes: Vec::new(),
             removed_indexes: Vec::new(),
             added_constraints: Vec::new(),
@@ -319,6 +324,7 @@ impl TableDiff {
         self.added_columns.is_empty()
             && self.removed_columns.is_empty()
             && self.modified_columns.is_empty()
+            && self.renamed_columns.is_empty()
             && self.added_indexes.is_empty()
             && self.removed_indexes.is_empty()
             && self.added_constraints.is_empty()
@@ -341,6 +347,24 @@ pub struct ColumnDiff {
     pub new_column: Column,
 
     /// 変更された属性
+    pub changes: Vec<ColumnChange>,
+}
+
+/// リネームされたカラム
+///
+/// カラム名の変更と同時に行われた属性変更を表現します。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RenamedColumn {
+    /// 旧カラム名
+    pub old_name: String,
+
+    /// 旧カラム定義（MySQL Down方向で必要）
+    pub old_column: Column,
+
+    /// 新カラム定義
+    pub new_column: Column,
+
+    /// リネームと同時に変更された属性
     pub changes: Vec<ColumnChange>,
 }
 
@@ -455,6 +479,12 @@ pub enum ColumnChange {
     AutoIncrementChanged {
         old_auto_increment: Option<bool>,
         new_auto_increment: Option<bool>,
+    },
+
+    /// カラム名の変更
+    Renamed {
+        old_name: String,
+        new_name: String,
     },
 }
 
@@ -670,5 +700,247 @@ mod tests {
         // 外部参照は依存関係として扱わないのでそのまま追加される
         assert_eq!(sorted.len(), 1);
         assert_eq!(sorted[0].name, "posts");
+    }
+
+    #[test]
+    fn test_column_change_renamed() {
+        // Renamedバリアントの生成と比較
+        let change = ColumnChange::Renamed {
+            old_name: "name".to_string(),
+            new_name: "user_name".to_string(),
+        };
+
+        if let ColumnChange::Renamed { old_name, new_name } = &change {
+            assert_eq!(old_name, "name");
+            assert_eq!(new_name, "user_name");
+        } else {
+            panic!("Expected ColumnChange::Renamed");
+        }
+    }
+
+    #[test]
+    fn test_column_change_renamed_equality() {
+        let change1 = ColumnChange::Renamed {
+            old_name: "name".to_string(),
+            new_name: "user_name".to_string(),
+        };
+        let change2 = ColumnChange::Renamed {
+            old_name: "name".to_string(),
+            new_name: "user_name".to_string(),
+        };
+        let change3 = ColumnChange::Renamed {
+            old_name: "name".to_string(),
+            new_name: "full_name".to_string(),
+        };
+
+        assert_eq!(change1, change2);
+        assert_ne!(change1, change3);
+    }
+
+    #[test]
+    fn test_column_change_renamed_serialization() {
+        let change = ColumnChange::Renamed {
+            old_name: "name".to_string(),
+            new_name: "user_name".to_string(),
+        };
+
+        let json = serde_json::to_string(&change).unwrap();
+        assert!(json.contains("Renamed"));
+        assert!(json.contains("old_name"));
+        assert!(json.contains("new_name"));
+
+        let deserialized: ColumnChange = serde_json::from_str(&json).unwrap();
+        assert_eq!(change, deserialized);
+    }
+
+    #[test]
+    fn test_renamed_column_creation() {
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column: old_column.clone(),
+            new_column: new_column.clone(),
+            changes: vec![],
+        };
+
+        assert_eq!(renamed.old_name, "name");
+        assert_eq!(renamed.old_column.name, "name");
+        assert_eq!(renamed.new_column.name, "user_name");
+        assert!(renamed.changes.is_empty());
+    }
+
+    #[test]
+    fn test_renamed_column_with_type_change() {
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 50 },
+            false,
+        );
+        let mut new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        new_column.renamed_from = Some("name".to_string());
+
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column: old_column.clone(),
+            new_column: new_column.clone(),
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "VARCHAR(50)".to_string(),
+                new_type: "VARCHAR(100)".to_string(),
+            }],
+        };
+
+        assert_eq!(renamed.changes.len(), 1);
+        if let ColumnChange::TypeChanged { old_type, new_type } = &renamed.changes[0] {
+            assert_eq!(old_type, "VARCHAR(50)");
+            assert_eq!(new_type, "VARCHAR(100)");
+        } else {
+            panic!("Expected TypeChanged");
+        }
+    }
+
+    #[test]
+    fn test_renamed_column_equality() {
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+
+        let renamed1 = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column: old_column.clone(),
+            new_column: new_column.clone(),
+            changes: vec![],
+        };
+        let renamed2 = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column: old_column.clone(),
+            new_column: new_column.clone(),
+            changes: vec![],
+        };
+
+        assert_eq!(renamed1, renamed2);
+    }
+
+    #[test]
+    fn test_renamed_column_serialization() {
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let json = serde_json::to_string(&renamed).unwrap();
+        assert!(json.contains("old_name"));
+        assert!(json.contains("old_column"));
+        assert!(json.contains("new_column"));
+
+        let deserialized: RenamedColumn = serde_json::from_str(&json).unwrap();
+        assert_eq!(renamed, deserialized);
+    }
+
+    #[test]
+    fn test_table_diff_renamed_columns_default() {
+        let table_diff = TableDiff::new("users".to_string());
+
+        // デフォルトでrenamed_columnsは空
+        assert!(table_diff.renamed_columns.is_empty());
+        assert!(table_diff.is_empty());
+    }
+
+    #[test]
+    fn test_table_diff_with_renamed_columns() {
+        let mut table_diff = TableDiff::new("users".to_string());
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+
+        table_diff.renamed_columns.push(RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        });
+
+        assert_eq!(table_diff.renamed_columns.len(), 1);
+        assert!(!table_diff.is_empty());
+    }
+
+    #[test]
+    fn test_table_diff_renamed_columns_serialization() {
+        let mut table_diff = TableDiff::new("users".to_string());
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+
+        table_diff.renamed_columns.push(RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        });
+
+        let json = serde_json::to_string(&table_diff).unwrap();
+        assert!(json.contains("renamed_columns"));
+        assert!(json.contains("old_name"));
+
+        let deserialized: TableDiff = serde_json::from_str(&json).unwrap();
+        assert_eq!(table_diff, deserialized);
+    }
+
+    #[test]
+    fn test_table_diff_empty_renamed_columns_not_serialized() {
+        let table_diff = TableDiff::new("users".to_string());
+
+        let json = serde_json::to_string(&table_diff).unwrap();
+        // 空のrenamed_columnsはシリアライズされない
+        assert!(!json.contains("renamed_columns"));
     }
 }

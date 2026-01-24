@@ -162,6 +162,10 @@ pub struct Column {
 
     /// 自動増分フラグ
     pub auto_increment: Option<bool>,
+
+    /// リネーム元のカラム名（オプショナル）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
 }
 
 /// ENUM定義
@@ -185,6 +189,7 @@ impl Column {
             nullable,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         }
     }
 
@@ -554,5 +559,77 @@ mod tests {
         assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "JSONB");
         assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "JSON");
         assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
+    }
+
+    #[test]
+    fn test_column_renamed_from_field() {
+        let mut column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        // デフォルトではrenamed_fromはNone
+        assert!(column.renamed_from.is_none());
+
+        // renamed_fromを設定
+        column.renamed_from = Some("name".to_string());
+        assert_eq!(column.renamed_from, Some("name".to_string()));
+    }
+
+    #[test]
+    fn test_column_renamed_from_serialization() {
+        // renamed_fromがある場合のシリアライズ
+        let mut column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        column.renamed_from = Some("name".to_string());
+
+        let yaml = serde_json::to_string(&column).unwrap();
+        assert!(yaml.contains("renamed_from"));
+        assert!(yaml.contains("name"));
+    }
+
+    #[test]
+    fn test_column_renamed_from_none_not_serialized() {
+        // renamed_fromがNoneの場合はYAML出力から除外される
+        let column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+
+        let yaml = serde_json::to_string(&column).unwrap();
+        assert!(!yaml.contains("renamed_from"));
+    }
+
+    #[test]
+    fn test_column_renamed_from_deserialization() {
+        // renamed_from付きのJSONをデシリアライズ
+        let json = r#"{
+            "name": "user_name",
+            "type": {"kind": "VARCHAR", "length": 100},
+            "nullable": false,
+            "renamed_from": "name"
+        }"#;
+
+        let column: Column = serde_json::from_str(json).unwrap();
+        assert_eq!(column.name, "user_name");
+        assert_eq!(column.renamed_from, Some("name".to_string()));
+    }
+
+    #[test]
+    fn test_column_without_renamed_from_deserialization() {
+        // renamed_fromなしのJSONをデシリアライズ
+        let json = r#"{
+            "name": "user_name",
+            "type": {"kind": "VARCHAR", "length": 100},
+            "nullable": false
+        }"#;
+
+        let column: Column = serde_json::from_str(json).unwrap();
+        assert_eq!(column.name, "user_name");
+        assert!(column.renamed_from.is_none());
     }
 }

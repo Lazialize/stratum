@@ -536,6 +536,36 @@ impl DatabaseMigratorService {
                 sql: Some(sql.to_string()),
             })
     }
+
+    /// カラムリネームSQLを実行（詳細エラー解析付き）
+    ///
+    /// リネームSQLの実行に失敗した場合、エラーメッセージを解析して
+    /// 具体的な原因（カラム不存在、権限不足等）を特定します。
+    ///
+    /// # Arguments
+    ///
+    /// * `pool` - データベース接続プール
+    /// * `sql` - 実行するリネームSQL
+    /// * `table_name` - 対象テーブル名
+    /// * `old_name` - リネーム前のカラム名
+    /// * `new_name` - リネーム後のカラム名
+    ///
+    /// # Returns
+    ///
+    /// 実行に成功した場合はOk(())、失敗した場合は詳細なエラー
+    pub async fn execute_rename_column_sql(
+        &self,
+        pool: &AnyPool,
+        sql: &str,
+        table_name: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<AnyQueryResult, DatabaseError> {
+        sqlx::query(sql).execute(pool).await.map_err(|e| {
+            // エラーメッセージを解析して詳細なエラーを生成
+            DatabaseError::parse_rename_error(&e.to_string(), table_name, old_name, new_name)
+        })
+    }
 }
 
 impl Default for DatabaseMigratorService {

@@ -140,6 +140,12 @@ pub enum WarningKind {
     Compatibility,
     /// データ損失の可能性に関する警告（型変更時）
     DataLoss,
+    /// リネーム元カラムが存在しない警告
+    OldColumnNotFound,
+    /// 外部キー参照カラムのリネーム警告
+    ForeignKeyReference,
+    /// renamed_from属性削除推奨警告
+    RenamedFromRemoveRecommendation,
 }
 
 impl ValidationWarning {
@@ -170,6 +176,24 @@ impl ValidationWarning {
     /// 互換性の警告を作成
     pub fn compatibility(message: String, location: Option<ErrorLocation>) -> Self {
         Self::new(message, location, WarningKind::Compatibility)
+    }
+
+    /// 外部キー参照カラムのリネーム警告を作成
+    pub fn foreign_key_reference(message: String, location: Option<ErrorLocation>) -> Self {
+        Self::new(message, location, WarningKind::ForeignKeyReference)
+    }
+
+    /// 旧カラム不存在警告を作成
+    pub fn old_column_not_found(message: String, location: Option<ErrorLocation>) -> Self {
+        Self::new(message, location, WarningKind::OldColumnNotFound)
+    }
+
+    /// renamed_from属性削除推奨警告を作成
+    pub fn renamed_from_remove_recommendation(
+        message: String,
+        location: Option<ErrorLocation>,
+    ) -> Self {
+        Self::new(message, location, WarningKind::RenamedFromRemoveRecommendation)
     }
 
     /// 位置情報をフォーマット
@@ -394,6 +418,21 @@ pub enum DatabaseError {
         /// 不正な理由
         reason: String,
     },
+
+    /// Column rename operation failed
+    #[error("Failed to rename column '{old_name}' to '{new_name}' in table '{table_name}': {reason}")]
+    RenameColumnFailed {
+        /// テーブル名
+        table_name: String,
+        /// 旧カラム名
+        old_name: String,
+        /// 新カラム名
+        new_name: String,
+        /// 失敗理由
+        reason: String,
+        /// 提案
+        suggestion: Option<String>,
+    },
 }
 
 impl DatabaseError {
@@ -420,6 +459,80 @@ impl DatabaseError {
     /// テーブル名不正エラーかどうか
     pub fn is_invalid_table_name(&self) -> bool {
         matches!(self, DatabaseError::InvalidTableName { .. })
+    }
+
+    /// リネームカラム失敗エラーかどうか
+    pub fn is_rename_column_failed(&self) -> bool {
+        matches!(self, DatabaseError::RenameColumnFailed { .. })
+    }
+
+    /// データベースエラーメッセージからリネーム失敗の原因を解析
+    ///
+    /// # Arguments
+    /// * `error_message` - データベースから返されたエラーメッセージ
+    /// * `table_name` - テーブル名
+    /// * `old_name` - 旧カラム名
+    /// * `new_name` - 新カラム名
+    ///
+    /// # Returns
+    /// リネーム失敗エラー
+    pub fn parse_rename_error(
+        error_message: &str,
+        table_name: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> DatabaseError {
+        let lower_msg = error_message.to_lowercase();
+
+        let (reason, suggestion) = if lower_msg.contains("does not exist")
+            || lower_msg.contains("no such column")
+            || lower_msg.contains("unknown column")
+        {
+            (
+                format!("Column '{}' does not exist in table '{}'", old_name, table_name),
+                Some(format!(
+                    "Check if column '{}' exists or if it was already renamed",
+                    old_name
+                )),
+            )
+        } else if lower_msg.contains("permission denied")
+            || lower_msg.contains("access denied")
+        {
+            (
+                "Insufficient privileges to rename column".to_string(),
+                Some("Ensure the database user has ALTER TABLE privileges".to_string()),
+            )
+        } else if lower_msg.contains("duplicate column")
+            || lower_msg.contains("already exists")
+        {
+            (
+                format!("Column '{}' already exists in table '{}'", new_name, table_name),
+                Some(format!(
+                    "Choose a different name or drop the existing column '{}' first",
+                    new_name
+                )),
+            )
+        } else if lower_msg.contains("foreign key")
+            || lower_msg.contains("constraint")
+        {
+            (
+                "Column is referenced by a foreign key constraint".to_string(),
+                Some("Consider dropping or updating the foreign key constraint first".to_string()),
+            )
+        } else {
+            (
+                error_message.to_string(),
+                None,
+            )
+        };
+
+        DatabaseError::RenameColumnFailed {
+            table_name: table_name.to_string(),
+            old_name: old_name.to_string(),
+            new_name: new_name.to_string(),
+            reason,
+            suggestion,
+        }
     }
 }
 

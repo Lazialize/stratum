@@ -6,7 +6,7 @@ use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
-use crate::core::schema_diff::ColumnDiff;
+use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
 use crate::core::type_category::TypeCategory;
 
 /// PostgreSQL用SQLジェネレーター
@@ -250,6 +250,23 @@ impl SqlGenerator for PostgresSqlGenerator {
         } else {
             String::new()
         }
+    }
+
+    fn generate_rename_column(
+        &self,
+        table: &Table,
+        renamed_column: &RenamedColumn,
+        direction: MigrationDirection,
+    ) -> Vec<String> {
+        let (from_name, to_name) = match direction {
+            MigrationDirection::Up => (&renamed_column.old_name, &renamed_column.new_column.name),
+            MigrationDirection::Down => (&renamed_column.new_column.name, &renamed_column.old_name),
+        };
+
+        vec![format!(
+            "ALTER TABLE {} RENAME COLUMN {} TO {}",
+            table.name, from_name, to_name
+        )]
     }
 }
 
@@ -576,6 +593,76 @@ mod tests {
         assert_eq!(
             sql[0],
             "ALTER TABLE users ALTER COLUMN name TYPE TIMESTAMP USING name::TIMESTAMP"
+        );
+    }
+
+    // ==========================================
+    // generate_rename_column のテスト
+    // ==========================================
+
+    use crate::core::schema_diff::RenamedColumn;
+
+    #[test]
+    fn test_generate_rename_column_up() {
+        // Up方向：old_name → new_name
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users RENAME COLUMN name TO user_name"
+        );
+    }
+
+    #[test]
+    fn test_generate_rename_column_down() {
+        // Down方向：new_name → old_name（逆リネーム）
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Down);
+
+        assert_eq!(sql.len(), 1);
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users RENAME COLUMN user_name TO name"
         );
     }
 }

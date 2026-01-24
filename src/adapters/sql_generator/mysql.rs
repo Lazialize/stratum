@@ -6,7 +6,7 @@ use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
-use crate::core::schema_diff::ColumnDiff;
+use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
 
 /// MySQL用SQLジェネレーター
 #[derive(Debug, Clone)]
@@ -227,6 +227,28 @@ impl SqlGenerator for MysqlSqlGenerator {
         } else {
             String::new()
         }
+    }
+
+    fn generate_rename_column(
+        &self,
+        table: &Table,
+        renamed_column: &RenamedColumn,
+        direction: MigrationDirection,
+    ) -> Vec<String> {
+        // MySQLではCHANGE COLUMN構文を使用（完全なカラム定義が必要）
+        // Up方向: old_name → new_name (new_columnの定義を使用)
+        // Down方向: new_name → old_name (old_columnの定義を使用)
+        let (from_name, to_column) = match direction {
+            MigrationDirection::Up => (&renamed_column.old_name, &renamed_column.new_column),
+            MigrationDirection::Down => (&renamed_column.new_column.name, &renamed_column.old_column),
+        };
+
+        let column_def = self.generate_column_definition_for_modify(table, &to_column.name, to_column);
+
+        vec![format!(
+            "ALTER TABLE {} CHANGE COLUMN {} {}",
+            table.name, from_name, column_def
+        )]
     }
 }
 
@@ -556,5 +578,125 @@ mod tests {
 
         assert_eq!(sql.len(), 1);
         assert_eq!(sql[0], "ALTER TABLE posts MODIFY COLUMN content TEXT");
+    }
+
+    // ==========================================
+    // generate_rename_column のテスト
+    // ==========================================
+
+    use crate::core::schema_diff::RenamedColumn;
+
+    fn create_test_table() -> Table {
+        let mut table = Table::new("users".to_string());
+        table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.columns.push(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        table
+    }
+
+    #[test]
+    fn test_generate_rename_column_up() {
+        // Up方向：old_name → new_name (CHANGE COLUMN構文)
+        let generator = MysqlSqlGenerator::new();
+        let table = create_test_table();
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        // MySQLではCHANGE COLUMN構文を使用（new_columnの定義を使用）
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users CHANGE COLUMN name user_name VARCHAR(100) NOT NULL"
+        );
+    }
+
+    #[test]
+    fn test_generate_rename_column_down() {
+        // Down方向：new_name → old_name（CHANGE COLUMN構文でロールバック）
+        let generator = MysqlSqlGenerator::new();
+        let table = create_test_table();
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Down);
+
+        assert_eq!(sql.len(), 1);
+        // Down方向ではold_columnの定義を使用してロールバック
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users CHANGE COLUMN user_name name VARCHAR(100) NOT NULL"
+        );
+    }
+
+    #[test]
+    fn test_generate_rename_column_with_type_change() {
+        // リネームと同時に型変更がある場合
+        let generator = MysqlSqlGenerator::new();
+        let table = create_test_table();
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 200 }, // 型変更
+            true,                                 // nullable変更
+        );
+        let renamed = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![], // changesは別途処理されるため空でも可
+        };
+
+        let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Up);
+
+        assert_eq!(sql.len(), 1);
+        // 新しい定義（VARCHAR(200)、nullable）でリネーム
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE users CHANGE COLUMN name user_name VARCHAR(200)"
+        );
     }
 }

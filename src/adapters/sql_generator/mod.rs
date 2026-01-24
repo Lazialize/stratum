@@ -8,7 +8,7 @@ pub mod sqlite;
 pub mod sqlite_table_recreator;
 
 use crate::core::schema::{ColumnType, Index, Table};
-use crate::core::schema_diff::ColumnDiff;
+use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
 
 /// マイグレーション方向
 ///
@@ -139,11 +139,85 @@ pub trait SqlGenerator {
         // デフォルト実装：old_tableを無視して通常のgenerate_alter_column_typeを呼び出す
         self.generate_alter_column_type(table, column_diff, direction)
     }
+
+    /// カラムリネームのALTER TABLE文を生成
+    ///
+    /// # Arguments
+    ///
+    /// * `table` - 対象テーブル
+    /// * `renamed_column` - リネームされたカラム情報
+    /// * `direction` - マイグレーション方向（Up/Down）
+    ///
+    /// # Returns
+    ///
+    /// ALTER TABLE RENAME COLUMN文のベクター
+    fn generate_rename_column(
+        &self,
+        _table: &Table,
+        _renamed_column: &RenamedColumn,
+        _direction: MigrationDirection,
+    ) -> Vec<String> {
+        // デフォルト実装：空のベクター
+        // 各方言の実装でオーバーライド
+        Vec::new()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::schema::Column;
+    use crate::core::schema_diff::RenamedColumn;
+
+    // ダミー実装（デフォルト実装のテスト用）
+    struct DummySqlGenerator;
+
+    impl SqlGenerator for DummySqlGenerator {
+        fn generate_create_table(&self, _table: &Table) -> String {
+            String::new()
+        }
+
+        fn generate_create_index(&self, _table: &Table, _index: &Index) -> String {
+            String::new()
+        }
+
+        fn generate_alter_table_add_constraint(
+            &self,
+            _table: &Table,
+            _constraint_index: usize,
+        ) -> String {
+            String::new()
+        }
+    }
+
+    #[test]
+    fn test_generate_rename_column_default_returns_empty() {
+        // デフォルト実装は空のベクターを返す
+        let generator = DummySqlGenerator;
+        let table = Table::new("users".to_string());
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed_column = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let result = generator.generate_rename_column(&table, &renamed_column, MigrationDirection::Up);
+        assert!(result.is_empty());
+
+        let result = generator.generate_rename_column(&table, &renamed_column, MigrationDirection::Down);
+        assert!(result.is_empty());
+    }
 
     #[test]
     fn test_migration_direction_target_type() {

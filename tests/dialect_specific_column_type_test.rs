@@ -163,6 +163,7 @@ nullable: false
             nullable: false,
             default_value: None,
             auto_increment: None,
+            renamed_from: None,
         };
 
         let yaml = serde_saphyr::to_string(&column).expect("Failed to serialize");

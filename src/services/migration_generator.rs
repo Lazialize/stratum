@@ -355,7 +355,7 @@ mod tests {
     // ==========================================
 
     use crate::core::schema::{Column, ColumnType, Constraint, Table};
-    use crate::core::schema_diff::{ColumnDiff, TableDiff};
+    use crate::core::schema_diff::{ColumnChange, ColumnDiff, RenamedColumn, TableDiff};
 
     fn create_test_schemas_for_type_change() -> (Schema, Schema) {
         // 旧スキーマ: usersテーブル (age: INTEGER)
@@ -583,5 +583,296 @@ mod tests {
 
         // エラーがある場合はErrが返される
         assert!(result.is_err());
+    }
+
+    // ==========================================
+    // カラムリネームSQL生成のテスト
+    // ==========================================
+
+    fn create_test_schemas_for_rename() -> (Schema, Schema) {
+        // 旧スキーマ: usersテーブル (name: VARCHAR)
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        old_table.columns.push(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        ));
+        old_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        old_schema.tables.insert("users".to_string(), old_table);
+
+        // 新スキーマ: usersテーブル (user_name: VARCHAR) - nameをuser_nameにリネーム
+        let mut new_schema = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("users".to_string());
+        new_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        new_table.columns.push(Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        ));
+        new_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        new_schema.tables.insert("users".to_string(), new_table);
+
+        (old_schema, new_schema)
+    }
+
+    fn create_diff_with_rename() -> SchemaDiff {
+        let mut diff = SchemaDiff::new();
+
+        let old_column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let new_column = Column::new(
+            "user_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let renamed_column = RenamedColumn {
+            old_name: "name".to_string(),
+            old_column,
+            new_column,
+            changes: vec![],
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(renamed_column);
+        diff.modified_tables.push(table_diff);
+
+        diff
+    }
+
+    #[test]
+    fn test_generate_up_sql_with_schemas_rename_column_postgresql() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_rename();
+        let diff = create_diff_with_rename();
+
+        let result = generator.generate_up_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::PostgreSQL,
+        );
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains("ALTER TABLE users RENAME COLUMN name TO user_name"),
+            "SQL should contain RENAME COLUMN statement, got: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_generate_up_sql_with_schemas_rename_column_mysql() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_rename();
+        let diff = create_diff_with_rename();
+
+        let result =
+            generator.generate_up_sql_with_schemas(&diff, &old_schema, &new_schema, Dialect::MySQL);
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        // MySQLではCHANGE COLUMN構文を使用（完全なカラム定義が必要）
+        assert!(
+            sql.contains("ALTER TABLE users CHANGE COLUMN name user_name"),
+            "SQL should contain CHANGE COLUMN statement, got: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_generate_up_sql_with_schemas_rename_column_sqlite() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_rename();
+        let diff = create_diff_with_rename();
+
+        let result = generator.generate_up_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::SQLite,
+        );
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains("ALTER TABLE users RENAME COLUMN name TO user_name"),
+            "SQL should contain RENAME COLUMN statement, got: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_generate_down_sql_with_schemas_rename_column_postgresql() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_rename();
+        let diff = create_diff_with_rename();
+
+        let result = generator.generate_down_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::PostgreSQL,
+        );
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        // Down方向ではuser_nameをnameに戻す
+        assert!(
+            sql.contains("ALTER TABLE users RENAME COLUMN user_name TO name"),
+            "SQL should contain reverse RENAME COLUMN statement, got: {}",
+            sql
+        );
+    }
+
+    // ==========================================
+    // カラムリネーム + 型変更のテスト
+    // ==========================================
+
+    fn create_test_schemas_for_rename_and_type_change() -> (Schema, Schema) {
+        // 旧スキーマ: usersテーブル (age: INTEGER)
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        old_table.columns.push(Column::new(
+            "age".to_string(),
+            ColumnType::INTEGER { precision: None },
+            true,
+        ));
+        old_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        old_schema.tables.insert("users".to_string(), old_table);
+
+        // 新スキーマ: usersテーブル (age_years: VARCHAR) - リネーム + 型変更
+        let mut new_schema = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("users".to_string());
+        new_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        new_table.columns.push(Column::new(
+            "age_years".to_string(),
+            ColumnType::VARCHAR { length: 50 },
+            true,
+        ));
+        new_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        new_schema.tables.insert("users".to_string(), new_table);
+
+        (old_schema, new_schema)
+    }
+
+    fn create_diff_with_rename_and_type_change() -> SchemaDiff {
+        let mut diff = SchemaDiff::new();
+
+        let old_column = Column::new(
+            "age".to_string(),
+            ColumnType::INTEGER { precision: None },
+            true,
+        );
+        let new_column = Column::new(
+            "age_years".to_string(),
+            ColumnType::VARCHAR { length: 50 },
+            true,
+        );
+        let renamed_column = RenamedColumn {
+            old_name: "age".to_string(),
+            old_column: old_column.clone(),
+            new_column: new_column.clone(),
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: format!("{:?}", old_column.column_type),
+                new_type: format!("{:?}", new_column.column_type),
+            }],
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(renamed_column);
+        diff.modified_tables.push(table_diff);
+
+        diff
+    }
+
+    #[test]
+    fn test_generate_up_sql_with_schemas_rename_and_type_change_postgresql() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_rename_and_type_change();
+        let diff = create_diff_with_rename_and_type_change();
+
+        let result = generator.generate_up_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::PostgreSQL,
+        );
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+
+        // Up方向: まずリネーム、次に型変更
+        let rename_pos = sql.find("ALTER TABLE users RENAME COLUMN age TO age_years");
+        let type_pos = sql.find("ALTER TABLE users ALTER COLUMN age_years TYPE");
+
+        assert!(rename_pos.is_some(), "SQL should contain RENAME COLUMN, got: {}", sql);
+        assert!(type_pos.is_some(), "SQL should contain ALTER COLUMN TYPE, got: {}", sql);
+
+        // リネームが型変更より先に来ることを確認
+        assert!(
+            rename_pos.unwrap() < type_pos.unwrap(),
+            "RENAME should come before TYPE change in Up direction"
+        );
+    }
+
+    #[test]
+    fn test_generate_down_sql_with_schemas_rename_and_type_change_postgresql() {
+        let generator = MigrationGenerator::new();
+        let (old_schema, new_schema) = create_test_schemas_for_rename_and_type_change();
+        let diff = create_diff_with_rename_and_type_change();
+
+        let result = generator.generate_down_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::PostgreSQL,
+        );
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+
+        // Down方向: まず型変更の逆操作、次にリネームの逆操作
+        let type_pos = sql.find("ALTER TABLE users ALTER COLUMN age_years TYPE INTEGER");
+        let rename_pos = sql.find("ALTER TABLE users RENAME COLUMN age_years TO age");
+
+        assert!(type_pos.is_some(), "SQL should contain TYPE change reversal, got: {}", sql);
+        assert!(rename_pos.is_some(), "SQL should contain RENAME reversal, got: {}", sql);
+
+        // Down方向では型変更がリネームより先に来ることを確認
+        assert!(
+            type_pos.unwrap() < rename_pos.unwrap(),
+            "TYPE change should come before RENAME in Down direction"
+        );
     }
 }
