@@ -10,7 +10,7 @@
 use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::commands::split_sql_statements;
-use crate::core::config::Config;
+use crate::core::config::{Config, Dialect};
 use crate::core::migration::{AppliedMigration, Migration};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
@@ -156,6 +156,7 @@ impl ApplyCommandHandler {
                     description,
                     &up_sql,
                     &checksum,
+                    config.dialect,
                 )
                 .await;
 
@@ -224,6 +225,7 @@ impl ApplyCommandHandler {
     }
 
     /// マイグレーションをトランザクション内で適用
+    #[allow(clippy::too_many_arguments)]
     async fn apply_migration_with_transaction(
         &self,
         pool: &sqlx::AnyPool,
@@ -232,6 +234,7 @@ impl ApplyCommandHandler {
         description: &str,
         up_sql: &str,
         checksum: &str,
+        dialect: Dialect,
     ) -> Result<()> {
         // トランザクションを開始
         let mut tx = pool
@@ -252,15 +255,20 @@ impl ApplyCommandHandler {
                 })?;
         }
 
-        // マイグレーション履歴を記録
+        // マイグレーション履歴を記録（パラメータバインディング使用）
         let migration = Migration::new(
             version.to_string(),
             description.to_string(),
             checksum.to_string(),
         );
-        let record_sql = migrator.generate_record_migration_sql(&migration);
+        let (record_sql, params) = migrator.generate_record_migration_query(&migration, dialect);
 
-        sqlx::query(&record_sql)
+        let mut query = sqlx::query(&record_sql);
+        for param in &params {
+            query = query.bind(param);
+        }
+
+        query
             .execute(&mut *tx)
             .await
             .with_context(|| "Failed to record migration history")?;
@@ -390,6 +398,7 @@ mod tests {
                 "invalid_sql",
                 "INVALID SQL",
                 "checksum",
+                Dialect::SQLite,
             )
             .await;
 

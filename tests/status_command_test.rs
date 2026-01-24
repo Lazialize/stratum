@@ -265,7 +265,10 @@ async fn test_status_with_applied_migrations() {
         "create_users".to_string(),
         "test_checksum_20260121120000".to_string(),
     );
-    migrator.record_migration(&pool, &migration).await.unwrap();
+    migrator
+        .record_migration_with_dialect(&pool, &migration, Dialect::SQLite)
+        .await
+        .unwrap();
 
     let handler = StatusCommandHandler::new();
     let command = StatusCommand {

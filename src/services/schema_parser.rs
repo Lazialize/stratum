@@ -2,10 +2,13 @@
 //
 // YAMLスキーマファイルの読み込み、解析、マージ処理を行うサービス。
 // ディレクトリ全体のスキーマファイルをスキャンし、統合されたスキーマを生成します。
+//
+// DTO変換はDtoConverterServiceに委譲しています。
 
 use crate::core::error::IoError;
-use crate::core::schema::{Constraint, Schema, Table};
-use crate::services::dto::{ConstraintDto, SchemaDto, TableDto};
+use crate::core::schema::Schema;
+use crate::services::dto::SchemaDto;
+use crate::services::dto_converter::DtoConverterService;
 use anyhow::{Context, Result};
 use regex::Regex;
 use std::fs;
@@ -14,15 +17,19 @@ use std::path::Path;
 /// スキーマパーサーサービス
 ///
 /// YAMLスキーマファイルの解析とマージを行います。
+/// DTO変換はDtoConverterServiceに委譲しています。
 #[derive(Debug, Clone)]
 pub struct SchemaParserService {
-    // 将来的な拡張のためのフィールドを予約
+    /// DTO変換サービス
+    dto_converter: DtoConverterService,
 }
 
 impl SchemaParserService {
     /// 新しいSchemaParserServiceを作成
     pub fn new() -> Self {
-        Self {}
+        Self {
+            dto_converter: DtoConverterService::new(),
+        }
     }
 
     /// 指定されたディレクトリからすべてのYAMLファイルを読み込み、統合されたスキーマを返す
@@ -119,78 +126,8 @@ impl SchemaParserService {
         let dto: SchemaDto =
             serde_saphyr::from_str(&content).map_err(|e| self.format_parse_error(file_path, e))?;
 
-        // DTOを内部モデルに変換
-        self.convert_dto_to_schema(dto)
-    }
-
-    /// SchemaDto → Schema 変換
-    fn convert_dto_to_schema(&self, dto: SchemaDto) -> Result<Schema> {
-        let mut schema = Schema::new(dto.version);
-        schema.enum_recreate_allowed = dto.enum_recreate_allowed;
-
-        // ENUM定義をコピー
-        for (name, enum_def) in dto.enums {
-            schema.enums.insert(name, enum_def);
-        }
-
-        // テーブルを変換
-        for (table_name, table_dto) in dto.tables {
-            let table = self.convert_table_dto(table_name, table_dto)?;
-            schema.add_table(table);
-        }
-
-        Ok(schema)
-    }
-
-    /// TableDto → Table 変換
-    ///
-    /// キー名をテーブル名として設定し、primary_keyをConstraint::PRIMARY_KEYに変換します。
-    fn convert_table_dto(&self, table_name: String, dto: TableDto) -> Result<Table> {
-        let mut table = Table::new(table_name);
-
-        // カラムをコピー
-        table.columns = dto.columns;
-
-        // インデックスをコピー
-        table.indexes = dto.indexes;
-
-        // primary_key → Constraint::PRIMARY_KEY 変換
-        if let Some(pk_columns) = dto.primary_key {
-            table.add_constraint(Constraint::PRIMARY_KEY {
-                columns: pk_columns,
-            });
-        }
-
-        // ConstraintDto → Constraint 変換
-        for constraint_dto in dto.constraints {
-            let constraint = self.convert_constraint_dto(constraint_dto);
-            table.add_constraint(constraint);
-        }
-
-        Ok(table)
-    }
-
-    /// ConstraintDto → Constraint 変換
-    fn convert_constraint_dto(&self, dto: ConstraintDto) -> Constraint {
-        match dto {
-            ConstraintDto::FOREIGN_KEY {
-                columns,
-                referenced_table,
-                referenced_columns,
-            } => Constraint::FOREIGN_KEY {
-                columns,
-                referenced_table,
-                referenced_columns,
-            },
-            ConstraintDto::UNIQUE { columns } => Constraint::UNIQUE { columns },
-            ConstraintDto::CHECK {
-                columns,
-                check_expression,
-            } => Constraint::CHECK {
-                columns,
-                check_expression,
-            },
-        }
+        // DTOを内部モデルに変換（DtoConverterServiceに委譲）
+        self.dto_converter.dto_to_schema(&dto)
     }
 
     /// serde_saphyrエラーから行番号を抽出
@@ -669,8 +606,7 @@ tables:
         // serde_saphyrは"line X"形式でエラーを報告するはず
         assert!(
             error_msg.contains("line")
-                || error_msg
-                    .contains(schema_file.display().to_string().as_str()),
+                || error_msg.contains(schema_file.display().to_string().as_str()),
             "Error should contain file path or line info: {}",
             error_msg
         );

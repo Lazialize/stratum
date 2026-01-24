@@ -235,7 +235,10 @@ async fn test_rollback_single_migration_sqlite() {
         "create_users".to_string(),
         "test_checksum".to_string(),
     );
-    migrator.record_migration(&pool, &migration).await.unwrap();
+    migrator
+        .record_migration_with_dialect(&pool, &migration, Dialect::SQLite)
+        .await
+        .unwrap();
 
     // ロールバックコマンドを実行
     let handler = RollbackCommandHandler::new();

@@ -2,24 +2,31 @@
 //
 // 内部スキーマモデルをYAML文字列に変換するサービス。
 // 新構文形式（nameフィールドなし、primary_key独立フィールド）で出力します。
+//
+// DTO変換はDtoConverterServiceに委譲しています。
 
-use crate::core::schema::{Constraint, Schema, Table};
-use crate::services::dto::{ConstraintDto, SchemaDto, TableDto};
+use crate::core::schema::Schema;
+use crate::services::dto_converter::DtoConverterService;
 use anyhow::Result;
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
 /// スキーマシリアライザーサービス
 ///
 /// 内部スキーマモデルをYAML形式にシリアライズします。
+/// DTO変換はDtoConverterServiceに委譲しています。
 #[derive(Debug, Clone)]
-pub struct SchemaSerializerService;
+pub struct SchemaSerializerService {
+    /// DTO変換サービス
+    dto_converter: DtoConverterService,
+}
 
 impl SchemaSerializerService {
     /// 新しいSchemaSerializerServiceを作成
     pub fn new() -> Self {
-        Self
+        Self {
+            dto_converter: DtoConverterService::new(),
+        }
     }
 
     /// SchemaをYAML文字列にシリアライズ
@@ -32,7 +39,7 @@ impl SchemaSerializerService {
     ///
     /// 新構文形式のYAML文字列
     pub fn serialize_to_string(&self, schema: &Schema) -> Result<String> {
-        let dto = self.convert_schema_to_dto(schema);
+        let dto = self.dto_converter.schema_to_dto(schema);
         let yaml = serde_saphyr::to_string(&dto)?;
         Ok(yaml)
     }
@@ -48,76 +55,6 @@ impl SchemaSerializerService {
         fs::write(file_path, yaml)?;
         Ok(())
     }
-
-    /// Schema → SchemaDto 変換
-    fn convert_schema_to_dto(&self, schema: &Schema) -> SchemaDto {
-        let mut tables = HashMap::new();
-
-        for (table_name, table) in &schema.tables {
-            let table_dto = self.convert_table_to_dto(table);
-            tables.insert(table_name.clone(), table_dto);
-        }
-
-        SchemaDto {
-            version: schema.version.clone(),
-            enum_recreate_allowed: schema.enum_recreate_allowed,
-            enums: schema.enums.clone(),
-            tables,
-        }
-    }
-
-    /// Table → TableDto 変換
-    ///
-    /// PRIMARY_KEY制約をprimary_keyフィールドに抽出し、
-    /// それ以外の制約をconstraintsフィールドに変換します。
-    fn convert_table_to_dto(&self, table: &Table) -> TableDto {
-        TableDto {
-            columns: table.columns.clone(),
-            primary_key: self.extract_primary_key(&table.constraints),
-            indexes: table.indexes.clone(),
-            constraints: self.convert_constraints_to_dto(&table.constraints),
-        }
-    }
-
-    /// PRIMARY_KEY制約を抽出
-    fn extract_primary_key(&self, constraints: &[Constraint]) -> Option<Vec<String>> {
-        constraints.iter().find_map(|c| {
-            if let Constraint::PRIMARY_KEY { columns } = c {
-                Some(columns.clone())
-            } else {
-                None
-            }
-        })
-    }
-
-    /// PRIMARY_KEY以外の制約をDTOに変換
-    fn convert_constraints_to_dto(&self, constraints: &[Constraint]) -> Vec<ConstraintDto> {
-        constraints
-            .iter()
-            .filter_map(|c| match c {
-                Constraint::PRIMARY_KEY { .. } => None, // 除外
-                Constraint::FOREIGN_KEY {
-                    columns,
-                    referenced_table,
-                    referenced_columns,
-                } => Some(ConstraintDto::FOREIGN_KEY {
-                    columns: columns.clone(),
-                    referenced_table: referenced_table.clone(),
-                    referenced_columns: referenced_columns.clone(),
-                }),
-                Constraint::UNIQUE { columns } => Some(ConstraintDto::UNIQUE {
-                    columns: columns.clone(),
-                }),
-                Constraint::CHECK {
-                    columns,
-                    check_expression,
-                } => Some(ConstraintDto::CHECK {
-                    columns: columns.clone(),
-                    check_expression: check_expression.clone(),
-                }),
-            })
-            .collect()
-    }
 }
 
 impl Default for SchemaSerializerService {
@@ -129,7 +66,7 @@ impl Default for SchemaSerializerService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::schema::{Column, ColumnType, EnumDefinition, Index};
+    use crate::core::schema::{Column, ColumnType, Constraint, EnumDefinition, Index, Table};
     use tempfile::TempDir;
 
     // ======================================

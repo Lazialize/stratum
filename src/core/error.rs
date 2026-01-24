@@ -385,6 +385,15 @@ pub enum DatabaseError {
         /// マイグレーションエラー
         error: MigrationError,
     },
+
+    /// Invalid table name error
+    #[error("Invalid table name '{name}': {reason}")]
+    InvalidTableName {
+        /// テーブル名
+        name: String,
+        /// 不正な理由
+        reason: String,
+    },
 }
 
 impl DatabaseError {
@@ -406,6 +415,11 @@ impl DatabaseError {
     /// マイグレーションエラーかどうか
     pub fn is_migration(&self) -> bool {
         matches!(self, DatabaseError::Migration { .. })
+    }
+
+    /// テーブル名不正エラーかどうか
+    pub fn is_invalid_table_name(&self) -> bool {
+        matches!(self, DatabaseError::InvalidTableName { .. })
     }
 }
 
@@ -551,6 +565,12 @@ mod tests {
             message: "Transaction failed".to_string(),
         };
         assert!(tx_error.is_transaction());
+
+        let invalid_table_error = DatabaseError::InvalidTableName {
+            name: "123invalid".to_string(),
+            reason: "Table name must start with letter or underscore".to_string(),
+        };
+        assert!(invalid_table_error.is_invalid_table_name());
     }
 
     #[test]

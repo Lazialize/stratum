@@ -1,0 +1,138 @@
+# CI検証戦略: SQLクエリの方言別検証
+#
+# sqlx のコンパイル時クエリ検証機能を各方言で実行し、
+# SQL文の構文エラーや型不一致を検出します。
+#
+# Requirements: 5.4
+
+name: SQL Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # PostgreSQL での SQL検証
+  verify-postgres:
+    name: Verify PostgreSQL SQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: strata_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/strata_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features native-tls,postgres
+      - name: Run migrations (if any)
+        run: |
+          if [ -d "migrations" ]; then
+            sqlx database create
+            sqlx migrate run
+          fi
+        continue-on-error: true
+      - name: Verify SQL queries
+        run: cargo build --features postgres
+        continue-on-error: true
+      - name: Run tests with PostgreSQL
+        run: cargo test --features postgres
+
+  # MySQL での SQL検証
+  verify-mysql:
+    name: Verify MySQL SQL
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+          MYSQL_DATABASE: strata_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: mysql://root:mysql@localhost:3306/strata_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features native-tls,mysql
+      - name: Run migrations (if any)
+        run: |
+          if [ -d "migrations" ]; then
+            sqlx database create
+            sqlx migrate run
+          fi
+        continue-on-error: true
+      - name: Verify SQL queries
+        run: cargo build --features mysql
+        continue-on-error: true
+      - name: Run tests with MySQL
+        run: cargo test --features mysql
+
+  # SQLite での SQL検証
+  verify-sqlite:
+    name: Verify SQLite SQL
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite:strata_test.db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features native-tls,sqlite
+      - name: Create SQLite database
+        run: |
+          touch strata_test.db
+          if [ -d "migrations" ]; then
+            sqlx database create
+            sqlx migrate run
+          fi
+        continue-on-error: true
+      - name: Verify SQL queries
+        run: cargo build --features sqlite
+        continue-on-error: true
+      - name: Run tests with SQLite
+        run: cargo test --features sqlite
+
+  # 基本テスト (全方言対応)
+  test-all:
+    name: Run All Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt -- --check
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+        continue-on-error: true
+      - name: Run all tests
+        run: cargo test

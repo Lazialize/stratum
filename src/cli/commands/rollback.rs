@@ -9,7 +9,7 @@
 use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::commands::split_sql_statements;
-use crate::core::config::Config;
+use crate::core::config::{Config, Dialect};
 use crate::core::migration::AppliedMigration;
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
@@ -140,7 +140,13 @@ impl RollbackCommandHandler {
 
             // トランザクション内でロールバックを実行
             let result = self
-                .rollback_migration_with_transaction(&pool, &migrator, &record.version, &down_sql)
+                .rollback_migration_with_transaction(
+                    &pool,
+                    &migrator,
+                    &record.version,
+                    &down_sql,
+                    config.dialect,
+                )
                 .await;
 
             if let Err(e) = result {
@@ -218,6 +224,7 @@ impl RollbackCommandHandler {
         migrator: &DatabaseMigratorService,
         version: &str,
         down_sql: &str,
+        dialect: Dialect,
     ) -> Result<()> {
         // トランザクションを開始
         let mut tx = pool
@@ -238,10 +245,15 @@ impl RollbackCommandHandler {
                 })?;
         }
 
-        // マイグレーション履歴から削除
-        let remove_sql = migrator.generate_remove_migration_sql(version);
+        // マイグレーション履歴から削除（パラメータバインディング使用）
+        let (remove_sql, params) = migrator.generate_remove_migration_query(version, dialect);
 
-        sqlx::query(&remove_sql)
+        let mut query = sqlx::query(&remove_sql);
+        for param in &params {
+            query = query.bind(param);
+        }
+
+        query
             .execute(&mut *tx)
             .await
             .with_context(|| "Failed to remove migration history")?;
@@ -354,12 +366,23 @@ mod tests {
             "create_users".to_string(),
             "checksum".to_string(),
         );
-        let record_sql = migrator.generate_record_migration_sql(&migration);
-        sqlx::query(&record_sql).execute(&pool).await.unwrap();
+        let (record_sql, params) =
+            migrator.generate_record_migration_query(&migration, Dialect::SQLite);
+        let mut query = sqlx::query(&record_sql);
+        for param in &params {
+            query = query.bind(param);
+        }
+        query.execute(&pool).await.unwrap();
 
         let handler = RollbackCommandHandler::new();
         let result = handler
-            .rollback_migration_with_transaction(&pool, &migrator, "20260122120001", "INVALID SQL")
+            .rollback_migration_with_transaction(
+                &pool,
+                &migrator,
+                "20260122120001",
+                "INVALID SQL",
+                Dialect::SQLite,
+            )
             .await;
 
         assert!(result.is_err());
@@ -400,8 +423,13 @@ mod tests {
             "create_users".to_string(),
             "checksum".to_string(),
         );
-        let record_sql = migrator.generate_record_migration_sql(&migration);
-        sqlx::query(&record_sql).execute(&pool).await.unwrap();
+        let (record_sql, params) =
+            migrator.generate_record_migration_query(&migration, Dialect::SQLite);
+        let mut query = sqlx::query(&record_sql);
+        for param in &params {
+            query = query.bind(param);
+        }
+        query.execute(&pool).await.unwrap();
 
         let handler = RollbackCommandHandler::new();
         handler
@@ -410,6 +438,7 @@ mod tests {
                 &migrator,
                 "20260122120002",
                 "DROP TABLE users",
+                Dialect::SQLite,
             )
             .await
             .unwrap();

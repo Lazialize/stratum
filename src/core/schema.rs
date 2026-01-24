@@ -292,108 +292,12 @@ pub enum ColumnType {
 }
 
 impl ColumnType {
-    /// SQLの型名を取得（PostgreSQL方言）
+    /// SQL型文字列に変換（TypeMappingServiceに委譲）
+    ///
+    /// 後方互換性のため維持するが、内部は TypeMappingService を使用
     pub fn to_sql_type(&self, dialect: &crate::core::config::Dialect) -> String {
-        use crate::core::config::Dialect;
-
-        match (self, dialect) {
-            (ColumnType::INTEGER { precision }, Dialect::PostgreSQL) => match precision {
-                Some(2) => "SMALLINT".to_string(),
-                Some(4) => "INTEGER".to_string(),
-                Some(8) => "BIGINT".to_string(),
-                _ => "INTEGER".to_string(),
-            },
-            (ColumnType::INTEGER { .. }, Dialect::MySQL) => "INT".to_string(),
-            (ColumnType::INTEGER { .. }, Dialect::SQLite) => "INTEGER".to_string(),
-
-            (ColumnType::VARCHAR { length }, _) => format!("VARCHAR({})", length),
-
-            (ColumnType::TEXT, _) => "TEXT".to_string(),
-
-            (ColumnType::BOOLEAN, Dialect::PostgreSQL) => "BOOLEAN".to_string(),
-            (ColumnType::BOOLEAN, Dialect::MySQL) => "TINYINT(1)".to_string(),
-            (ColumnType::BOOLEAN, Dialect::SQLite) => "INTEGER".to_string(),
-
-            (ColumnType::TIMESTAMP { with_time_zone }, Dialect::PostgreSQL) => {
-                if with_time_zone.unwrap_or(false) {
-                    "TIMESTAMP WITH TIME ZONE".to_string()
-                } else {
-                    "TIMESTAMP".to_string()
-                }
-            }
-            (ColumnType::TIMESTAMP { .. }, Dialect::MySQL) => "TIMESTAMP".to_string(),
-            (ColumnType::TIMESTAMP { .. }, Dialect::SQLite) => "TEXT".to_string(),
-
-            (ColumnType::JSON, Dialect::PostgreSQL) => "JSON".to_string(),
-            (ColumnType::JSON, Dialect::MySQL) => "JSON".to_string(),
-            (ColumnType::JSON, Dialect::SQLite) => "TEXT".to_string(),
-
-            // DECIMAL
-            (ColumnType::DECIMAL { precision, scale }, Dialect::PostgreSQL) => {
-                format!("NUMERIC({}, {})", precision, scale)
-            }
-            (ColumnType::DECIMAL { precision, scale }, Dialect::MySQL) => {
-                format!("DECIMAL({}, {})", precision, scale)
-            }
-            (ColumnType::DECIMAL { .. }, Dialect::SQLite) => "TEXT".to_string(),
-
-            // FLOAT
-            (ColumnType::FLOAT, Dialect::PostgreSQL) => "REAL".to_string(),
-            (ColumnType::FLOAT, Dialect::MySQL) => "FLOAT".to_string(),
-            (ColumnType::FLOAT, Dialect::SQLite) => "REAL".to_string(),
-
-            // DOUBLE
-            (ColumnType::DOUBLE, Dialect::PostgreSQL) => "DOUBLE PRECISION".to_string(),
-            (ColumnType::DOUBLE, Dialect::MySQL) => "DOUBLE".to_string(),
-            (ColumnType::DOUBLE, Dialect::SQLite) => "REAL".to_string(),
-
-            // CHAR
-            (ColumnType::CHAR { length }, Dialect::PostgreSQL) => {
-                format!("CHAR({})", length)
-            }
-            (ColumnType::CHAR { length }, Dialect::MySQL) => {
-                format!("CHAR({})", length)
-            }
-            (ColumnType::CHAR { .. }, Dialect::SQLite) => "TEXT".to_string(),
-
-            // DATE
-            (ColumnType::DATE, Dialect::PostgreSQL) => "DATE".to_string(),
-            (ColumnType::DATE, Dialect::MySQL) => "DATE".to_string(),
-            (ColumnType::DATE, Dialect::SQLite) => "TEXT".to_string(),
-
-            // TIME
-            (ColumnType::TIME { with_time_zone }, Dialect::PostgreSQL) => {
-                if with_time_zone.unwrap_or(false) {
-                    "TIME WITH TIME ZONE".to_string()
-                } else {
-                    "TIME".to_string()
-                }
-            }
-            (ColumnType::TIME { .. }, Dialect::MySQL) => "TIME".to_string(),
-            (ColumnType::TIME { .. }, Dialect::SQLite) => "TEXT".to_string(),
-
-            // BLOB
-            (ColumnType::BLOB, Dialect::PostgreSQL) => "BYTEA".to_string(),
-            (ColumnType::BLOB, Dialect::MySQL) => "BLOB".to_string(),
-            (ColumnType::BLOB, Dialect::SQLite) => "BLOB".to_string(),
-
-            // UUID
-            (ColumnType::UUID, Dialect::PostgreSQL) => "UUID".to_string(),
-            (ColumnType::UUID, Dialect::MySQL) => "CHAR(36)".to_string(),
-            (ColumnType::UUID, Dialect::SQLite) => "TEXT".to_string(),
-
-            // JSONB
-            (ColumnType::JSONB, Dialect::PostgreSQL) => "JSONB".to_string(),
-            (ColumnType::JSONB, Dialect::MySQL) => "JSON".to_string(),
-            (ColumnType::JSONB, Dialect::SQLite) => "TEXT".to_string(),
-
-            // ENUM
-            (ColumnType::Enum { name }, _) => name.clone(),
-
-            // DialectSpecific
-            // 方言固有型は`kind`をそのまま出力（Task 2で詳細実装）
-            (ColumnType::DialectSpecific { kind, .. }, _) => kind.clone(),
-        }
+        use crate::adapters::type_mapping::TypeMappingService;
+        TypeMappingService::new(*dialect).to_sql_type(self)
     }
 }
 

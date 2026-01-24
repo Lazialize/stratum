@@ -47,6 +47,36 @@ impl SchemaValidatorService {
     fn validate_internal(&self, schema: &Schema, dialect: Option<Dialect>) -> ValidationResult {
         let mut result = ValidationResult::new();
 
+        // カテゴリ別に検証を実行（Task 5.1）
+        result.merge(self.validate_enums(schema, dialect));
+
+        // 空のスキーマは有効
+        if schema.table_count() == 0 && schema.enums.is_empty() {
+            return result;
+        }
+
+        // テーブル構造の検証
+        result.merge(self.validate_table_structure(schema));
+        result.merge(self.validate_column_types(schema));
+        result.merge(self.validate_primary_keys(schema));
+        result.merge(self.validate_index_references(schema));
+        result.merge(self.validate_constraint_references(schema));
+
+        result
+    }
+
+    // ===============================================
+    // Task 5.1: カテゴリ別バリデーション関数
+    // ===============================================
+
+    /// ENUM定義の検証
+    ///
+    /// - PostgreSQL以外の方言でENUMが定義されていないか確認
+    /// - ENUM値が空でないか確認
+    /// - ENUM値に重複がないか確認
+    pub fn validate_enums(&self, schema: &Schema, dialect: Option<Dialect>) -> ValidationResult {
+        let mut result = ValidationResult::new();
+
         // ENUMはPostgreSQL専用
         if let Some(dialect) = dialect {
             if !matches!(dialect, Dialect::PostgreSQL) && !schema.enums.is_empty() {
@@ -88,14 +118,14 @@ impl SchemaValidatorService {
             }
         }
 
-        // 空のスキーマは有効
-        if schema.table_count() == 0 && schema.enums.is_empty() {
-            return result;
-        }
+        result
+    }
 
-        // 各テーブルの検証
+    /// テーブル構造の検証（カラムの存在確認）
+    fn validate_table_structure(&self, schema: &Schema) -> ValidationResult {
+        let mut result = ValidationResult::new();
+
         for (table_name, table) in &schema.tables {
-            // テーブルが少なくとも1つのカラムを持つことを検証
             if table.columns.is_empty() {
                 result.add_error(ValidationError::Constraint {
                     message: format!("Table '{}' has no columns defined", table_name),
@@ -103,16 +133,29 @@ impl SchemaValidatorService {
                     suggestion: Some("Define at least one column".to_string()),
                 });
             }
+        }
 
-            // 各カラムの型固有バリデーション
+        result
+    }
+
+    /// カラム型の検証
+    ///
+    /// - DECIMAL型の精度とスケールの検証
+    /// - CHAR型の長さの検証
+    /// - ENUM参照の存在確認
+    pub fn validate_column_types(&self, schema: &Schema) -> ValidationResult {
+        let mut result = ValidationResult::new();
+
+        for (table_name, table) in &schema.tables {
             for column in &table.columns {
-                self.validate_column_type(
+                self.validate_column_type_internal(
                     &column.column_type,
                     table_name,
                     &column.name,
                     &mut result,
                 );
 
+                // ENUM参照の存在確認
                 if let ColumnType::Enum { name } = &column.column_type {
                     if !schema.enums.contains_key(name) {
                         result.add_error(ValidationError::Reference {
@@ -133,8 +176,16 @@ impl SchemaValidatorService {
                     }
                 }
             }
+        }
 
-            // プライマリキーの存在確認
+        result
+    }
+
+    /// プライマリキーの存在確認
+    pub fn validate_primary_keys(&self, schema: &Schema) -> ValidationResult {
+        let mut result = ValidationResult::new();
+
+        for (table_name, table) in &schema.tables {
             let has_primary_key = table
                 .constraints
                 .iter()
@@ -147,8 +198,16 @@ impl SchemaValidatorService {
                     suggestion: Some("Add a PRIMARY KEY constraint".to_string()),
                 });
             }
+        }
 
-            // インデックスのカラム存在確認
+        result
+    }
+
+    /// インデックスのカラム参照整合性検証
+    pub fn validate_index_references(&self, schema: &Schema) -> ValidationResult {
+        let mut result = ValidationResult::new();
+
+        for (table_name, table) in &schema.tables {
             for index in &table.indexes {
                 for column_name in &index.columns {
                     if table.get_column(column_name).is_none() {
@@ -170,8 +229,16 @@ impl SchemaValidatorService {
                     }
                 }
             }
+        }
 
-            // 制約のカラム存在確認
+        result
+    }
+
+    /// 制約のカラム/テーブル参照整合性検証
+    pub fn validate_constraint_references(&self, schema: &Schema) -> ValidationResult {
+        let mut result = ValidationResult::new();
+
+        for (table_name, table) in &schema.tables {
             for constraint in &table.constraints {
                 match constraint {
                     Constraint::PRIMARY_KEY { columns }
@@ -189,10 +256,7 @@ impl SchemaValidatorService {
                                         column: Some(column_name.clone()),
                                         line: None,
                                     }),
-                                    suggestion: Some(format!(
-                                        "Define column '{}'",
-                                        column_name
-                                    )),
+                                    suggestion: Some(format!("Define column '{}'", column_name)),
                                 });
                             }
                         }
@@ -215,15 +279,12 @@ impl SchemaValidatorService {
                                         column: Some(column_name.clone()),
                                         line: None,
                                     }),
-                                    suggestion: Some(format!(
-                                        "Define column '{}'",
-                                        column_name
-                                    )),
+                                    suggestion: Some(format!("Define column '{}'", column_name)),
                                 });
                             }
                         }
 
-                        // Check if referenced table exists
+                        // 参照先テーブルの存在確認
                         if !schema.has_table(referenced_table) {
                             result.add_error(ValidationError::Reference {
                                 message: format!(
@@ -235,32 +296,27 @@ impl SchemaValidatorService {
                                     column: None,
                                     line: None,
                                 }),
-                                suggestion: Some(format!(
-                                    "Define table '{}'",
-                                    referenced_table
-                                )),
+                                suggestion: Some(format!("Define table '{}'", referenced_table)),
                             });
-                        } else {
-                            // Check if referenced columns exist
-                            if let Some(ref_table) = schema.get_table(referenced_table) {
-                                for ref_column_name in referenced_columns {
-                                    if ref_table.get_column(ref_column_name).is_none() {
-                                        result.add_error(ValidationError::Reference {
-                                            message: format!(
-                                                "Foreign key constraint references column '{}' which does not exist in table '{}'",
-                                                ref_column_name, referenced_table
-                                            ),
-                                            location: Some(ErrorLocation {
-                                                table: Some(referenced_table.clone()),
-                                                column: Some(ref_column_name.clone()),
-                                                line: None,
-                                            }),
-                                            suggestion: Some(format!(
-                                                "Define column '{}' in table '{}'",
-                                                ref_column_name, referenced_table
-                                            )),
-                                        });
-                                    }
+                        } else if let Some(ref_table) = schema.get_table(referenced_table) {
+                            // 参照先カラムの存在確認
+                            for ref_column_name in referenced_columns {
+                                if ref_table.get_column(ref_column_name).is_none() {
+                                    result.add_error(ValidationError::Reference {
+                                        message: format!(
+                                            "Foreign key constraint references column '{}' which does not exist in table '{}'",
+                                            ref_column_name, referenced_table
+                                        ),
+                                        location: Some(ErrorLocation {
+                                            table: Some(referenced_table.clone()),
+                                            column: Some(ref_column_name.clone()),
+                                            line: None,
+                                        }),
+                                        suggestion: Some(format!(
+                                            "Define column '{}' in table '{}'",
+                                            ref_column_name, referenced_table
+                                        )),
+                                    });
                                 }
                             }
                         }
@@ -272,7 +328,7 @@ impl SchemaValidatorService {
         result
     }
 
-    /// カラムの型固有バリデーション
+    /// カラムの型固有バリデーション（内部用）
     ///
     /// # Arguments
     ///
@@ -280,7 +336,7 @@ impl SchemaValidatorService {
     /// * `table_name` - テーブル名
     /// * `column_name` - カラム名
     /// * `result` - バリデーション結果（エラーを追加）
-    fn validate_column_type(
+    fn validate_column_type_internal(
         &self,
         column_type: &ColumnType,
         table_name: &str,
@@ -605,13 +661,432 @@ impl Default for SchemaValidatorService {
 mod tests {
     use super::*;
     use crate::core::config::Dialect;
-    use crate::core::schema::{Column, ColumnType, EnumDefinition, Table};
+    use crate::core::schema::{Column, ColumnType, EnumDefinition, Index, Table};
 
     #[test]
     fn test_new_service() {
         let service = SchemaValidatorService::new();
         // サービスが正常に作成されることを確認
         assert!(format!("{:?}", service).contains("SchemaValidatorService"));
+    }
+
+    // ===============================================
+    // Task 5.1: カテゴリ別バリデーション関数のテスト
+    // ===============================================
+
+    #[test]
+    fn test_validate_enums_empty_values() {
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_enum(EnumDefinition {
+            name: "status".to_string(),
+            values: vec![],
+        });
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_enums(&schema, None);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("no values")));
+    }
+
+    #[test]
+    fn test_validate_enums_duplicate_values() {
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_enum(EnumDefinition {
+            name: "status".to_string(),
+            values: vec!["active".to_string(), "active".to_string()],
+        });
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_enums(&schema, None);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("duplicate")));
+    }
+
+    #[test]
+    fn test_validate_enums_non_postgres_dialect() {
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_enum(EnumDefinition {
+            name: "status".to_string(),
+            values: vec!["active".to_string()],
+        });
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_enums(&schema, Some(Dialect::MySQL));
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("PostgreSQL")));
+    }
+
+    #[test]
+    fn test_validate_enums_valid() {
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_enum(EnumDefinition {
+            name: "status".to_string(),
+            values: vec!["active".to_string(), "inactive".to_string()],
+        });
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_enums(&schema, Some(Dialect::PostgreSQL));
+
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_column_types_decimal_invalid_scale() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 15,
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_column_types(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("scale")));
+    }
+
+    #[test]
+    fn test_validate_column_types_enum_reference_missing() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "status".to_string(),
+            ColumnType::Enum {
+                name: "nonexistent_enum".to_string(),
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_column_types(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("undefined ENUM")));
+    }
+
+    #[test]
+    fn test_validate_primary_keys_missing() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_primary_keys(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("primary key")));
+    }
+
+    #[test]
+    fn test_validate_primary_keys_present() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_primary_keys(&schema);
+
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_index_references_invalid_column() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_index(Index::new(
+            "idx_email".to_string(),
+            vec!["nonexistent_column".to_string()],
+            false,
+        ));
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_index_references(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("Index")));
+    }
+
+    #[test]
+    fn test_validate_index_references_valid() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        table.add_index(Index::new(
+            "idx_email".to_string(),
+            vec!["email".to_string()],
+            false,
+        ));
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_index_references(&schema);
+
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_constraint_references_invalid_fk_table() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("posts".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "user_id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_constraint(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "nonexistent_table".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_constraint_references(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("does not exist")));
+    }
+
+    #[test]
+    fn test_validate_constraint_references_invalid_pk_column() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["nonexistent_column".to_string()],
+        });
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_constraint_references(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("Constraint references column")));
+    }
+
+    #[test]
+    fn test_validate_constraint_references_valid() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        // users table
+        let mut users_table = Table::new("users".to_string());
+        users_table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        users_table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(users_table);
+
+        // posts table with valid FK
+        let mut posts_table = Table::new("posts".to_string());
+        posts_table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        posts_table.add_column(Column::new(
+            "user_id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        posts_table.add_constraint(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+        schema.add_table(posts_table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate_constraint_references(&schema);
+
+        assert!(result.is_valid());
+    }
+
+    // ===============================================
+    // Task 5.2: バリデーション結果の統合テスト
+    // ===============================================
+
+    #[test]
+    fn test_validate_collects_all_errors() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        // Error 1: ENUM with no values
+        schema.add_enum(EnumDefinition {
+            name: "empty_enum".to_string(),
+            values: vec![],
+        });
+
+        // Error 2: Table without primary key
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        // Error 3: Index referencing non-existent column
+        table.add_index(Index::new(
+            "idx_email".to_string(),
+            vec!["nonexistent".to_string()],
+            false,
+        ));
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+        let result = validator.validate(&schema);
+
+        // All errors should be collected
+        assert!(!result.is_valid());
+        assert!(result.error_count() >= 3);
+    }
+
+    #[test]
+    fn test_validate_with_dialect_returns_warnings_separately() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("products".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        // UUID type will generate warning for SQLite
+        table.add_column(Column::new("uuid".to_string(), ColumnType::UUID, false));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+
+        // Validate without errors
+        let result = validator.validate(&schema);
+        assert!(result.is_valid());
+        assert_eq!(result.error_count(), 0);
+
+        // Generate dialect warnings separately
+        let warnings = validator.generate_dialect_warnings(&schema, &Dialect::SQLite);
+        assert!(!warnings.is_empty());
+        assert!(warnings.iter().any(|w| w.message.contains("UUID")));
+    }
+
+    #[test]
+    fn test_each_validation_category_is_independently_testable() {
+        // This test demonstrates that each validation category can be tested independently
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        table.add_index(Index::new(
+            "idx_email".to_string(),
+            vec!["email".to_string()],
+            false,
+        ));
+        schema.add_table(table);
+
+        let validator = SchemaValidatorService::new();
+
+        // Each category can be tested independently
+        let enum_result = validator.validate_enums(&schema, None);
+        let column_type_result = validator.validate_column_types(&schema);
+        let pk_result = validator.validate_primary_keys(&schema);
+        let index_result = validator.validate_index_references(&schema);
+        let constraint_result = validator.validate_constraint_references(&schema);
+
+        // All should be valid for this well-formed schema
+        assert!(enum_result.is_valid());
+        assert!(column_type_result.is_valid());
+        assert!(pk_result.is_valid());
+        assert!(index_result.is_valid());
+        assert!(constraint_result.is_valid());
     }
 
     #[test]

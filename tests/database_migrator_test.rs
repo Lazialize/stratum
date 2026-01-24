@@ -57,9 +57,9 @@ mod database_migrator_tests {
         assert!(sql.contains("IF NOT EXISTS"));
     }
 
-    /// マイグレーション記録のINSERT SQL生成テスト
+    /// マイグレーション記録クエリ生成テスト（パラメータバインド対応）
     #[test]
-    fn test_generate_record_migration_sql() {
+    fn test_generate_record_migration_query() {
         let service = DatabaseMigratorService::new();
         let migration = Migration::new(
             "20240101120000".to_string(),
@@ -67,25 +67,31 @@ mod database_migrator_tests {
             "abc123def456".to_string(),
         );
 
-        let sql = service.generate_record_migration_sql(&migration);
+        let (sql, params) =
+            service.generate_record_migration_query(&migration, Dialect::PostgreSQL);
 
         assert!(sql.contains("INSERT INTO schema_migrations"));
-        assert!(sql.contains("20240101120000"));
-        assert!(sql.contains("create_users_table"));
-        assert!(sql.contains("abc123def456"));
+        assert!(sql.contains("$1"));
+        assert!(!sql.contains("20240101120000")); // 値が直接埋め込まれていない
+        assert_eq!(params.len(), 4);
+        assert_eq!(params[0], "20240101120000");
+        assert_eq!(params[1], "create_users_table");
     }
 
-    /// マイグレーション削除のDELETE SQL生成テスト
+    /// マイグレーション削除クエリ生成テスト（パラメータバインド対応）
     #[test]
-    fn test_generate_remove_migration_sql() {
+    fn test_generate_remove_migration_query() {
         let service = DatabaseMigratorService::new();
         let version = "20240101_120000";
 
-        let sql = service.generate_remove_migration_sql(version);
+        let (sql, params) = service.generate_remove_migration_query(version, Dialect::PostgreSQL);
 
         assert!(sql.contains("DELETE FROM schema_migrations"));
         assert!(sql.contains("WHERE version ="));
-        assert!(sql.contains("20240101_120000"));
+        assert!(sql.contains("$1"));
+        assert!(!sql.contains("20240101_120000")); // 値が直接埋め込まれていない
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0], "20240101_120000");
     }
 
     /// マイグレーション履歴取得のSELECT SQL生成テスト
@@ -127,18 +133,22 @@ mod database_migrator_tests {
         assert_eq!(sql, "ROLLBACK");
     }
 
-    /// 特定マイグレーションの取得SQL生成テスト
+    /// 特定マイグレーションの取得クエリ生成テスト（パラメータバインド対応）
     #[test]
-    fn test_generate_get_migration_by_version_sql() {
+    fn test_generate_get_migration_by_version_query() {
         let service = DatabaseMigratorService::new();
         let version = "20240101_120000";
 
-        let sql = service.generate_get_migration_by_version_sql(Dialect::PostgreSQL, version);
+        let (sql, params) =
+            service.generate_get_migration_by_version_query(Dialect::PostgreSQL, version);
 
         assert!(sql.contains("SELECT"));
         assert!(sql.contains("FROM schema_migrations"));
         assert!(sql.contains("WHERE version ="));
-        assert!(sql.contains("20240101_120000"));
+        assert!(sql.contains("$1"));
+        assert!(!sql.contains("20240101_120000")); // 値が直接埋め込まれていない
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0], "20240101_120000");
     }
 
     /// マイグレーションテーブル存在確認SQL生成テスト（PostgreSQL）

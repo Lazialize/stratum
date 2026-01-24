@@ -1,19 +1,19 @@
 // マイグレーションファイル生成サービス
 //
 // スキーマ差分からマイグレーションファイル（up.sql, down.sql, .meta.yaml）を生成するサービス。
+// 内部では MigrationPipeline を使用してSQL生成を行う。
 
-use crate::adapters::sql_generator::mysql::MysqlSqlGenerator;
-use crate::adapters::sql_generator::postgres::PostgresSqlGenerator;
-use crate::adapters::sql_generator::sqlite::SqliteSqlGenerator;
-use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::core::config::Dialect;
 use crate::core::error::ValidationResult;
 use crate::core::schema::Schema;
-use crate::core::schema_diff::{ColumnChange, EnumChangeKind, EnumDiff, SchemaDiff};
-use crate::services::type_change_validator::TypeChangeValidator;
+use crate::core::schema_diff::SchemaDiff;
+use crate::services::migration_pipeline::MigrationPipeline;
 use chrono::Utc;
 
 /// マイグレーションファイル生成サービス
+///
+/// スキーマ差分からマイグレーションファイルを生成するサービス。
+/// SQL生成は内部で MigrationPipeline に委譲する。
 #[derive(Debug, Clone)]
 pub struct MigrationGenerator {}
 
@@ -78,6 +78,8 @@ impl MigrationGenerator {
 
     /// UP SQLを生成
     ///
+    /// MigrationPipeline を使用してUP SQLを生成します。
+    ///
     /// # Arguments
     ///
     /// * `diff` - スキーマ差分
@@ -87,84 +89,16 @@ impl MigrationGenerator {
     ///
     /// UP SQL文字列（エラーの場合はエラーメッセージ）
     pub fn generate_up_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> Result<String, String> {
-        let mut statements = Vec::new();
-
-        // データベース方言に応じたSQLジェネレーターを取得
-        let generator: Box<dyn SqlGenerator> = match dialect {
-            Dialect::PostgreSQL => Box::new(PostgresSqlGenerator::new()),
-            Dialect::MySQL => Box::new(MysqlSqlGenerator::new()),
-            Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
-        };
-
-        if matches!(dialect, Dialect::PostgreSQL) {
-            self.append_enum_statements_pre_table(diff, &mut statements)?;
-        }
-
-        // 外部キー依存関係を考慮してテーブルをソート
-        let sorted_tables = diff.sort_added_tables_by_dependency()?;
-
-        // 追加されたテーブルのCREATE TABLE文を生成（ソート済み）
-        for table in &sorted_tables {
-            statements.push(generator.generate_create_table(table));
-
-            // インデックスの作成
-            for index in &table.indexes {
-                statements.push(generator.generate_create_index(table, index));
-            }
-
-            // FOREIGN KEY制約の追加（SQLite以外）
-            if !matches!(dialect, Dialect::SQLite) {
-                for (i, constraint) in table.constraints.iter().enumerate() {
-                    if matches!(
-                        constraint,
-                        crate::core::schema::Constraint::FOREIGN_KEY { .. }
-                    ) {
-                        let alter_sql = generator.generate_alter_table_add_constraint(table, i);
-                        if !alter_sql.is_empty() {
-                            statements.push(alter_sql);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 変更されたテーブルの処理
-        for table_diff in &diff.modified_tables {
-            // カラムの追加
-            for column in &table_diff.added_columns {
-                statements.push(format!(
-                    "ALTER TABLE {} ADD COLUMN {} {} {}",
-                    table_diff.table_name,
-                    column.name,
-                    self.get_column_type_string(column, dialect),
-                    if column.nullable { "" } else { "NOT NULL" }
-                ));
-            }
-
-            // インデックスの追加
-            for index in &table_diff.added_indexes {
-                let table = crate::core::schema::Table::new(table_diff.table_name.clone());
-                statements.push(generator.generate_create_index(&table, index));
-            }
-        }
-
-        if matches!(dialect, Dialect::PostgreSQL) {
-            self.append_enum_statements_post_table(diff, &mut statements)?;
-        }
-
-        // 削除されたテーブルのDROP TABLE文を生成
-        for table_name in &diff.removed_tables {
-            statements.push(format!("DROP TABLE {}", table_name));
-        }
-
-        if matches!(dialect, Dialect::PostgreSQL) {
-            self.append_enum_drop_statements(diff, &mut statements)?;
-        }
-
-        Ok(statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" })
+        let pipeline = MigrationPipeline::new(diff, dialect);
+        pipeline
+            .generate_up()
+            .map(|(sql, _)| sql)
+            .map_err(|e| e.message)
     }
 
     /// DOWN SQLを生成
+    ///
+    /// MigrationPipeline を使用してDOWN SQLを生成します。
     ///
     /// # Arguments
     ///
@@ -174,49 +108,12 @@ impl MigrationGenerator {
     /// # Returns
     ///
     /// DOWN SQL文字列（エラーの場合はエラーメッセージ）
-    pub fn generate_down_sql(
-        &self,
-        diff: &SchemaDiff,
-        _dialect: Dialect,
-    ) -> Result<String, String> {
-        let mut statements = Vec::new();
-
-        // 外部キー依存関係を考慮してテーブルをソート
-        let sorted_tables = diff.sort_added_tables_by_dependency()?;
-
-        // UP SQLと逆の操作を生成
-        // 追加されたテーブルを削除（依存関係の逆順 = 参照元を先に削除）
-        for table in sorted_tables.iter().rev() {
-            statements.push(format!("DROP TABLE {}", table.name));
-        }
-
-        // 変更されたテーブルの処理（逆操作）
-        for table_diff in &diff.modified_tables {
-            // 追加されたカラムを削除
-            for column in &table_diff.added_columns {
-                statements.push(format!(
-                    "ALTER TABLE {} DROP COLUMN {}",
-                    table_diff.table_name, column.name
-                ));
-            }
-
-            // 追加されたインデックスを削除
-            for index in &table_diff.added_indexes {
-                statements.push(format!("DROP INDEX {}", index.name));
-            }
-        }
-
-        // 削除されたテーブルを再作成
-        // 注: ロールバック時に削除されたテーブルを復元するには、
-        // 元のスキーマ定義が必要です。手動で CREATE TABLE 文を追加してください。
-        for table_name in &diff.removed_tables {
-            statements.push(format!(
-                "-- NOTE: Manually add CREATE TABLE statement for '{}' if rollback is needed",
-                table_name
-            ));
-        }
-
-        Ok(statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" })
+    pub fn generate_down_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> Result<String, String> {
+        let pipeline = MigrationPipeline::new(diff, dialect);
+        pipeline
+            .generate_down()
+            .map(|(sql, _)| sql)
+            .map_err(|e| e.message)
     }
 
     /// マイグレーションメタデータを生成
@@ -244,126 +141,10 @@ impl MigrationGenerator {
         )
     }
 
-    /// カラム型を文字列に変換
-    fn get_column_type_string(
-        &self,
-        column: &crate::core::schema::Column,
-        dialect: Dialect,
-    ) -> String {
-        // ColumnType の to_sql_type メソッドを使用
-        column.column_type.to_sql_type(&dialect)
-    }
-
-    fn append_enum_statements_pre_table(
-        &self,
-        diff: &SchemaDiff,
-        statements: &mut Vec<String>,
-    ) -> Result<(), String> {
-        if (!diff.removed_enums.is_empty()
-            || diff
-                .modified_enums
-                .iter()
-                .any(|e| matches!(e.change_kind, EnumChangeKind::Recreate)))
-            && !diff.enum_recreate_allowed
-        {
-            return Err(
-                "Enum recreation is required but not allowed. Enable enum_recreate_allowed to proceed."
-                    .to_string(),
-            );
-        }
-
-        for enum_def in &diff.added_enums {
-            let values = self.format_enum_values(&enum_def.values);
-            statements.push(format!(
-                "CREATE TYPE {} AS ENUM ({})",
-                enum_def.name, values
-            ));
-        }
-
-        for enum_diff in &diff.modified_enums {
-            if matches!(enum_diff.change_kind, EnumChangeKind::AddOnly) {
-                for value in &enum_diff.added_values {
-                    statements.push(format!(
-                        "ALTER TYPE {} ADD VALUE '{}'",
-                        enum_diff.enum_name,
-                        self.escape_enum_value(value)
-                    ));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn append_enum_statements_post_table(
-        &self,
-        diff: &SchemaDiff,
-        statements: &mut Vec<String>,
-    ) -> Result<(), String> {
-        for enum_diff in &diff.modified_enums {
-            if matches!(enum_diff.change_kind, EnumChangeKind::Recreate) {
-                statements.extend(self.generate_enum_recreate_statements(enum_diff));
-            }
-        }
-
-        Ok(())
-    }
-
-    fn append_enum_drop_statements(
-        &self,
-        diff: &SchemaDiff,
-        statements: &mut Vec<String>,
-    ) -> Result<(), String> {
-        for enum_name in &diff.removed_enums {
-            statements.push(format!("DROP TYPE {}", enum_name));
-        }
-
-        Ok(())
-    }
-
-    fn generate_enum_recreate_statements(&self, enum_diff: &EnumDiff) -> Vec<String> {
-        let old_name = format!("{}_old", enum_diff.enum_name);
-        let values = self.format_enum_values(&enum_diff.new_values);
-        let mut statements = Vec::new();
-
-        statements.push(format!(
-            "ALTER TYPE {} RENAME TO {}",
-            enum_diff.enum_name, old_name
-        ));
-        statements.push(format!(
-            "CREATE TYPE {} AS ENUM ({})",
-            enum_diff.enum_name, values
-        ));
-
-        for column in &enum_diff.columns {
-            statements.push(format!(
-                "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::text::{}",
-                column.table_name,
-                column.column_name,
-                enum_diff.enum_name,
-                column.column_name,
-                enum_diff.enum_name
-            ));
-        }
-
-        statements.push(format!("DROP TYPE {}", old_name));
-
-        statements
-    }
-
-    fn format_enum_values(&self, values: &[String]) -> String {
-        values
-            .iter()
-            .map(|value| format!("'{}'", self.escape_enum_value(value)))
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
-    fn escape_enum_value(&self, value: &str) -> String {
-        value.replace('\'', "''")
-    }
-
     /// UP SQLを生成（スキーマ付き、型変更対応）
+    ///
+    /// MigrationPipeline を使用してUP SQLを生成します。
+    /// スキーマ情報を渡すことで、型変更の検証と適切なALTER文の生成が可能になります。
     ///
     /// # Arguments
     ///
@@ -378,133 +159,18 @@ impl MigrationGenerator {
     pub fn generate_up_sql_with_schemas(
         &self,
         diff: &SchemaDiff,
-        _old_schema: &Schema,
+        old_schema: &Schema,
         new_schema: &Schema,
         dialect: Dialect,
     ) -> Result<(String, ValidationResult), String> {
-        // 型変更の検証
-        let validator = TypeChangeValidator::new();
-        let mut total_validation_result = ValidationResult::new();
-
-        for table_diff in &diff.modified_tables {
-            let validation = validator.validate_type_changes(
-                &table_diff.table_name,
-                &table_diff.modified_columns,
-                &dialect,
-            );
-            total_validation_result.merge(validation);
-        }
-
-        // エラーがある場合は早期リターン
-        if !total_validation_result.is_valid() {
-            let error_messages: Vec<String> = total_validation_result
-                .errors
-                .iter()
-                .map(|e| e.to_string())
-                .collect();
-            return Err(format!(
-                "Type change validation failed:\n{}",
-                error_messages.join("\n")
-            ));
-        }
-
-        let mut statements = Vec::new();
-
-        // データベース方言に応じたSQLジェネレーターを取得
-        let generator: Box<dyn SqlGenerator> = match dialect {
-            Dialect::PostgreSQL => Box::new(PostgresSqlGenerator::new()),
-            Dialect::MySQL => Box::new(MysqlSqlGenerator::new()),
-            Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
-        };
-
-        if matches!(dialect, Dialect::PostgreSQL) {
-            self.append_enum_statements_pre_table(diff, &mut statements)?;
-        }
-
-        // 外部キー依存関係を考慮してテーブルをソート
-        let sorted_tables = diff.sort_added_tables_by_dependency()?;
-
-        // 追加されたテーブルのCREATE TABLE文を生成（ソート済み）
-        for table in &sorted_tables {
-            statements.push(generator.generate_create_table(table));
-
-            // インデックスの作成
-            for index in &table.indexes {
-                statements.push(generator.generate_create_index(table, index));
-            }
-
-            // FOREIGN KEY制約の追加（SQLite以外）
-            if !matches!(dialect, Dialect::SQLite) {
-                for (i, constraint) in table.constraints.iter().enumerate() {
-                    if matches!(
-                        constraint,
-                        crate::core::schema::Constraint::FOREIGN_KEY { .. }
-                    ) {
-                        let alter_sql = generator.generate_alter_table_add_constraint(table, i);
-                        if !alter_sql.is_empty() {
-                            statements.push(alter_sql);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 変更されたテーブルの処理
-        for table_diff in &diff.modified_tables {
-            // カラムの追加
-            for column in &table_diff.added_columns {
-                statements.push(format!(
-                    "ALTER TABLE {} ADD COLUMN {} {} {}",
-                    table_diff.table_name,
-                    column.name,
-                    self.get_column_type_string(column, dialect),
-                    if column.nullable { "" } else { "NOT NULL" }
-                ));
-            }
-
-            // 型変更の処理
-            for column_diff in &table_diff.modified_columns {
-                if self.has_type_change(column_diff) {
-                    // Up方向ではnew_schemaからテーブル定義を取得
-                    if let Some(table) = new_schema.tables.get(&table_diff.table_name) {
-                        // 旧テーブル情報を渡して列交差ロジックを有効にする（SQLite用）
-                        let old_table = _old_schema.tables.get(&table_diff.table_name);
-                        let alter_statements = generator.generate_alter_column_type_with_old_table(
-                            table,
-                            old_table,
-                            column_diff,
-                            MigrationDirection::Up,
-                        );
-                        statements.extend(alter_statements);
-                    }
-                }
-            }
-
-            // インデックスの追加
-            for index in &table_diff.added_indexes {
-                let table = crate::core::schema::Table::new(table_diff.table_name.clone());
-                statements.push(generator.generate_create_index(&table, index));
-            }
-        }
-
-        if matches!(dialect, Dialect::PostgreSQL) {
-            self.append_enum_statements_post_table(diff, &mut statements)?;
-        }
-
-        // 削除されたテーブルのDROP TABLE文を生成
-        for table_name in &diff.removed_tables {
-            statements.push(format!("DROP TABLE {}", table_name));
-        }
-
-        if matches!(dialect, Dialect::PostgreSQL) {
-            self.append_enum_drop_statements(diff, &mut statements)?;
-        }
-
-        let sql = statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" };
-        Ok((sql, total_validation_result))
+        let pipeline = MigrationPipeline::new(diff, dialect).with_schemas(old_schema, new_schema);
+        pipeline.generate_up().map_err(|e| e.to_string())
     }
 
     /// DOWN SQLを生成（スキーマ付き、型変更対応）
+    ///
+    /// MigrationPipeline を使用してDOWN SQLを生成します。
+    /// スキーマ情報を渡すことで、型変更の逆操作が可能になります。
     ///
     /// # Arguments
     ///
@@ -520,80 +186,11 @@ impl MigrationGenerator {
         &self,
         diff: &SchemaDiff,
         old_schema: &Schema,
-        _new_schema: &Schema,
+        new_schema: &Schema,
         dialect: Dialect,
     ) -> Result<(String, ValidationResult), String> {
-        let mut statements = Vec::new();
-
-        // データベース方言に応じたSQLジェネレーターを取得
-        let generator: Box<dyn SqlGenerator> = match dialect {
-            Dialect::PostgreSQL => Box::new(PostgresSqlGenerator::new()),
-            Dialect::MySQL => Box::new(MysqlSqlGenerator::new()),
-            Dialect::SQLite => Box::new(SqliteSqlGenerator::new()),
-        };
-
-        // 外部キー依存関係を考慮してテーブルをソート
-        let sorted_tables = diff.sort_added_tables_by_dependency()?;
-
-        // UP SQLと逆の操作を生成
-        // 追加されたテーブルを削除（依存関係の逆順 = 参照元を先に削除）
-        for table in sorted_tables.iter().rev() {
-            statements.push(format!("DROP TABLE {}", table.name));
-        }
-
-        // 変更されたテーブルの処理（逆操作）
-        for table_diff in &diff.modified_tables {
-            // 追加されたカラムを削除
-            for column in &table_diff.added_columns {
-                statements.push(format!(
-                    "ALTER TABLE {} DROP COLUMN {}",
-                    table_diff.table_name, column.name
-                ));
-            }
-
-            // 型変更の逆処理（元の型に戻す）
-            for column_diff in &table_diff.modified_columns {
-                if self.has_type_change(column_diff) {
-                    // Down方向ではold_schemaからテーブル定義を取得
-                    if let Some(table) = old_schema.tables.get(&table_diff.table_name) {
-                        // 旧テーブル情報を渡して列交差ロジックを有効にする（SQLite用）
-                        // Down方向では新スキーマが「旧」として扱われる
-                        let other_table = _new_schema.tables.get(&table_diff.table_name);
-                        let alter_statements = generator.generate_alter_column_type_with_old_table(
-                            table,
-                            other_table,
-                            column_diff,
-                            MigrationDirection::Down,
-                        );
-                        statements.extend(alter_statements);
-                    }
-                }
-            }
-
-            // 追加されたインデックスを削除
-            for index in &table_diff.added_indexes {
-                statements.push(format!("DROP INDEX {}", index.name));
-            }
-        }
-
-        // 削除されたテーブルを再作成
-        for table_name in &diff.removed_tables {
-            statements.push(format!(
-                "-- NOTE: Manually add CREATE TABLE statement for '{}' if rollback is needed",
-                table_name
-            ));
-        }
-
-        let sql = statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" };
-        Ok((sql, ValidationResult::new()))
-    }
-
-    /// カラム差分がTypeChangedを含むかどうか
-    fn has_type_change(&self, column_diff: &crate::core::schema_diff::ColumnDiff) -> bool {
-        column_diff
-            .changes
-            .iter()
-            .any(|change| matches!(change, ColumnChange::TypeChanged { .. }))
+        let pipeline = MigrationPipeline::new(diff, dialect).with_schemas(old_schema, new_schema);
+        pipeline.generate_down().map_err(|e| e.to_string())
     }
 }
 

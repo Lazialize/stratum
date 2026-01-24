@@ -5,6 +5,8 @@
 
 use crate::adapters::sql_generator::sqlite_table_recreator::SqliteTableRecreator;
 use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
+use crate::adapters::type_mapping::TypeMappingService;
+use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
 use crate::core::schema_diff::ColumnDiff;
 
@@ -43,53 +45,11 @@ impl SqliteSqlGenerator {
     }
 
     /// ColumnTypeをSQLiteの型文字列にマッピング
-    fn map_column_type(&self, column_type: &ColumnType) -> String {
-        match column_type {
-            ColumnType::INTEGER { .. } => {
-                // SQLiteではすべての整数型をINTEGERとして扱う
-                "INTEGER".to_string()
-            }
-            ColumnType::VARCHAR { .. } => {
-                // SQLiteではVARCHARはTEXTとして扱われる
-                "TEXT".to_string()
-            }
-            ColumnType::TEXT => "TEXT".to_string(),
-            ColumnType::BOOLEAN => {
-                // SQLiteにはBOOLEAN型がないため、INTEGER (0/1)で表現
-                "INTEGER".to_string()
-            }
-            ColumnType::TIMESTAMP { .. } => {
-                // SQLiteではタイムスタンプをTEXTまたはINTEGERで保存
-                // ISO 8601形式のTEXTを使用
-                "TEXT".to_string()
-            }
-            ColumnType::JSON => {
-                // SQLiteではJSONをTEXTとして保存
-                "TEXT".to_string()
-            }
-            ColumnType::DECIMAL { .. } => "TEXT".to_string(), // 精度保証のためTEXTを使用
-            ColumnType::FLOAT | ColumnType::DOUBLE => "REAL".to_string(),
-            ColumnType::CHAR { .. } => "TEXT".to_string(),
-            ColumnType::DATE => "TEXT".to_string(), // ISO 8601形式
-            ColumnType::TIME { .. } => "TEXT".to_string(), // ISO 8601形式
-            ColumnType::BLOB => "BLOB".to_string(),
-            ColumnType::UUID => "TEXT".to_string(),
-            ColumnType::JSONB => "TEXT".to_string(), // TEXTへフォールバック
-            ColumnType::Enum { name } => name.clone(),
-            // 方言固有型はformat_dialect_specific_typeでフォーマット
-            ColumnType::DialectSpecific { kind, params } => {
-                self.format_dialect_specific_type(kind, params)
-            }
-        }
-    }
-
-    /// 方言固有型のフォーマット（SQLite）
     ///
-    /// SQLiteは型システムが柔軟なため、基本的にkindをそのまま出力します。
-    fn format_dialect_specific_type(&self, kind: &str, _params: &serde_json::Value) -> String {
-        // SQLiteは型アフィニティによる柔軟な型システムを持つため、
-        // 方言固有型はそのまま出力（パラメータは無視）
-        kind.to_string()
+    /// TypeMappingServiceに委譲して型変換を行います。
+    fn map_column_type(&self, column_type: &ColumnType) -> String {
+        let service = TypeMappingService::new(Dialect::SQLite);
+        service.to_sql_type(column_type)
     }
 
     /// 制約定義のSQL文字列を生成

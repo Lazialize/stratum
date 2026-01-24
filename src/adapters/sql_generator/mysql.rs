@@ -3,6 +3,8 @@
 // スキーマ定義からMySQL用のDDL文を生成します。
 
 use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
+use crate::adapters::type_mapping::TypeMappingService;
+use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
 use crate::core::schema_diff::ColumnDiff;
 
@@ -46,71 +48,11 @@ impl MysqlSqlGenerator {
     }
 
     /// ColumnTypeをMySQLの型文字列にマッピング
-    fn map_column_type(&self, column_type: &ColumnType, _auto_increment: Option<bool>) -> String {
-        match column_type {
-            ColumnType::INTEGER { precision } => match precision {
-                Some(2) => "SMALLINT".to_string(),
-                Some(8) => "BIGINT".to_string(),
-                _ => "INT".to_string(),
-            },
-            ColumnType::VARCHAR { length } => format!("VARCHAR({})", length),
-            ColumnType::TEXT => "TEXT".to_string(),
-            ColumnType::BOOLEAN => "BOOLEAN".to_string(), // MySQLではTINYINT(1)のエイリアス
-            ColumnType::TIMESTAMP { .. } => {
-                // MySQLのTIMESTAMPはタイムゾーンを持たない
-                "TIMESTAMP".to_string()
-            }
-            ColumnType::JSON => "JSON".to_string(),
-            ColumnType::DECIMAL { precision, scale } => {
-                format!("DECIMAL({}, {})", precision, scale)
-            }
-            ColumnType::FLOAT => "FLOAT".to_string(),
-            ColumnType::DOUBLE => "DOUBLE".to_string(),
-            ColumnType::CHAR { length } => format!("CHAR({})", length),
-            ColumnType::DATE => "DATE".to_string(),
-            ColumnType::TIME { .. } => "TIME".to_string(),
-            ColumnType::BLOB => "BLOB".to_string(),
-            ColumnType::UUID => "CHAR(36)".to_string(),
-            ColumnType::JSONB => "JSON".to_string(), // JSONへフォールバック
-            ColumnType::Enum { name } => name.clone(),
-            // 方言固有型はformat_dialect_specific_typeでフォーマット
-            ColumnType::DialectSpecific { kind, params } => {
-                self.format_dialect_specific_type(kind, params)
-            }
-        }
-    }
-
-    /// 方言固有型のフォーマット（MySQL）
     ///
-    /// パラメータに応じて適切なSQL型文字列を生成します。
-    fn format_dialect_specific_type(&self, kind: &str, params: &serde_json::Value) -> String {
-        // valuesパラメータがある場合（例: ENUM('a', 'b', 'c') または SET('a', 'b', 'c')）
-        if let Some(values) = params.get("values").and_then(|v| v.as_array()) {
-            let values_str = values
-                .iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| format!("'{}'", s))
-                .collect::<Vec<_>>()
-                .join(", ");
-            return format!("{}({})", kind, values_str);
-        }
-
-        // lengthパラメータがある場合（例: VARCHAR(255)）
-        if let Some(length) = params.get("length").and_then(|v| v.as_u64()) {
-            return format!("{}({})", kind, length);
-        }
-
-        // unsignedパラメータがtrueの場合（例: TINYINT UNSIGNED）
-        if params
-            .get("unsigned")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
-            return format!("{} UNSIGNED", kind);
-        }
-
-        // パラメータなし、またはnullの場合はkindをそのまま出力
-        kind.to_string()
+    /// TypeMappingServiceに委譲して型変換を行います。
+    fn map_column_type(&self, column_type: &ColumnType, auto_increment: Option<bool>) -> String {
+        let service = TypeMappingService::new(Dialect::MySQL);
+        service.to_sql_type_with_auto_increment(column_type, auto_increment)
     }
 
     /// 制約定義のSQL文字列を生成
