@@ -7,8 +7,8 @@ pub mod postgres;
 pub mod sqlite;
 pub mod sqlite_table_recreator;
 
-use crate::core::schema::{ColumnType, Index, Table};
-use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
+use crate::core::schema::{Column, ColumnType, EnumDefinition, Index, Table};
+use crate::core::schema_diff::{ColumnDiff, EnumDiff, RenamedColumn};
 
 /// マイグレーション方向
 ///
@@ -78,6 +78,47 @@ pub trait SqlGenerator {
     ///
     /// CREATE INDEX文のSQL文字列
     fn generate_create_index(&self, table: &Table, index: &Index) -> String;
+
+    /// ALTER TABLE ADD COLUMN文を生成
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - テーブル名
+    /// * `column` - 追加するカラム
+    ///
+    /// # Returns
+    ///
+    /// ALTER TABLE ADD COLUMN文のSQL文字列
+    fn generate_add_column(&self, table_name: &str, column: &Column) -> String;
+
+    /// ALTER TABLE DROP COLUMN文を生成
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - テーブル名
+    /// * `column_name` - 削除するカラム名
+    fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
+        format!("ALTER TABLE {} DROP COLUMN {}", table_name, column_name)
+    }
+
+    /// DROP TABLE文を生成
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - テーブル名
+    fn generate_drop_table(&self, table_name: &str) -> String {
+        format!("DROP TABLE {}", table_name)
+    }
+
+    /// DROP INDEX文を生成
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - テーブル名（MySQL向け）
+    /// * `index` - インデックス定義
+    fn generate_drop_index(&self, _table_name: &str, index: &Index) -> String {
+        format!("DROP INDEX {}", index.name)
+    }
 
     /// ALTER TABLE文（制約追加）を生成
     ///
@@ -161,6 +202,26 @@ pub trait SqlGenerator {
         // 各方言の実装でオーバーライド
         Vec::new()
     }
+
+    /// ENUM型の作成（PostgreSQL専用）
+    fn generate_create_enum_type(&self, _enum_def: &EnumDefinition) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// ENUM値追加（PostgreSQL専用）
+    fn generate_add_enum_value(&self, _enum_name: &str, _value: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// ENUM再作成（PostgreSQL専用）
+    fn generate_recreate_enum_type(&self, _enum_diff: &EnumDiff) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// ENUM削除（PostgreSQL専用）
+    fn generate_drop_enum_type(&self, _enum_name: &str) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 #[cfg(test)]
@@ -178,6 +239,10 @@ mod tests {
         }
 
         fn generate_create_index(&self, _table: &Table, _index: &Index) -> String {
+            String::new()
+        }
+
+        fn generate_add_column(&self, _table_name: &str, _column: &Column) -> String {
             String::new()
         }
 

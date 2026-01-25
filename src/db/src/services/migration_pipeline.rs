@@ -7,11 +7,10 @@ use crate::adapters::sql_generator::mysql::MysqlSqlGenerator;
 use crate::adapters::sql_generator::postgres::PostgresSqlGenerator;
 use crate::adapters::sql_generator::sqlite::SqliteSqlGenerator;
 use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
-use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::error::ValidationResult;
 use crate::core::schema::Schema;
-use crate::core::schema_diff::{ColumnChange, EnumChangeKind, EnumDiff, SchemaDiff};
+use crate::core::schema_diff::{ColumnChange, EnumChangeKind, SchemaDiff};
 use crate::services::type_change_validator::TypeChangeValidator;
 
 /// パイプラインステージでのエラー
@@ -107,7 +106,7 @@ impl<'a> MigrationPipeline<'a> {
 
         // ステージ2: enum_statements - ENUM作成/変更（PostgreSQL）
         if matches!(self.dialect, Dialect::PostgreSQL) {
-            let enum_stmts = self.stage_enum_pre_table()?;
+            let enum_stmts = self.stage_enum_pre_table(&*generator)?;
             statements.extend(enum_stmts);
         }
 
@@ -125,12 +124,12 @@ impl<'a> MigrationPipeline<'a> {
 
         // ENUM post-table statements (PostgreSQL recreate)
         if matches!(self.dialect, Dialect::PostgreSQL) {
-            let enum_post_stmts = self.stage_enum_post_table()?;
+            let enum_post_stmts = self.stage_enum_post_table(&*generator)?;
             statements.extend(enum_post_stmts);
         }
 
         // ステージ6: cleanup_statements - DROP TABLE/TYPE
-        let cleanup_stmts = self.stage_cleanup_statements()?;
+        let cleanup_stmts = self.stage_cleanup_statements(&*generator)?;
         statements.extend(cleanup_stmts);
 
         // ステージ7: finalize - SQL結合
@@ -160,16 +159,16 @@ impl<'a> MigrationPipeline<'a> {
                 })?;
 
         for table in sorted_tables.iter().rev() {
-            statements.push(format!("DROP TABLE {}", table.name));
+            statements.push(generator.generate_drop_table(&table.name));
         }
 
         // 変更されたテーブルの処理（逆操作）
         for table_diff in &self.diff.modified_tables {
             // 追加されたカラムを削除
             for column in &table_diff.added_columns {
-                statements.push(format!(
-                    "ALTER TABLE {} DROP COLUMN {}",
-                    table_diff.table_name, column.name
+                statements.push(generator.generate_drop_column(
+                    &table_diff.table_name,
+                    &column.name,
                 ));
             }
 
@@ -233,7 +232,7 @@ impl<'a> MigrationPipeline<'a> {
 
             // 追加されたインデックスを削除
             for index in &table_diff.added_indexes {
-                statements.push(format!("DROP INDEX {}", index.name));
+                statements.push(generator.generate_drop_index(&table_diff.table_name, index));
             }
         }
 
@@ -281,7 +280,10 @@ impl<'a> MigrationPipeline<'a> {
     }
 
     /// ステージ2: enum_statements (pre-table) - ENUM作成/変更
-    fn stage_enum_pre_table(&self) -> Result<Vec<String>, PipelineStageError> {
+    fn stage_enum_pre_table(
+        &self,
+        generator: &dyn SqlGenerator,
+    ) -> Result<Vec<String>, PipelineStageError> {
         let mut statements = Vec::new();
 
         // ENUM再作成の許可チェック
@@ -301,21 +303,16 @@ impl<'a> MigrationPipeline<'a> {
 
         // 新規ENUM作成
         for enum_def in &self.diff.added_enums {
-            let values = self.format_enum_values(&enum_def.values);
-            statements.push(format!(
-                "CREATE TYPE {} AS ENUM ({})",
-                enum_def.name, values
-            ));
+            statements.extend(generator.generate_create_enum_type(enum_def));
         }
 
         // ENUM値追加（AddOnlyの場合）
         for enum_diff in &self.diff.modified_enums {
             if matches!(enum_diff.change_kind, EnumChangeKind::AddOnly) {
                 for value in &enum_diff.added_values {
-                    statements.push(format!(
-                        "ALTER TYPE {} ADD VALUE '{}'",
-                        enum_diff.enum_name,
-                        self.escape_enum_value(value)
+                    statements.extend(generator.generate_add_enum_value(
+                        &enum_diff.enum_name,
+                        value,
                     ));
                 }
             }
@@ -325,12 +322,15 @@ impl<'a> MigrationPipeline<'a> {
     }
 
     /// ステージ: enum_statements (post-table) - ENUM再作成
-    fn stage_enum_post_table(&self) -> Result<Vec<String>, PipelineStageError> {
+    fn stage_enum_post_table(
+        &self,
+        generator: &dyn SqlGenerator,
+    ) -> Result<Vec<String>, PipelineStageError> {
         let mut statements = Vec::new();
 
         for enum_diff in &self.diff.modified_enums {
             if matches!(enum_diff.change_kind, EnumChangeKind::Recreate) {
-                statements.extend(self.generate_enum_recreate_statements(enum_diff));
+                statements.extend(generator.generate_recreate_enum_type(enum_diff));
             }
         }
 
@@ -343,8 +343,6 @@ impl<'a> MigrationPipeline<'a> {
         generator: &dyn SqlGenerator,
     ) -> Result<Vec<String>, PipelineStageError> {
         let mut statements = Vec::new();
-        let type_mapping = TypeMappingService::new(self.dialect);
-
         // 外部キー依存関係を考慮してテーブルをソート
         let sorted_tables =
             self.diff
@@ -383,13 +381,7 @@ impl<'a> MigrationPipeline<'a> {
         for table_diff in &self.diff.modified_tables {
             // カラムの追加
             for column in &table_diff.added_columns {
-                statements.push(format!(
-                    "ALTER TABLE {} ADD COLUMN {} {} {}",
-                    table_diff.table_name,
-                    column.name,
-                    type_mapping.to_sql_type(&column.column_type),
-                    if column.nullable { "" } else { "NOT NULL" }
-                ));
+                statements.push(generator.generate_add_column(&table_diff.table_name, column));
             }
 
             // リネームカラムの処理（Up方向: リネーム → 型変更の順序）
@@ -475,18 +467,21 @@ impl<'a> MigrationPipeline<'a> {
     }
 
     /// ステージ6: cleanup_statements - DROP TABLE/TYPE
-    fn stage_cleanup_statements(&self) -> Result<Vec<String>, PipelineStageError> {
+    fn stage_cleanup_statements(
+        &self,
+        generator: &dyn SqlGenerator,
+    ) -> Result<Vec<String>, PipelineStageError> {
         let mut statements = Vec::new();
 
         // 削除されたテーブルのDROP TABLE文を生成
         for table_name in &self.diff.removed_tables {
-            statements.push(format!("DROP TABLE {}", table_name));
+            statements.push(generator.generate_drop_table(table_name));
         }
 
         // ENUM削除（PostgreSQL）
         if matches!(self.dialect, Dialect::PostgreSQL) {
             for enum_name in &self.diff.removed_enums {
-                statements.push(format!("DROP TYPE {}", enum_name));
+                statements.extend(generator.generate_drop_enum_type(enum_name));
             }
         }
 
@@ -517,50 +512,6 @@ impl<'a> MigrationPipeline<'a> {
             .any(|change| matches!(change, ColumnChange::TypeChanged { .. }))
     }
 
-    /// ENUM値をフォーマット
-    fn format_enum_values(&self, values: &[String]) -> String {
-        values
-            .iter()
-            .map(|value| format!("'{}'", self.escape_enum_value(value)))
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
-    /// ENUM値をエスケープ
-    fn escape_enum_value(&self, value: &str) -> String {
-        value.replace('\'', "''")
-    }
-
-    /// ENUM再作成ステートメントを生成
-    fn generate_enum_recreate_statements(&self, enum_diff: &EnumDiff) -> Vec<String> {
-        let old_name = format!("{}_old", enum_diff.enum_name);
-        let values = self.format_enum_values(&enum_diff.new_values);
-        let mut statements = Vec::new();
-
-        statements.push(format!(
-            "ALTER TYPE {} RENAME TO {}",
-            enum_diff.enum_name, old_name
-        ));
-        statements.push(format!(
-            "CREATE TYPE {} AS ENUM ({})",
-            enum_diff.enum_name, values
-        ));
-
-        for column in &enum_diff.columns {
-            statements.push(format!(
-                "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::text::{}",
-                column.table_name,
-                column.column_name,
-                enum_diff.enum_name,
-                column.column_name,
-                enum_diff.enum_name
-            ));
-        }
-
-        statements.push(format!("DROP TYPE {}", old_name));
-
-        statements
-    }
 }
 
 #[cfg(test)]

@@ -122,6 +122,26 @@ impl MysqlSqlGenerator {
 }
 
 impl SqlGenerator for MysqlSqlGenerator {
+    fn generate_add_column(&self, table_name: &str, column: &Column) -> String {
+        format!(
+            "ALTER TABLE {} ADD COLUMN {}",
+            table_name,
+            self.generate_column_definition(column)
+        )
+    }
+
+    fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
+        format!("ALTER TABLE {} DROP COLUMN {}", table_name, column_name)
+    }
+
+    fn generate_drop_table(&self, table_name: &str) -> String {
+        format!("DROP TABLE {}", table_name)
+    }
+
+    fn generate_drop_index(&self, table_name: &str, index: &Index) -> String {
+        format!("DROP INDEX {} ON {}", index.name, table_name)
+    }
+
     fn generate_alter_column_type(
         &self,
         table: &Table,

@@ -7,7 +7,6 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 /// データベース方言
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,15 +96,6 @@ impl Config {
         }
 
         Ok(())
-    }
-}
-
-/// std::str::FromStrトレイトの実装
-impl FromStr for Config {
-    type Err = anyhow::Error;
-
-    fn from_str(yaml: &str) -> Result<Self, Self::Err> {
-        serde_saphyr::from_str(yaml).with_context(|| "Failed to parse config file")
     }
 }
 

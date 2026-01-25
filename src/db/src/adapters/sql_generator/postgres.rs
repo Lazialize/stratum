@@ -5,8 +5,8 @@
 use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
-use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
-use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
+use crate::core::schema::{Column, ColumnType, Constraint, EnumDefinition, Index, Table};
+use crate::core::schema_diff::{ColumnDiff, EnumDiff, RenamedColumn};
 use crate::core::type_category::TypeCategory;
 
 /// PostgreSQL用SQLジェネレーター
@@ -77,6 +77,20 @@ impl PostgresSqlGenerator {
         !matches!(constraint, Constraint::FOREIGN_KEY { .. })
     }
 
+    /// ENUM値をフォーマット
+    fn format_enum_values(&self, values: &[String]) -> String {
+        values
+            .iter()
+            .map(|value| format!("'{}'", self.escape_enum_value(value)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// ENUM値をエスケープ
+    fn escape_enum_value(&self, value: &str) -> String {
+        value.replace('\'', "''")
+    }
+
     /// USING句が必要かどうかを判定
     ///
     /// TypeCategoryベースでUSING句の自動生成を判定します。
@@ -128,6 +142,72 @@ impl PostgresSqlGenerator {
 }
 
 impl SqlGenerator for PostgresSqlGenerator {
+    fn generate_add_column(&self, table_name: &str, column: &Column) -> String {
+        format!(
+            "ALTER TABLE {} ADD COLUMN {}",
+            table_name,
+            self.generate_column_definition(column)
+        )
+    }
+
+    fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
+        format!("ALTER TABLE {} DROP COLUMN {}", table_name, column_name)
+    }
+
+    fn generate_drop_table(&self, table_name: &str) -> String {
+        format!("DROP TABLE {}", table_name)
+    }
+
+    fn generate_drop_index(&self, _table_name: &str, index: &Index) -> String {
+        format!("DROP INDEX {}", index.name)
+    }
+
+    fn generate_create_enum_type(&self, enum_def: &EnumDefinition) -> Vec<String> {
+        let values = self.format_enum_values(&enum_def.values);
+        vec![format!("CREATE TYPE {} AS ENUM ({})", enum_def.name, values)]
+    }
+
+    fn generate_add_enum_value(&self, enum_name: &str, value: &str) -> Vec<String> {
+        vec![format!(
+            "ALTER TYPE {} ADD VALUE '{}'",
+            enum_name,
+            self.escape_enum_value(value)
+        )]
+    }
+
+    fn generate_recreate_enum_type(&self, enum_diff: &EnumDiff) -> Vec<String> {
+        let old_name = format!("{}_old", enum_diff.enum_name);
+        let values = self.format_enum_values(&enum_diff.new_values);
+        let mut statements = Vec::new();
+
+        statements.push(format!(
+            "ALTER TYPE {} RENAME TO {}",
+            enum_diff.enum_name, old_name
+        ));
+        statements.push(format!(
+            "CREATE TYPE {} AS ENUM ({})",
+            enum_diff.enum_name, values
+        ));
+
+        for column in &enum_diff.columns {
+            statements.push(format!(
+                "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::text::{}",
+                column.table_name,
+                column.column_name,
+                enum_diff.enum_name,
+                column.column_name,
+                enum_diff.enum_name
+            ));
+        }
+
+        statements.push(format!("DROP TYPE {}", old_name));
+        statements
+    }
+
+    fn generate_drop_enum_type(&self, enum_name: &str) -> Vec<String> {
+        vec![format!("DROP TYPE {}", enum_name)]
+    }
+
     fn generate_alter_column_type(
         &self,
         table: &Table,

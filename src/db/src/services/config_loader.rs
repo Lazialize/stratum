@@ -4,6 +4,7 @@
 
 use crate::core::config::Config;
 use anyhow::{Context, Result};
+use serde_saphyr;
 use std::path::Path;
 
 /// 設定ファイル読み込みサービス
@@ -15,7 +16,7 @@ impl ConfigLoader {
     pub fn from_file(path: &Path) -> Result<Config> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {:?}", path))?;
-        content.parse()
+        serde_saphyr::from_str(&content).with_context(|| "Failed to parse config file")
     }
 
     /// デフォルトパスから設定を読み込む

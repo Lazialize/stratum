@@ -84,6 +84,22 @@ impl SqliteSqlGenerator {
 }
 
 impl SqlGenerator for SqliteSqlGenerator {
+    fn generate_add_column(&self, table_name: &str, column: &Column) -> String {
+        format!(
+            "ALTER TABLE {} ADD COLUMN {}",
+            table_name,
+            self.generate_column_definition(column)
+        )
+    }
+
+    fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
+        format!("ALTER TABLE {} DROP COLUMN {}", table_name, column_name)
+    }
+
+    fn generate_drop_table(&self, table_name: &str) -> String {
+        format!("DROP TABLE {}", table_name)
+    }
+
     fn generate_create_table(&self, table: &Table) -> String {
         let mut parts = Vec::new();
 
