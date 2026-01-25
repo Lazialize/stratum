@@ -5,41 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0-nightly-20260125.1341] - 2026-01-25
 
-### 変更
-- ルートを仮想ワークスペース化し、`src/cli`・`src/core`・`src/db` に再配置
-- `strata-core` / `strata-db` へクレート名を統一
+### Initial Release
 
-### Added
-- Initial release of Strata - Database Schema Management CLI
-- Schema definition in declarative YAML format
-- Automatic migration generation from schema changes
-- Multi-database support (PostgreSQL, MySQL, SQLite)
-- Complete CLI with 7 commands:
-  - `init` - Initialize new schema management project
-  - `generate` - Generate migration files from schema changes
-  - `apply` - Apply pending migrations to database
-  - `rollback` - Rollback applied migrations
-  - `validate` - Validate schema definitions
-  - `status` - Show migration status
-  - `export` - Export existing database schema to code
-- Test-Driven Development with comprehensive test coverage (84 tests)
-- Database integration tests with testcontainers
-- Cross-compilation support for Linux, macOS, and Windows
-- Automated release build scripts
-- Detailed documentation (README.md, BUILDING.md)
+First release of Strata - Database Schema Management CLI Tool
 
-### Core Features
+### Features
+
+#### Project Structure
+- Reorganized root as virtual workspace with `src/cli`, `src/core`, and `src/db`
+- Unified crate names to `strata-core` and `strata-db`
+- Improved maintainability through modular design
 
 #### Schema Management
-- YAML-based schema definitions with version control
+- Schema definition in declarative YAML format
 - Support for tables, columns, indexes, and constraints
 - Schema validation with referential integrity checks
 - Checksum-based migration integrity verification
+- Version control integration
 
 #### Migration System
-- Automatic migration file generation (up/down SQL)
+- Automatic migration file generation from schema changes
+- Automatic generation of up/down SQL
 - Timestamp-based migration versioning
 - Transaction-based migration application
 - Rollback support with down migrations
@@ -48,30 +36,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### SQL Generation
 - PostgreSQL SQL generator with full type support
 - MySQL SQL generator with dialect-specific features
-- SQLite SQL generator with limitation handling
+- SQLite SQL generator with proper limitation handling
 - Schema diff detection for migration generation
 
 #### Database Support
-- PostgreSQL (tested with PostgreSQL 16)
-- MySQL (tested with MySQL 8.0+)
-- SQLite (tested with SQLite 3.x)
+- PostgreSQL 12+ (tested with PostgreSQL 16)
+- MySQL 8.0+
+- SQLite 3.x
 - Unified database interface with SQLx
 
-### Documentation
+#### CLI Commands
+- `init` - Initialize new schema management project
+- `generate` - Generate migration files from schema changes
+- `apply` - Apply pending migrations to database
+- `rollback` - Rollback applied migrations
+- `validate` - Validate schema definitions
+- `status` - Show migration status
+- `export` - Export existing database schema to code
+
+#### Documentation
 - Comprehensive README with quick start guide
 - Detailed build instructions (BUILDING.md)
 - CLI help text with usage examples
 - Configuration file documentation
 - Troubleshooting guide
+- Dialect-specific types documentation
 
-### Development
+#### Testing
 - Test coverage: 84 passing tests
 - Unit tests for all core components
 - Integration tests with SQLite
 - Docker-based integration tests for PostgreSQL
-- Continuous integration ready
+- CI/CD ready
 
-### Build & Release
+#### Build & Release
 - Optimized release profile (LTO, strip, opt-level=3)
 - Binary size: ~571KB (aarch64-apple-darwin)
 - Cross-compilation configuration for:
@@ -80,27 +78,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Windows (MinGW, MSVC)
 - Universal binary support for macOS
 - Automated release build script
+- Easy setup with installation script
 
-## [0.1.0] - 2026-01-22
+### Implementation Components
 
-### Initial Development
-
-This is the first development version of Strata, implementing the core schema management functionality.
-
-#### Implemented Components
-
-**CLI Layer**
+#### CLI Layer
 - Command-line argument parsing with clap
 - Global options (--config, --verbose, --no-color)
 - Seven subcommands with detailed help text
 
-**Domain Models**
+#### Domain Models
 - Schema, Table, Column, Index, Constraint types
 - Migration and MigrationStatus types
 - Custom error types with thiserror
 - Serde serialization/deserialization
 
-**Services**
+#### Services
 - SchemaParserService - YAML schema parsing
 - SchemaValidatorService - Schema validation
 - SchemaChecksumService - SHA-256 checksum calculation
@@ -109,12 +102,12 @@ This is the first development version of Strata, implementing the core schema ma
 - DatabaseConnectionService - Database connection management
 - DatabaseMigratorService - Migration execution
 
-**SQL Generators**
+#### SQL Generators
 - PostgresSqlGenerator - PostgreSQL DDL generation
 - MysqlSqlGenerator - MySQL DDL generation
 - SqliteSqlGenerator - SQLite DDL generation
 
-**Command Handlers**
+#### Command Handlers
 - InitCommandHandler - Project initialization
 - GenerateCommandHandler - Migration generation
 - ApplyCommandHandler - Migration application
@@ -122,12 +115,6 @@ This is the first development version of Strata, implementing the core schema ma
 - ValidateCommandHandler - Schema validation
 - StatusCommandHandler - Migration status display
 - ExportCommandHandler - Schema export
-
-**Tests**
-- 84 unit and integration tests
-- Test coverage across all layers
-- Mock-free integration tests with SQLite
-- Docker-based PostgreSQL tests (optional)
 
 #### Dependencies
 
@@ -212,5 +199,4 @@ at your option.
 - YAML parsing with [serde-saphyr](https://github.com/Ethiraric/saphyr)
 - Testing with [testcontainers-rs](https://github.com/testcontainers/testcontainers-rs)
 
-[Unreleased]: https://github.com/Lazialize/strata/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Lazialize/strata/releases/tag/v0.1.0
+[0.1.0-nightly-20260125.1341]: https://github.com/Lazialize/strata/releases/tag/v0.1.0-nightly-20260125.1341
