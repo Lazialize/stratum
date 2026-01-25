@@ -297,13 +297,6 @@ pub enum ColumnType {
 }
 
 impl ColumnType {
-    /// SQL型文字列に変換（TypeMappingServiceに委譲）
-    ///
-    /// 後方互換性のため維持するが、内部は TypeMappingService を使用
-    pub fn to_sql_type(&self, dialect: &crate::core::config::Dialect) -> String {
-        use crate::adapters::type_mapping::TypeMappingService;
-        TypeMappingService::new(*dialect).to_sql_type(self)
-    }
 }
 
 /// インデックス定義
@@ -452,113 +445,6 @@ mod tests {
             referenced_columns: vec!["id".to_string()],
         };
         assert_eq!(fk.kind(), "FOREIGN_KEY");
-    }
-
-    // 新規データ型のテスト
-    #[test]
-    fn test_decimal_type() {
-        use crate::core::config::Dialect;
-
-        let col_type = ColumnType::DECIMAL {
-            precision: 10,
-            scale: 2,
-        };
-        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "NUMERIC(10, 2)");
-        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "DECIMAL(10, 2)");
-        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
-    }
-
-    #[test]
-    fn test_float_type() {
-        use crate::core::config::Dialect;
-
-        let col_type = ColumnType::FLOAT;
-        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "REAL");
-        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "FLOAT");
-        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "REAL");
-    }
-
-    #[test]
-    fn test_double_type() {
-        use crate::core::config::Dialect;
-
-        let col_type = ColumnType::DOUBLE;
-        assert_eq!(
-            col_type.to_sql_type(&Dialect::PostgreSQL),
-            "DOUBLE PRECISION"
-        );
-        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "DOUBLE");
-        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "REAL");
-    }
-
-    #[test]
-    fn test_char_type() {
-        use crate::core::config::Dialect;
-
-        let col_type = ColumnType::CHAR { length: 10 };
-        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "CHAR(10)");
-        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "CHAR(10)");
-        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
-    }
-
-    #[test]
-    fn test_date_type() {
-        use crate::core::config::Dialect;
-
-        let col_type = ColumnType::DATE;
-        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "DATE");
-        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "DATE");
-        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
-    }
-
-    #[test]
-    fn test_time_type() {
-        use crate::core::config::Dialect;
-
-        let col_type = ColumnType::TIME {
-            with_time_zone: Some(false),
-        };
-        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "TIME");
-        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "TIME");
-        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
-
-        let col_type_tz = ColumnType::TIME {
-            with_time_zone: Some(true),
-        };
-        assert_eq!(
-            col_type_tz.to_sql_type(&Dialect::PostgreSQL),
-            "TIME WITH TIME ZONE"
-        );
-    }
-
-    #[test]
-    fn test_blob_type() {
-        use crate::core::config::Dialect;
-
-        let col_type = ColumnType::BLOB;
-        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "BYTEA");
-        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "BLOB");
-        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "BLOB");
-    }
-
-    #[test]
-    fn test_uuid_type() {
-        use crate::core::config::Dialect;
-
-        let col_type = ColumnType::UUID;
-        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "UUID");
-        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "CHAR(36)");
-        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
-    }
-
-    #[test]
-    fn test_jsonb_type() {
-        use crate::core::config::Dialect;
-
-        let col_type = ColumnType::JSONB;
-        assert_eq!(col_type.to_sql_type(&Dialect::PostgreSQL), "JSONB");
-        assert_eq!(col_type.to_sql_type(&Dialect::MySQL), "JSON");
-        assert_eq!(col_type.to_sql_type(&Dialect::SQLite), "TEXT");
     }
 
     #[test]

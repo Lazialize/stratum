@@ -9,8 +9,9 @@
 
 use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
+use crate::cli::command_context::CommandContext;
 use crate::cli::commands::split_sql_statements;
-use crate::core::config::{Config, Dialect};
+use crate::core::config::Dialect;
 use crate::core::migration::{AppliedMigration, Migration};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
@@ -51,19 +52,11 @@ impl ApplyCommandHandler {
     /// 成功時は適用されたマイグレーションの概要、失敗時はエラーメッセージ
     pub async fn execute(&self, command: &ApplyCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
-        if !config_path.exists() {
-            return Err(anyhow!(
-                "Config file not found: {:?}. Please initialize the project first with the `init` command.",
-                config_path
-            ));
-        }
-
-        let config =
-            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
+        let context = CommandContext::load(command.project_path.clone())?;
+        let config = &context.config;
 
         // マイグレーションディレクトリのパスを解決
-        let migrations_dir = command.project_path.join(&config.migrations_dir);
+        let migrations_dir = context.migrations_dir();
         if !migrations_dir.exists() {
             return Err(anyhow!(
                 "Migrations directory not found: {:?}",

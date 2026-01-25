@@ -7,7 +7,8 @@ mod init_command_tests {
     use std::fs;
     use std::path::PathBuf;
     use strata::cli::commands::init::{ConfigFileParams, InitCommand, InitCommandHandler};
-    use strata::core::config::{Config, Dialect};
+    use strata::core::config::Dialect;
+    use strata::services::config_loader::ConfigLoader;
     use tempfile::TempDir;
 
     /// コマンドハンドラーの作成テスト
@@ -253,7 +254,7 @@ mod init_command_tests {
         assert!(config_path.exists());
 
         // 設定ファイルが正しくパースできるか
-        let config = Config::from_file(&config_path).unwrap();
+        let config = ConfigLoader::from_file(&config_path).unwrap();
         assert_eq!(config.dialect, Dialect::PostgreSQL);
         assert_eq!(config.schema_dir, PathBuf::from("schema"));
         assert_eq!(config.migrations_dir, PathBuf::from("migrations"));
@@ -280,7 +281,7 @@ mod init_command_tests {
         handler.generate_config_file(project_path, params).unwrap();
 
         let config_path = project_path.join(".strata.yaml");
-        let config = Config::from_file(&config_path).unwrap();
+        let config = ConfigLoader::from_file(&config_path).unwrap();
 
         // バリデーションが通ることを確認
         assert!(config.validate().is_ok());
@@ -309,7 +310,7 @@ mod init_command_tests {
 
         // schema_dirとmigrations_dirが相対パスであることを確認
         let config_path = project_path.join(".strata.yaml");
-        let config = Config::from_file(&config_path).unwrap();
+        let config = ConfigLoader::from_file(&config_path).unwrap();
         assert!(config.schema_dir.is_relative());
         assert!(config.migrations_dir.is_relative());
     }

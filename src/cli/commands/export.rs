@@ -8,11 +8,12 @@
 
 use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_introspector::{create_introspector, DatabaseIntrospector};
-use crate::core::config::{Config, Dialect};
+use crate::cli::command_context::CommandContext;
+use crate::core::config::Dialect;
 use crate::core::schema::Schema;
 use crate::services::schema_conversion::{RawTableInfo, SchemaConversionService};
 use crate::services::schema_serializer::SchemaSerializerService;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use sqlx::AnyPool;
 use std::collections::HashSet;
 use std::fs;
@@ -53,16 +54,8 @@ impl ExportCommandHandler {
     /// 成功時はエクスポート結果のサマリー（または標準出力用のYAML）、失敗時はエラーメッセージ
     pub async fn execute(&self, command: &ExportCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
-        if !config_path.exists() {
-            return Err(anyhow!(
-                "Config file not found: {:?}. Please initialize the project first with the `init` command.",
-                config_path
-            ));
-        }
-
-        let config =
-            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
+        let context = CommandContext::load(command.project_path.clone())?;
+        let config = &context.config;
 
         // データベースに接続
         let db_config = config

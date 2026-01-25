@@ -6,6 +6,7 @@
 // - 差分検出とマイグレーションファイル生成
 // - 生成されたファイルパスの表示
 
+use crate::cli::command_context::CommandContext;
 use crate::core::config::Config;
 use crate::core::schema::Schema;
 use crate::services::migration_generator::MigrationGenerator;
@@ -68,19 +69,11 @@ impl GenerateCommandHandler {
     /// 成功時は生成されたマイグレーションディレクトリのパス、失敗時はエラーメッセージ
     pub fn execute(&self, command: &GenerateCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
-        if !config_path.exists() {
-            return Err(anyhow!(
-                "Config file not found: {:?}. Please initialize the project first with the `init` command.",
-                config_path
-            ));
-        }
-
-        let config =
-            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
+        let context = CommandContext::load(command.project_path.clone())?;
+        let config = &context.config;
 
         // スキーマディレクトリのパスを解決
-        let schema_dir = command.project_path.join(&config.schema_dir);
+        let schema_dir = context.schema_dir();
         if !schema_dir.exists() {
             return Err(anyhow!("Schema directory not found: {:?}", schema_dir));
         }

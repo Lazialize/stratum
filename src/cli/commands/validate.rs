@@ -6,7 +6,7 @@
 // - エラーと警告のフォーマットされた表示
 // - 検証結果のサマリー表示
 
-use crate::core::config::Config;
+use crate::cli::command_context::CommandContext;
 use crate::services::schema_parser::SchemaParserService;
 use crate::services::schema_validator::SchemaValidatorService;
 use anyhow::{anyhow, Context, Result};
@@ -54,22 +54,14 @@ impl ValidateCommandHandler {
     /// 成功時は検証結果のサマリー、失敗時はエラーメッセージ
     pub fn execute(&self, command: &ValidateCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let config_path = command.project_path.join(Config::DEFAULT_CONFIG_PATH);
-        if !config_path.exists() {
-            return Err(anyhow!(
-                "Config file not found: {:?}. Please initialize the project first with the `init` command.",
-                config_path
-            ));
-        }
-
-        let config =
-            Config::from_file(&config_path).with_context(|| "Failed to read config file")?;
+        let context = CommandContext::load(command.project_path.clone())?;
+        let config = &context.config;
 
         // スキーマディレクトリのパスを解決
         let schema_dir = if let Some(ref custom_dir) = command.schema_dir {
             custom_dir.clone()
         } else {
-            command.project_path.join(&config.schema_dir)
+            context.schema_dir()
         };
 
         if !schema_dir.exists() {

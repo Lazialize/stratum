@@ -7,6 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 use strata::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
 use strata::core::config::{Config, DatabaseConfig, Dialect};
+use strata::services::config_loader::ConfigLoader;
 use tempfile::TempDir;
 
 /// テスト用のConfig作成ヘルパー
@@ -208,7 +209,7 @@ async fn test_rollback_single_migration_sqlite() {
     use strata::adapters::database::DatabaseConnectionService;
     use strata::adapters::database_migrator::DatabaseMigratorService;
 
-    let config = Config::from_file(&project_path.join(Config::DEFAULT_CONFIG_PATH)).unwrap();
+    let config = ConfigLoader::from_file(&project_path.join(Config::DEFAULT_CONFIG_PATH)).unwrap();
     let db_config = config.get_database_config("development").unwrap();
 
     let db_service = DatabaseConnectionService::new();

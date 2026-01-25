@@ -7,6 +7,7 @@ use crate::adapters::sql_generator::mysql::MysqlSqlGenerator;
 use crate::adapters::sql_generator::postgres::PostgresSqlGenerator;
 use crate::adapters::sql_generator::sqlite::SqliteSqlGenerator;
 use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
+use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::error::ValidationResult;
 use crate::core::schema::Schema;
@@ -342,6 +343,7 @@ impl<'a> MigrationPipeline<'a> {
         generator: &dyn SqlGenerator,
     ) -> Result<Vec<String>, PipelineStageError> {
         let mut statements = Vec::new();
+        let type_mapping = TypeMappingService::new(self.dialect);
 
         // 外部キー依存関係を考慮してテーブルをソート
         let sorted_tables =
@@ -385,7 +387,7 @@ impl<'a> MigrationPipeline<'a> {
                     "ALTER TABLE {} ADD COLUMN {} {} {}",
                     table_diff.table_name,
                     column.name,
-                    column.column_type.to_sql_type(&self.dialect),
+                    type_mapping.to_sql_type(&column.column_type),
                     if column.nullable { "" } else { "NOT NULL" }
                 ));
             }

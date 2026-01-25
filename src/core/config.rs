@@ -64,20 +64,6 @@ impl Config {
     /// デフォルトの設定ファイルパス
     pub const DEFAULT_CONFIG_PATH: &'static str = crate::core::naming::CONFIG_FILE;
 
-    /// YAMLファイルから設定を読み込む
-    pub fn from_file(path: &std::path::Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read config file: {:?}", path))?;
-
-        content.parse()
-    }
-
-    /// デフォルトパスから設定を読み込む
-    pub fn load_default() -> Result<Self> {
-        let path = std::path::Path::new(Self::DEFAULT_CONFIG_PATH);
-        Self::from_file(path)
-    }
-
     /// 指定された環境のデータベース設定を取得
     pub fn get_database_config(&self, environment: &str) -> Result<DatabaseConfig> {
         self.environments.get(environment).cloned().ok_or_else(|| {

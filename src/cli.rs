@@ -2,6 +2,7 @@
 // ユーザー入力の受付とコマンドルーティング
 
 pub mod commands;
+pub mod command_context;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;

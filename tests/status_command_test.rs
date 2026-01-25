@@ -7,6 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 use strata::cli::commands::status::{StatusCommand, StatusCommandHandler};
 use strata::core::config::{Config, DatabaseConfig, Dialect};
+use strata::services::config_loader::ConfigLoader;
 use tempfile::TempDir;
 
 /// テスト用のConfig作成ヘルパー
@@ -238,7 +239,8 @@ async fn test_status_with_applied_migrations() {
     use strata::adapters::database::DatabaseConnectionService;
     use strata::adapters::database_migrator::DatabaseMigratorService;
 
-    let config_loaded = Config::from_file(&project_path.join(Config::DEFAULT_CONFIG_PATH)).unwrap();
+    let config_loaded =
+        ConfigLoader::from_file(&project_path.join(Config::DEFAULT_CONFIG_PATH)).unwrap();
     let db_config = config_loaded.get_database_config("development").unwrap();
 
     let db_service = DatabaseConnectionService::new();
