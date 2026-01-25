@@ -4,7 +4,7 @@ set -e
 # Strata Installation Script
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | bash
-#   VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | VERSION=v1.0.0 bash
 
 # Configuration
 REPO="Lazialize/strata"

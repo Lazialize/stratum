@@ -30,10 +30,10 @@ The easiest way to install Strata. Automatically downloads and installs the late
 curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | bash
 
 # Install a specific version
-VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | VERSION=v1.0.0 bash
 
 # Specify custom installation directory
-INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | INSTALL_DIR=/usr/local/bin bash
 ```
 
 ### From Source
