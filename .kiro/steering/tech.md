@@ -147,27 +147,18 @@ cargo test             # Run all tests
 
 ```
 src/
-├── lib.rs              # Public API surface
-├── main.rs             # CLI entry point
-├── cli/                # Command layer
-│   └── commands/       # Individual command handlers
-├── core/               # Domain models
-│   ├── schema.rs       # Schema definitions
-│   ├── migration.rs    # Migration models
-│   ├── config.rs       # Configuration
-│   └── error.rs        # Error types
-├── services/           # Business logic
-│   ├── schema_parser.rs
-│   ├── schema_validator.rs
-│   ├── schema_diff_detector.rs
-│   └── migration_generator.rs
-└── adapters/           # External integrations
-    ├── database.rs
-    ├── database_migrator.rs
-    └── sql_generator/  # Dialect-specific generators
-        ├── postgres.rs
-        ├── mysql.rs
-        └── sqlite.rs
+├── cli/                # CLIクレート (strata)
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── main.rs
+│   │   └── cli/         # commands以下に各ハンドラー
+│   └── tests/           # 統合テスト
+├── core/               # ドメインクレート (strata-core)
+│   └── src/core/        # スキーマ/マイグレーション/設定
+└── db/                 # DBクレート (strata-db)
+    └── src/
+        ├── services/    # サービス層
+        └── adapters/    # DB/SQL生成
 ```
 
 ### Naming Conventions

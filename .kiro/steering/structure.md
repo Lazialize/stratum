@@ -6,86 +6,67 @@
 
 ```
 stratum/
-├── src/                    # Source code (lib + binary)
-│   ├── lib.rs             # Library entry point
-│   ├── main.rs            # CLI binary entry point
-│   ├── cli/               # Command layer
-│   ├── core/              # Domain models & logic
-│   ├── services/          # Business logic orchestration
-│   └── adapters/          # External system integration
-├── tests/                  # Integration tests
+├── Cargo.toml              # 仮想ワークスペースのマニフェスト
+├── src/
+│   ├── cli/                # CLIクレート (strata)
+│   │   ├── Cargo.toml
+│   │   ├── src/            # CLI実装 (lib/main/commands)
+│   │   └── tests/          # CLI統合テスト
+│   ├── core/               # ドメインクレート (strata-core)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       └── core/       # ドメインモデル/ロジック
+│   └── db/                 # DBクレート (strata-db)
+│       ├── Cargo.toml
+│       └── src/
+│           ├── adapters/   # 外部連携 (DB/SQL生成)
+│           └── services/   # DB関連サービス
 ├── example/                # Example schema files
-│   └── schema/            # Sample YAML schemas
+│   └── schema/             # Sample YAML schemas
 ├── .kiro/                  # Kiro AI-assisted development
-│   ├── specs/             # Feature specifications (TDD/BDD)
-│   └── steering/          # Project knowledge (this file)
-├── Cargo.toml             # Rust package manifest
-├── README.md              # User-facing documentation
-├── BUILDING.md            # Build instructions
-└── CLAUDE.md              # AI development guidelines
+│   ├── specs/              # Feature specifications (TDD/BDD)
+│   └── steering/           # Project knowledge (this file)
+├── README.md               # User-facing documentation
+├── BUILDING.md             # Build instructions
+└── CLAUDE.md               # AI development guidelines
 ```
 
 ### Module Hierarchy
 
-#### CLI Layer (`src/cli/`)
-- **Purpose**: User interface, command parsing, output formatting
-- **Pattern**: One file per command (e.g., `init.rs`, `generate.rs`, `apply.rs`)
+#### CLIクレート (`src/cli/src/`)
+- **Purpose**: CLIの入出力、コマンド解釈、表示整形
+- **Pattern**: コマンド毎にファイル分割（例: `init.rs`, `generate.rs`, `apply.rs`）
 - **Key files**:
-  - `cli.rs`: CLI app definition with clap
-  - `commands/mod.rs`: Command registry
-  - `commands/{command}.rs`: Individual command handlers (init/generate/apply/validate/status/export/rollback)
+  - `cli.rs`: clapベースのCLI定義
+  - `commands/mod.rs`: コマンド登録
+  - `commands/{command}.rs`: 各コマンドハンドラー
 
-#### Core Domain (`src/core/`)
-- **Purpose**: Business entities, domain logic, validation rules
-- **Pattern**: Pure Rust data structures with serde serialization
+#### Coreクレート (`src/core/src/core/`)
+- **Purpose**: ドメインモデル/ロジック（純粋なRust）
+- **Pattern**: serde対応のデータ構造中心
 - **Key files**:
-  - `schema.rs`: Schema models (`Table`, `Column`, `ColumnType`, `Constraint`)
-  - `migration.rs`: Migration metadata (`Migration`, `MigrationVersion`)
-  - `config.rs`: Configuration models (`.strata.yaml`)
-  - `schema_diff.rs`: Diff representation (`SchemaDiff`, `TableChange`)
-  - `error.rs`: Domain error types (`SchemaError`, `ValidationError`)
-  - `type_category.rs`: Column type categorization
-  - `naming.rs`: Naming rules and helpers
+  - `schema.rs`: スキーマモデル（`Table`, `Column`, `ColumnType`, `Constraint`）
+  - `migration.rs`: マイグレーションモデル
+  - `config.rs`: 設定モデル（`.strata.yaml`）
+  - `schema_diff.rs`: スキーマ差分
+  - `error.rs`: ドメインエラー
 
-#### Services Layer (`src/services/`)
-- **Purpose**: Business logic orchestration, multi-step workflows
-- **Pattern**: Services operate on core models, coordinate adapters
+#### DBクレート (`src/db/src/`)
+- **Purpose**: DB連携とDB関連サービスの集約
+- **Pattern**: adapters/servicesで責務分離
 - **Key files**:
-  - `schema_parser.rs`: YAML → Schema conversion
-  - `schema_validator.rs`: Integrity checks (foreign keys, constraints)
-  - `schema_diff_detector.rs`: Schema comparison logic
-  - `migration_generator.rs`: Migration file generation
-  - `schema_checksum.rs`: SHA-256 checksums for integrity
-  - `schema_serializer.rs`: Schema serialization utilities
-  - `schema_conversion.rs`: Schema format conversion
-  - `migration_pipeline.rs`: End-to-end migration workflow
-  - `type_change_validator.rs`: Column type change safety checks
-  - `dto.rs`: Service layer data transfer objects
-  - `dto_converter.rs`: DTO ↔ domain model conversion
-
-#### Adapters Layer (`src/adapters/`)
-- **Purpose**: External system integration (databases, file system)
-- **Pattern**: Trait-based abstractions for testability
-- **Key files**:
-  - `database.rs`: Database connection management (sqlx pools)
-  - `database_migrator.rs`: Execute migrations against DB
-  - `database_introspector.rs`: Existing schema inspection
-  - `type_mapping.rs`: Dialect type mapping utilities
-  - `sql_generator/`: Dialect-specific SQL generation
-    - `postgres.rs`: PostgreSQL SQL generator
-    - `mysql.rs`: MySQL SQL generator
-    - `sqlite.rs`: SQLite SQL generator
-    - `sqlite_table_recreator.rs`: SQLite table recreation workflow
+  - `adapters/`: SQL生成・DBアクセス
+  - `services/`: マイグレーション/検証などのサービス
 
 ### Testing Structure
 
-#### Integration Tests (`tests/`)
-- **Pattern**: One test file per major feature/component
+#### Integration Tests (`src/cli/tests/`)
+- **Pattern**: 機能単位でファイル分割
 - **Examples**:
-  - `schema_model_test.rs`: Schema serialization/deserialization
-  - `postgres_sql_generator_test.rs`: PostgreSQL SQL generation
-  - `schema_validator_test.rs`: Validation logic
-  - `database_integration_test.rs`: Real database operations (with testcontainers)
+  - `schema_model_test.rs`: スキーマのシリアライズ/デシリアライズ
+  - `postgres_sql_generator_test.rs`: PostgreSQL SQL生成
+  - `schema_validator_test.rs`: バリデーション
+  - `database_integration_test.rs`: 実DBテスト（testcontainers）
 
 #### Unit Tests
 - **Location**: Inline `#[cfg(test)]` modules in source files
@@ -120,10 +101,10 @@ stratum/
 
 ### Internal Imports
 ```rust
-// Prefer absolute paths from crate root
-use crate::core::schema::{Schema, Table, ColumnType};
-use crate::services::schema_validator::SchemaValidatorService;
-use crate::adapters::sql_generator::postgres::PostgresGenerator;
+// クレート境界を明示する
+use strata_core::core::schema::{Schema, Table, ColumnType};
+use strata_db::services::schema_validator::SchemaValidatorService;
+use strata_db::adapters::sql_generator::postgres::PostgresGenerator;
 ```
 
 ### External Imports
@@ -211,5 +192,5 @@ use serde::{Deserialize, Serialize};
 
 ---
 
-updated_at: 2026-01-25  
-change_note: 追加サービス/アダプタ/コアのパターン、CLIコマンド例、`.strata`設定名を反映
+updated_at: 2026-01-26  
+change_note: 仮想ワークスペース構成（src/cli, src/core, src/db）と統合テスト配置の更新を反映

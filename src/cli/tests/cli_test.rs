@@ -39,7 +39,10 @@ mod cli_tests {
         use strata::cli::Cli;
 
         let cli = Cli::try_parse_from(["strata", "generate"]).unwrap();
-        assert!(matches!(cli.command, strata::cli::Commands::Generate { .. }));
+        assert!(matches!(
+            cli.command,
+            strata::cli::Commands::Generate { .. }
+        ));
     }
 
     /// applyサブコマンドがパース可能であることを確認
@@ -57,7 +60,10 @@ mod cli_tests {
         use strata::cli::Cli;
 
         let cli = Cli::try_parse_from(["strata", "rollback"]).unwrap();
-        assert!(matches!(cli.command, strata::cli::Commands::Rollback { .. }));
+        assert!(matches!(
+            cli.command,
+            strata::cli::Commands::Rollback { .. }
+        ));
     }
 
     /// validateサブコマンドがパース可能であることを確認
@@ -66,7 +72,10 @@ mod cli_tests {
         use strata::cli::Cli;
 
         let cli = Cli::try_parse_from(["strata", "validate"]).unwrap();
-        assert!(matches!(cli.command, strata::cli::Commands::Validate { .. }));
+        assert!(matches!(
+            cli.command,
+            strata::cli::Commands::Validate { .. }
+        ));
     }
 
     /// statusサブコマンドがパース可能であることを確認
