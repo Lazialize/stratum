@@ -63,12 +63,14 @@ check_dependencies() {
 
 # Get latest version
 get_latest_version() {
-    info "Fetching latest version..."
+    info "Fetching latest version..." >&2
     local latest
-    latest=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+
+    # Get the latest stable release (excludes pre-releases)
+    latest=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
 
     if [ -z "$latest" ]; then
-        error "Failed to fetch latest version"
+        error "No stable release found. Please specify a version using VERSION=vX.Y.Z environment variable (e.g., VERSION=v0.1.0-nightly-20260125.1341)."
     fi
 
     echo "$latest"
