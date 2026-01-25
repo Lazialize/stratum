@@ -2,11 +2,12 @@
 //
 // 設定ファイル読み込みやパス解決の重複をCLI層で集約する。
 
-use crate::core::config::Config;
-use crate::core::config::DatabaseConfig;
+use crate::adapters::database::DatabaseConnectionService;
+use crate::core::config::{Config, DatabaseConfig, Dialect};
 use crate::services::database_config_resolver::DatabaseConfigResolver;
 use crate::services::config_loader::ConfigLoader;
 use anyhow::{anyhow, Context, Result};
+use sqlx::AnyPool;
 use std::path::PathBuf;
 
 /// CLIコマンド共通の実行コンテキスト
@@ -85,5 +86,20 @@ impl CommandContext {
             .get_database_config(env)
             .with_context(|| format!("Config for environment '{}' not found", env))?;
         Ok(DatabaseConfigResolver::apply_env_overrides(&config))
+    }
+
+    /// データベース方言を取得
+    pub fn dialect(&self) -> Dialect {
+        self.config.dialect
+    }
+
+    /// 接続プールを作成
+    pub async fn connect_pool(&self, env: &str) -> Result<AnyPool> {
+        let db_config = self.database_config(env)?;
+        let db_service = DatabaseConnectionService::new();
+        db_service
+            .create_pool(self.config.dialect, &db_config)
+            .await
+            .with_context(|| "Failed to connect to database")
     }
 }

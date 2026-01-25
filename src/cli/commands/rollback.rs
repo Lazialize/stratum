@@ -6,7 +6,6 @@
 // - マイグレーション履歴からの削除
 // - ロールバック結果の表示
 
-use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::split_sql_statements;
@@ -63,13 +62,7 @@ impl RollbackCommandHandler {
         }
 
         // データベース接続を確立
-        let db_config = context.database_config(&command.env)?;
-
-        let db_service = DatabaseConnectionService::new();
-        let pool = db_service
-            .create_pool(config.dialect, &db_config)
-            .await
-            .with_context(|| "Failed to connect to database")?;
+        let pool = context.connect_pool(&command.env).await?;
 
         // マイグレーション履歴テーブルが存在するか確認
         let migrator = DatabaseMigratorService::new();

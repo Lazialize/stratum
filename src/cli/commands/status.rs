@@ -6,7 +6,6 @@
 // - 適用済み/未適用の状態表示（テーブル形式）
 // - チェックサム不一致の検出と警告
 
-use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::command_context::CommandContext;
 use crate::core::migration::{Migration, MigrationRecord};
@@ -60,13 +59,7 @@ impl StatusCommandHandler {
         }
 
         // データベースに接続して適用済みマイグレーションを取得
-        let db_config = context.database_config(&command.env)?;
-
-        let db_service = DatabaseConnectionService::new();
-        let pool = db_service
-            .create_pool(config.dialect, &db_config)
-            .await
-            .with_context(|| "Failed to connect to database")?;
+        let pool = context.connect_pool(&command.env).await?;
 
         let migrator = DatabaseMigratorService::new();
 

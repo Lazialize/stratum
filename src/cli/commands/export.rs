@@ -6,7 +6,6 @@
 // - 変換: SchemaConversionService（services層）
 // - 出力: このモジュール（CLI層、YAMLシリアライズとファイル/標準出力）
 
-use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_introspector::{create_introspector, DatabaseIntrospector};
 use crate::cli::command_context::CommandContext;
 use crate::core::config::Dialect;
@@ -58,13 +57,7 @@ impl ExportCommandHandler {
         let config = &context.config;
 
         // データベースに接続
-        let db_config = context.database_config(&command.env)?;
-
-        let db_service = DatabaseConnectionService::new();
-        let pool = db_service
-            .create_pool(config.dialect, &db_config)
-            .await
-            .with_context(|| "Failed to connect to database")?;
+        let pool = context.connect_pool(&command.env).await?;
 
         // データベースからスキーマ情報を取得
         let schema = self

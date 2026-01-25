@@ -7,7 +7,6 @@
 // - 実行結果の記録とチェックサムの保存
 // - 実行ログの表示
 
-use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::split_sql_statements;
@@ -72,13 +71,7 @@ impl ApplyCommandHandler {
         }
 
         // データベース接続を確立
-        let db_config = context.database_config(&command.env)?;
-
-        let db_service = DatabaseConnectionService::new();
-        let pool = db_service
-            .create_pool(config.dialect, &db_config)
-            .await
-            .with_context(|| "Failed to connect to database")?;
+        let pool = context.connect_pool(&command.env).await?;
 
         // マイグレーション履歴テーブルを作成（存在しない場合）
         let migrator = DatabaseMigratorService::new();
