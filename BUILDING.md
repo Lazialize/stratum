@@ -10,25 +10,29 @@ This document describes how to build Strata from source for different platforms.
 
 ## Quick Start
 
+### ワークスペース構成
+
+現在のリポジトリは仮想ワークスペース構成です。各クレートは `src/cli`（CLI）、`src/core`（ドメイン）、`src/db`（DBアダプタ）に配置され、ビルド対象は `strata` クレートになります。
+
 ### Development Build
 
-For development and testing:
+開発・テスト用途:
 
 ```bash
-cargo build
+cargo build -p strata
 ```
 
-The binary will be located at `target/debug/strata`.
+バイナリは `target/debug/strata` に生成されます。
 
 ### Release Build
 
-For optimized production builds:
+最適化された本番ビルド:
 
 ```bash
-cargo build --release
+cargo build -p strata --release
 ```
 
-The binary will be located at `target/release/strata`.
+バイナリは `target/release/strata` に生成されます。
 
 ## Release Profile Optimizations
 
@@ -111,7 +115,7 @@ xcode-select --install
 #### Linux x86_64 (GNU)
 
 ```bash
-cargo build --release --target x86_64-unknown-linux-gnu
+cargo build -p strata --release --target x86_64-unknown-linux-gnu
 ```
 
 Binary location: `target/x86_64-unknown-linux-gnu/release/strata`
@@ -119,7 +123,7 @@ Binary location: `target/x86_64-unknown-linux-gnu/release/strata`
 #### Linux x86_64 (musl - Static Binary)
 
 ```bash
-cargo build --release --target x86_64-unknown-linux-musl
+cargo build -p strata --release --target x86_64-unknown-linux-musl
 ```
 
 This creates a fully static binary with no glibc dependency, ideal for Docker containers or portable distributions.
@@ -129,7 +133,7 @@ Binary location: `target/x86_64-unknown-linux-musl/release/strata`
 #### Linux ARM64
 
 ```bash
-cargo build --release --target aarch64-unknown-linux-gnu
+cargo build -p strata --release --target aarch64-unknown-linux-gnu
 ```
 
 Binary location: `target/aarch64-unknown-linux-gnu/release/strata`
@@ -137,7 +141,7 @@ Binary location: `target/aarch64-unknown-linux-gnu/release/strata`
 #### macOS Intel (x86_64)
 
 ```bash
-cargo build --release --target x86_64-apple-darwin
+cargo build -p strata --release --target x86_64-apple-darwin
 ```
 
 Binary location: `target/x86_64-apple-darwin/release/strata`
@@ -145,7 +149,7 @@ Binary location: `target/x86_64-apple-darwin/release/strata`
 #### macOS Apple Silicon (ARM64)
 
 ```bash
-cargo build --release --target aarch64-apple-darwin
+cargo build -p strata --release --target aarch64-apple-darwin
 ```
 
 Binary location: `target/aarch64-apple-darwin/release/strata`
@@ -153,7 +157,7 @@ Binary location: `target/aarch64-apple-darwin/release/strata`
 #### Windows (MinGW)
 
 ```bash
-cargo build --release --target x86_64-pc-windows-gnu
+cargo build -p strata --release --target x86_64-pc-windows-gnu
 ```
 
 Binary location: `target/x86_64-pc-windows-gnu/release/strata.exe`
@@ -161,7 +165,7 @@ Binary location: `target/x86_64-pc-windows-gnu/release/strata.exe`
 #### Windows (MSVC)
 
 ```bash
-cargo build --release --target x86_64-pc-windows-msvc
+cargo build -p strata --release --target x86_64-pc-windows-msvc
 ```
 
 Binary location: `target/x86_64-pc-windows-msvc/release/strata.exe`
@@ -172,8 +176,8 @@ To create a universal binary that runs on both Intel and Apple Silicon Macs:
 
 ```bash
 # Build for both architectures
-cargo build --release --target x86_64-apple-darwin
-cargo build --release --target aarch64-apple-darwin
+cargo build -p strata --release --target x86_64-apple-darwin
+cargo build -p strata --release --target aarch64-apple-darwin
 
 # Combine into universal binary
 lipo -create \
@@ -283,7 +287,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
-      - run: cargo build --release --target ${{ matrix.target }}
+      - run: cargo build -p strata --release --target ${{ matrix.target }}
 ```
 
 ## Performance Profiling
@@ -302,13 +306,13 @@ Always test release builds before distribution:
 
 ```bash
 # Build release
-cargo build --release
+cargo build -p strata --release
 
 # Run tests with release binary
-cargo test --release
+cargo test -p strata --release
 
 # Integration tests
-cargo test --release --test database_integration_test
+cargo test -p strata --release --test database_integration_test
 ```
 
 ## Distribution

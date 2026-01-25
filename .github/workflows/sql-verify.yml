@@ -29,9 +29,8 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
       - name: Run clippy
-        run: cargo clippy -- -D warnings
-        continue-on-error: true
+        run: cargo clippy -p strata --all-targets --all-features -- -D warnings
       - name: Run all tests
-        run: cargo test
+        run: cargo test -p strata
       - name: Run ignored tests
-        run: cargo test -- --ignored
+        run: cargo test -p strata -- --ignored

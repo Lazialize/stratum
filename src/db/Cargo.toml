@@ -1,0 +1,21 @@
+[package]
+name = "strata-db"
+version = "0.1.0"
+edition = "2021"
+authors = ["Strata Contributors"]
+license = "MIT"
+
+[dependencies]
+strata-core = { path = "../core" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-saphyr = "0.0.16"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+sha2 = "0.10"
+async-trait = "0.1"
+sqlx = { version = "0.8", features = ["runtime-tokio", "any", "postgres", "mysql", "sqlite"] }
+
+[dev-dependencies]
+tempfile = "3"

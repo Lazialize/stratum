@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 変更
+- ルートを仮想ワークスペース化し、`src/cli`・`src/core`・`src/db` に再配置
+- `strata-core` / `strata-db` へクレート名を統一
+
 ### Added
 - Initial release of Strata - Database Schema Management CLI
 - Schema definition in declarative YAML format
