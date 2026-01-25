@@ -151,36 +151,6 @@ impl DatabaseConfig {
         Ok(())
     }
 
-    /// Generate connection string (for PostgreSQL)
-    pub fn to_connection_string(&self, dialect: Dialect) -> String {
-        match dialect {
-            Dialect::PostgreSQL => {
-                let user = self.user.as_deref().unwrap_or("postgres");
-                let auth = match self.password.as_deref() {
-                    Some(password) if !password.is_empty() => format!("{}:{}", user, password),
-                    _ => user.to_string(),
-                };
-                format!(
-                    "postgresql://{}@{}:{}/{}",
-                    auth, self.host, self.port, self.database
-                )
-            }
-            Dialect::MySQL => {
-                let user = self.user.as_deref().unwrap_or("root");
-                let auth = match self.password.as_deref() {
-                    Some(password) if !password.is_empty() => format!("{}:{}", user, password),
-                    _ => user.to_string(),
-                };
-                format!(
-                    "mysql://{}@{}:{}/{}",
-                    auth, self.host, self.port, self.database
-                )
-            }
-            Dialect::SQLite => {
-                format!("sqlite://{}", self.database)
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -194,51 +164,4 @@ mod tests {
         assert_eq!(Dialect::SQLite.to_string(), "sqlite");
     }
 
-    #[test]
-    fn test_connection_string_postgresql() {
-        let config = DatabaseConfig {
-            host: "localhost".to_string(),
-            port: 5432,
-            database: "testdb".to_string(),
-            user: Some("testuser".to_string()),
-            password: Some("testpass".to_string()),
-            timeout: None,
-        };
-
-        let conn_str = config.to_connection_string(Dialect::PostgreSQL);
-        assert_eq!(
-            conn_str,
-            "postgresql://testuser:testpass@localhost:5432/testdb"
-        );
-    }
-
-    #[test]
-    fn test_connection_string_mysql() {
-        let config = DatabaseConfig {
-            host: "localhost".to_string(),
-            port: 3306,
-            database: "testdb".to_string(),
-            user: Some("testuser".to_string()),
-            password: Some("testpass".to_string()),
-            timeout: None,
-        };
-
-        let conn_str = config.to_connection_string(Dialect::MySQL);
-        assert_eq!(conn_str, "mysql://testuser:testpass@localhost:3306/testdb");
-    }
-
-    #[test]
-    fn test_connection_string_sqlite() {
-        let config = DatabaseConfig {
-            host: "".to_string(),
-            port: 0,
-            database: "/path/to/db.sqlite".to_string(),
-            user: None,
-            password: None,
-            timeout: None,
-        };
-
-        let conn_str = config.to_connection_string(Dialect::SQLite);
-        assert_eq!(conn_str, "sqlite:///path/to/db.sqlite");
-    }
 }

@@ -34,7 +34,31 @@ impl DatabaseConnectionService {
     ///
     /// 接続文字列
     pub fn build_connection_string(&self, dialect: Dialect, config: &DatabaseConfig) -> String {
-        config.to_connection_string(dialect)
+        match dialect {
+            Dialect::PostgreSQL => {
+                let user = config.user.as_deref().unwrap_or("postgres");
+                let auth = match config.password.as_deref() {
+                    Some(password) if !password.is_empty() => format!("{}:{}", user, password),
+                    _ => user.to_string(),
+                };
+                format!(
+                    "postgresql://{}@{}:{}/{}",
+                    auth, config.host, config.port, config.database
+                )
+            }
+            Dialect::MySQL => {
+                let user = config.user.as_deref().unwrap_or("root");
+                let auth = match config.password.as_deref() {
+                    Some(password) if !password.is_empty() => format!("{}:{}", user, password),
+                    _ => user.to_string(),
+                };
+                format!(
+                    "mysql://{}@{}:{}/{}",
+                    auth, config.host, config.port, config.database
+                )
+            }
+            Dialect::SQLite => format!("sqlite://{}", config.database),
+        }
     }
 
     /// データベース接続プールを作成
