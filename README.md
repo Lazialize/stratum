@@ -21,6 +21,21 @@ See `ROADMAP.md` for planned features and TODOs.
 
 ## Installation
 
+### Using Install Script (Recommended)
+
+The easiest way to install Strata. Automatically downloads and installs the latest version.
+
+```bash
+# Install the latest version
+curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | bash
+
+# Install a specific version
+VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | bash
+
+# Specify custom installation directory
+INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/Lazialize/strata/main/install.sh | bash
+```
+
 ### From Source
 
 ```bash
@@ -35,11 +50,6 @@ cargo install --path .
 
 For detailed build instructions, cross-compilation, and platform-specific guides, see [BUILDING.md](BUILDING.md).
 
-### Using Cargo
-
-```bash
-cargo install strata
-```
 
 ## Quick Start
 
