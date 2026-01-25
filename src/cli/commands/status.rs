@@ -10,6 +10,7 @@ use crate::adapters::database::DatabaseConnectionService;
 use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::command_context::CommandContext;
 use crate::core::migration::{Migration, MigrationRecord};
+use crate::services::database_config_resolver::DatabaseConfigResolver;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::fs;
@@ -70,6 +71,7 @@ impl StatusCommandHandler {
         let db_config = config
             .get_database_config(&command.env)
             .with_context(|| format!("Config for environment '{}' not found", command.env))?;
+        let db_config = DatabaseConfigResolver::apply_env_overrides(&db_config);
 
         let db_service = DatabaseConnectionService::new();
         let pool = db_service

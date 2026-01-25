@@ -11,6 +11,7 @@ use crate::adapters::database_introspector::{create_introspector, DatabaseIntros
 use crate::cli::command_context::CommandContext;
 use crate::core::config::Dialect;
 use crate::core::schema::Schema;
+use crate::services::database_config_resolver::DatabaseConfigResolver;
 use crate::services::schema_conversion::{RawTableInfo, SchemaConversionService};
 use crate::services::schema_serializer::SchemaSerializerService;
 use anyhow::{Context, Result};
@@ -61,6 +62,7 @@ impl ExportCommandHandler {
         let db_config = config
             .get_database_config(&command.env)
             .with_context(|| format!("Config for environment '{}' not found", command.env))?;
+        let db_config = DatabaseConfigResolver::apply_env_overrides(&db_config);
 
         let db_service = DatabaseConnectionService::new();
         let pool = db_service

@@ -12,6 +12,7 @@ use crate::cli::command_context::CommandContext;
 use crate::cli::commands::split_sql_statements;
 use crate::core::config::Dialect;
 use crate::core::migration::AppliedMigration;
+use crate::services::database_config_resolver::DatabaseConfigResolver;
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use std::fs;
@@ -72,6 +73,7 @@ impl RollbackCommandHandler {
         let db_config = config
             .get_database_config(&command.env)
             .with_context(|| format!("Config for environment '{}' not found", command.env))?;
+        let db_config = DatabaseConfigResolver::apply_env_overrides(&db_config);
 
         let db_service = DatabaseConnectionService::new();
         let pool = db_service

@@ -6,7 +6,8 @@
 #[cfg(test)]
 mod config_tests {
     use std::path::Path;
-    use strata::core::config::{Config, DatabaseConfig, Dialect};
+use strata::core::config::{Config, DatabaseConfig, Dialect};
+use strata::services::database_config_resolver::DatabaseConfigResolver;
 
     /// Config構造体が正しくデシリアライズできることを確認
     #[test]
@@ -152,7 +153,7 @@ environments:
         };
 
         // 環境変数を模擬（実際のテストでは std::env を使用）
-        let merged = config.merge_with_env();
+        let merged = DatabaseConfigResolver::apply_env_overrides(&config);
 
         assert_eq!(merged.host, "localhost");
         assert_eq!(merged.database, "strata_dev");

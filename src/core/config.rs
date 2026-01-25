@@ -142,32 +142,6 @@ fn default_port() -> u16 {
 }
 
 impl DatabaseConfig {
-    /// 環境変数から設定を上書き
-    pub fn merge_with_env(&self) -> Self {
-        let mut config = self.clone();
-
-        // 環境変数から値を取得して上書き
-        if let Ok(host) = std::env::var("DB_HOST") {
-            config.host = host;
-        }
-        if let Ok(port) = std::env::var("DB_PORT") {
-            if let Ok(port_num) = port.parse::<u16>() {
-                config.port = port_num;
-            }
-        }
-        if let Ok(database) = std::env::var("DB_DATABASE") {
-            config.database = database;
-        }
-        if let Ok(user) = std::env::var("DB_USER") {
-            config.user = Some(user);
-        }
-        if let Ok(password) = std::env::var("DB_PASSWORD") {
-            config.password = Some(password);
-        }
-
-        config
-    }
-
     /// Validate database configuration
     pub fn validate(&self) -> Result<()> {
         if self.database.is_empty() {

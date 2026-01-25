@@ -4,6 +4,7 @@
 pub mod dto;
 pub mod dto_converter;
 pub mod config_loader;
+pub mod database_config_resolver;
 pub mod migration_generator;
 pub mod migration_pipeline;
 pub mod schema_checksum;
