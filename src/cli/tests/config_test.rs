@@ -4,9 +4,26 @@
 /// 正しく動作することを確認します。
 #[cfg(test)]
 mod config_tests {
+    use std::fs;
     use std::path::Path;
     use strata::core::config::{Config, DatabaseConfig, Dialect};
+    use strata::services::config_loader::ConfigLoader;
     use strata::services::database_config_resolver::DatabaseConfigResolver;
+    use tempfile::TempDir;
+
+    fn load_config_from_yaml(yaml: &str) -> Config {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join(Config::DEFAULT_CONFIG_PATH);
+        fs::write(&config_path, yaml).unwrap();
+        ConfigLoader::from_file(&config_path).unwrap()
+    }
+
+    fn load_config_result(yaml: &str) -> Result<Config, anyhow::Error> {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join(Config::DEFAULT_CONFIG_PATH);
+        fs::write(&config_path, yaml).unwrap();
+        ConfigLoader::from_file(&config_path)
+    }
 
     /// Config構造体が正しくデシリアライズできることを確認
     #[test]
@@ -26,7 +43,7 @@ environments:
     password: password
 "#;
 
-        let config: Config = serde_saphyr::from_str(yaml).unwrap();
+        let config = load_config_from_yaml(yaml);
 
         assert_eq!(config.version, "1.0");
         assert_eq!(config.dialect, Dialect::PostgreSQL);
@@ -59,7 +76,7 @@ environments:
     password: secure_password
 "#;
 
-        let config: Config = serde_saphyr::from_str(yaml).unwrap();
+        let config = load_config_from_yaml(yaml);
 
         let dev_config = config.get_database_config("development").unwrap();
         assert_eq!(dev_config.host, "localhost");
@@ -89,7 +106,7 @@ environments:
     password: password
 "#;
 
-        let config: Config = serde_saphyr::from_str(yaml).unwrap();
+        let config = load_config_from_yaml(yaml);
 
         let result = config.get_database_config("staging");
         assert!(result.is_err());
@@ -132,7 +149,7 @@ environments:
     database: strata.db
 "#;
 
-        let config: Config = serde_saphyr::from_str(minimal_yaml).unwrap();
+        let config = load_config_from_yaml(minimal_yaml);
 
         // デフォルト値の確認
         assert_eq!(config.schema_dir, Path::new("schema"));
@@ -176,7 +193,7 @@ environments:
     password: password
 "#;
 
-        let config: Config = serde_saphyr::from_str(valid_yaml).unwrap();
+        let config = load_config_from_yaml(valid_yaml);
         assert!(config.validate().is_ok());
     }
 
@@ -197,7 +214,7 @@ environments:
     password: password
 "#;
 
-        let result: Result<Config, _> = serde_saphyr::from_str(invalid_yaml);
+        let result = load_config_result(invalid_yaml);
         // databaseフィールドがないためデシリアライズに失敗することを期待
         assert!(result.is_err());
     }

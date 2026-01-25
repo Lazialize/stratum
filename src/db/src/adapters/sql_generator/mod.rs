@@ -148,6 +148,14 @@ pub trait SqlGenerator {
         format!("DROP INDEX {}", index.name)
     }
 
+    /// DOWN時に復元が必要なテーブルの注意コメントを生成
+    fn generate_missing_table_notice(&self, table_name: &str) -> String {
+        format!(
+            "-- NOTE: Manually add CREATE TABLE statement for '{}' if rollback is needed",
+            table_name
+        )
+    }
+
     /// ALTER TABLE文（制約追加）を生成
     ///
     /// # Arguments

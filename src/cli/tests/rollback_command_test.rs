@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use strata::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
 use strata::core::config::Dialect;
 use strata::services::config_loader::ConfigLoader;
+use strata::services::config_serializer::ConfigSerializer;
 use tempfile::TempDir;
 
 mod common;
@@ -125,7 +126,7 @@ async fn test_rollback_single_migration_sqlite() {
     let config =
         common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
     let config_path = project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH);
-    let config_yaml = serde_saphyr::to_string(&config).unwrap();
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションを作成

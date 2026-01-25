@@ -28,6 +28,7 @@ mod cli_integration_tests {
     use strata::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
     use strata::cli::commands::status::{StatusCommand, StatusCommandHandler};
     use strata::core::config::{Config, DatabaseConfig, Dialect};
+    use strata::services::config_serializer::ConfigSerializer;
 
     // ==========================================
     // テストヘルパー
@@ -97,7 +98,7 @@ mod cli_integration_tests {
                 environments,
             };
 
-            let config_yaml = serde_saphyr::to_string(&config).unwrap();
+            let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
             fs::write(self.project_path.join(".strata.yaml"), config_yaml).unwrap();
         }
 
@@ -126,7 +127,7 @@ mod cli_integration_tests {
                 environments,
             };
 
-            let config_yaml = serde_saphyr::to_string(&config).unwrap();
+            let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
             fs::write(self.project_path.join(".strata.yaml"), config_yaml).unwrap();
         }
 
@@ -155,7 +156,7 @@ mod cli_integration_tests {
                 environments,
             };
 
-            let config_yaml = serde_saphyr::to_string(&config).unwrap();
+            let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
             fs::write(self.project_path.join(".strata.yaml"), config_yaml).unwrap();
         }
 

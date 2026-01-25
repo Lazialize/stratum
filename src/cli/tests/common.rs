@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use strata::core::config::{Config, DatabaseConfig, Dialect};
+use strata::services::config_serializer::ConfigSerializer;
 use tempfile::TempDir;
 
 /// テスト用のConfig作成ヘルパー
@@ -32,6 +33,7 @@ pub fn create_test_config(dialect: Dialect, database_path: Option<&str>) -> Conf
 }
 
 /// テスト用のプロジェクトディレクトリを作成
+#[allow(dead_code)]
 pub fn setup_test_project(
     dialect: Dialect,
     database_path: Option<&str>,
@@ -43,7 +45,7 @@ pub fn setup_test_project(
     // 設定ファイルを作成
     let config = create_test_config(dialect, database_path);
     let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
-    let config_yaml = serde_saphyr::to_string(&config)?;
+    let config_yaml = ConfigSerializer::to_yaml(&config)?;
     fs::write(&config_path, config_yaml)?;
 
     // スキーマディレクトリを作成

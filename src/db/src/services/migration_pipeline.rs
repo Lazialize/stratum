@@ -238,10 +238,7 @@ impl<'a> MigrationPipeline<'a> {
 
         // 削除されたテーブルを再作成（手動対応が必要）
         for table_name in &self.diff.removed_tables {
-            statements.push(format!(
-                "-- NOTE: Manually add CREATE TABLE statement for '{}' if rollback is needed",
-                table_name
-            ));
+            statements.push(generator.generate_missing_table_notice(table_name));
         }
 
         let sql = self.stage_finalize(statements);

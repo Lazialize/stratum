@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use strata::cli::commands::status::{StatusCommand, StatusCommandHandler};
 use strata::core::config::Dialect;
 use strata::services::config_loader::ConfigLoader;
+use strata::services::config_serializer::ConfigSerializer;
 use tempfile::TempDir;
 
 mod common;
@@ -102,7 +103,7 @@ async fn test_status_with_pending_migrations() {
     let config =
         common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
     let config_path = project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH);
-    let config_yaml = serde_saphyr::to_string(&config).unwrap();
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションファイルを作成
@@ -157,7 +158,7 @@ async fn test_status_with_applied_migrations() {
     let config =
         common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
     let config_path = project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH);
-    let config_yaml = serde_saphyr::to_string(&config).unwrap();
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションファイルを作成

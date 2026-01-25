@@ -7,53 +7,13 @@
 // - 実行結果の記録とチェックサムの保存
 
 use sqlx::any::install_default_drivers;
-use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
 use strata::cli::commands::apply::{ApplyCommand, ApplyCommandHandler};
-use strata::core::config::{Config, DatabaseConfig, Dialect};
+use strata::core::config::{Config, Dialect};
+use strata::services::config_serializer::ConfigSerializer;
+mod common;
 
-// テスト用のConfig作成ヘルパー
-fn create_test_config(dialect: Dialect, database_path: Option<&str>) -> Config {
-    let mut environments = HashMap::new();
-
-    let db_config = match dialect {
-        Dialect::SQLite => DatabaseConfig {
-            host: String::new(),
-            port: 0,
-            database: database_path.unwrap_or(":memory:").to_string(),
-            user: None,
-            password: None,
-            timeout: None,
-        },
-        Dialect::PostgreSQL => DatabaseConfig {
-            host: "localhost".to_string(),
-            port: 5432,
-            database: database_path.unwrap_or("test_db").to_string(),
-            user: Some("postgres".to_string()),
-            password: Some("password".to_string()),
-            timeout: None,
-        },
-        Dialect::MySQL => DatabaseConfig {
-            host: "localhost".to_string(),
-            port: 3306,
-            database: database_path.unwrap_or("test_db").to_string(),
-            user: Some("root".to_string()),
-            password: Some("password".to_string()),
-            timeout: None,
-        },
-    };
-
-    environments.insert("development".to_string(), db_config);
-
-    Config {
-        version: "1.0".to_string(),
-        dialect,
-        schema_dir: PathBuf::from("schema"),
-        migrations_dir: PathBuf::from("migrations"),
-        environments,
-    }
-}
+// テスト用のConfig作成ヘルパーは common に集約
 
 #[tokio::test]
 async fn test_apply_command_handler_new() {
@@ -88,11 +48,11 @@ async fn test_apply_command_no_pending_migrations() {
     let project_path = temp_dir.path().to_path_buf();
 
     // 設定ファイルを作成
-    let config = create_test_config(Dialect::SQLite, None);
+    let config = common::create_test_config(Dialect::SQLite, None);
     let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
 
-    let config_yaml = serde_saphyr::to_string(&config).unwrap();
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションディレクトリを作成（空）
@@ -120,11 +80,11 @@ async fn test_apply_command_dry_run_mode() {
     let project_path = temp_dir.path().to_path_buf();
 
     // 設定ファイルを作成
-    let config = create_test_config(Dialect::SQLite, None);
+    let config = common::create_test_config(Dialect::SQLite, None);
     let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
 
-    let config_yaml = serde_saphyr::to_string(&config).unwrap();
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションディレクトリを作成
@@ -174,12 +134,12 @@ async fn test_apply_command_success_with_sqlite() {
     // 設定ファイルを作成（SQLiteデータベース）
     let db_path = project_path.join("test.db");
     fs::File::create(&db_path).unwrap();
-    let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config = common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
 
     let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
 
-    let config_yaml = serde_saphyr::to_string(&config).unwrap();
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションディレクトリを作成
@@ -230,12 +190,12 @@ async fn test_apply_command_migration_already_applied() {
     // 設定ファイルを作成（SQLiteデータベース）
     let db_path = project_path.join("test.db");
     fs::File::create(&db_path).unwrap();
-    let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config = common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
 
     let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
 
-    let config_yaml = serde_saphyr::to_string(&config).unwrap();
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションディレクトリを作成
@@ -290,12 +250,12 @@ async fn test_apply_command_multiple_migrations() {
     // 設定ファイルを作成（SQLiteデータベース）
     let db_path = project_path.join("test.db");
     fs::File::create(&db_path).unwrap();
-    let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config = common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
 
     let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
 
-    let config_yaml = serde_saphyr::to_string(&config).unwrap();
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションディレクトリを作成
@@ -367,12 +327,12 @@ async fn test_apply_command_sql_error() {
     // 設定ファイルを作成（SQLiteデータベース）
     let db_path = project_path.join("test.db");
     fs::File::create(&db_path).unwrap();
-    let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config = common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
 
     let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
 
-    let config_yaml = serde_saphyr::to_string(&config).unwrap();
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションディレクトリを作成
