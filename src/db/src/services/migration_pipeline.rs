@@ -166,10 +166,8 @@ impl<'a> MigrationPipeline<'a> {
         for table_diff in &self.diff.modified_tables {
             // 追加されたカラムを削除
             for column in &table_diff.added_columns {
-                statements.push(generator.generate_drop_column(
-                    &table_diff.table_name,
-                    &column.name,
-                ));
+                statements
+                    .push(generator.generate_drop_column(&table_diff.table_name, &column.name));
             }
 
             // 型変更の逆処理（リネーム以外のカラム）
@@ -307,10 +305,8 @@ impl<'a> MigrationPipeline<'a> {
         for enum_diff in &self.diff.modified_enums {
             if matches!(enum_diff.change_kind, EnumChangeKind::AddOnly) {
                 for value in &enum_diff.added_values {
-                    statements.extend(generator.generate_add_enum_value(
-                        &enum_diff.enum_name,
-                        value,
-                    ));
+                    statements
+                        .extend(generator.generate_add_enum_value(&enum_diff.enum_name, value));
                 }
             }
         }
@@ -508,7 +504,6 @@ impl<'a> MigrationPipeline<'a> {
             .iter()
             .any(|change| matches!(change, ColumnChange::TypeChanged { .. }))
     }
-
 }
 
 #[cfg(test)]

@@ -100,8 +100,7 @@ async fn test_status_with_pending_migrations() {
     fs::File::create(&db_path).unwrap();
 
     // 設定ファイルにデータベース接続情報を追加
-    let config =
-        common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config = common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
     let config_path = project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH);
     let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
@@ -155,8 +154,7 @@ async fn test_status_with_applied_migrations() {
     fs::File::create(&db_path).unwrap();
 
     // 設定ファイルにデータベース接続情報を追加
-    let config =
-        common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config = common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
     let config_path = project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH);
     let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();

@@ -146,7 +146,10 @@ impl SqlGenerator for PostgresSqlGenerator {
 
     fn generate_create_enum_type(&self, enum_def: &EnumDefinition) -> Vec<String> {
         let values = self.format_enum_values(&enum_def.values);
-        vec![format!("CREATE TYPE {} AS ENUM ({})", enum_def.name, values)]
+        vec![format!(
+            "CREATE TYPE {} AS ENUM ({})",
+            enum_def.name, values
+        )]
     }
 
     fn generate_add_enum_value(&self, enum_name: &str, value: &str) -> Vec<String> {
