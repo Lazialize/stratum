@@ -54,13 +54,7 @@ impl RollbackCommandHandler {
         let config = &context.config;
 
         // マイグレーションディレクトリのパスを解決
-        let migrations_dir = context.migrations_dir();
-        if !migrations_dir.exists() {
-            return Err(anyhow!(
-                "Migrations directory not found: {:?}",
-                migrations_dir
-            ));
-        }
+        let migrations_dir = context.require_migrations_dir()?;
 
         // 利用可能なマイグレーションファイルを読み込む
         let available_migrations = self.load_available_migrations(&migrations_dir)?;

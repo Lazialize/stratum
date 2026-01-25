@@ -59,14 +59,13 @@ impl ValidateCommandHandler {
 
         // スキーマディレクトリのパスを解決
         let schema_dir = if let Some(ref custom_dir) = command.schema_dir {
+            if !custom_dir.exists() {
+                return Err(anyhow!("Schema directory not found: {:?}", custom_dir));
+            }
             custom_dir.clone()
         } else {
-            context.schema_dir()
+            context.require_schema_dir()?
         };
-
-        if !schema_dir.exists() {
-            return Err(anyhow!("Schema directory not found: {:?}", schema_dir));
-        }
 
         // スキーマ定義を読み込む
         let parser = SchemaParserService::new();

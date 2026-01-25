@@ -50,14 +50,7 @@ impl StatusCommandHandler {
         let config = &context.config;
 
         // マイグレーションディレクトリのパスを解決
-        let migrations_dir = context.migrations_dir();
-
-        if !migrations_dir.exists() {
-            return Err(anyhow!(
-                "Migrations directory not found: {:?}",
-                migrations_dir
-            ));
-        }
+        let migrations_dir = context.require_migrations_dir()?;
 
         // ローカルマイグレーションファイルを読み込む
         let local_migrations = self.load_local_migrations(&migrations_dir)?;

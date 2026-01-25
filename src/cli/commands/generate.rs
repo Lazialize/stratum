@@ -73,10 +73,7 @@ impl GenerateCommandHandler {
         let config = &context.config;
 
         // スキーマディレクトリのパスを解決
-        let schema_dir = context.schema_dir();
-        if !schema_dir.exists() {
-            return Err(anyhow!("Schema directory not found: {:?}", schema_dir));
-        }
+        let schema_dir = context.require_schema_dir()?;
 
         // 現在のスキーマを読み込む
         let parser = SchemaParserService::new();

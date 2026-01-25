@@ -41,8 +41,26 @@ impl CommandContext {
         self.project_path.join(&self.config.schema_dir)
     }
 
+    /// スキーマディレクトリが存在することを確認して返す
+    pub fn require_schema_dir(&self) -> Result<PathBuf> {
+        let path = self.schema_dir();
+        if !path.exists() {
+            return Err(anyhow!("Schema directory not found: {:?}", path));
+        }
+        Ok(path)
+    }
+
     /// マイグレーションディレクトリの絶対パス
     pub fn migrations_dir(&self) -> PathBuf {
         self.project_path.join(&self.config.migrations_dir)
+    }
+
+    /// マイグレーションディレクトリが存在することを確認して返す
+    pub fn require_migrations_dir(&self) -> Result<PathBuf> {
+        let path = self.migrations_dir();
+        if !path.exists() {
+            return Err(anyhow!("Migrations directory not found: {:?}", path));
+        }
+        Ok(path)
     }
 }
