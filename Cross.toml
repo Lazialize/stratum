@@ -1,0 +1,20 @@
+# Cross-compilation configuration for Strata
+
+[build]
+# Preserve target directory structure
+# This ensures that cross uses the same target directory as cargo
+target-dir = "target"
+
+[build.env]
+passthrough = [
+    "CARGO_TERM_COLOR",
+    "RUST_BACKTRACE",
+]
+
+# Linux x86_64 configuration
+[target.x86_64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:latest"
+
+# Linux ARM64 configuration
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:latest"
