@@ -3,6 +3,8 @@
 // 設定ファイル読み込みやパス解決の重複をCLI層で集約する。
 
 use crate::core::config::Config;
+use crate::core::config::DatabaseConfig;
+use crate::services::database_config_resolver::DatabaseConfigResolver;
 use crate::services::config_loader::ConfigLoader;
 use anyhow::{anyhow, Context, Result};
 use std::path::PathBuf;
@@ -62,5 +64,26 @@ impl CommandContext {
             return Err(anyhow!("Migrations directory not found: {:?}", path));
         }
         Ok(path)
+    }
+
+    /// スキーマディレクトリを解決（カスタム指定があれば優先）
+    pub fn resolve_schema_dir(&self, custom_dir: Option<&PathBuf>) -> Result<PathBuf> {
+        if let Some(dir) = custom_dir {
+            if !dir.exists() {
+                return Err(anyhow!("Schema directory not found: {:?}", dir));
+            }
+            return Ok(dir.clone());
+        }
+
+        self.require_schema_dir()
+    }
+
+    /// 環境に応じたデータベース設定を取得（環境変数上書き込み）
+    pub fn database_config(&self, env: &str) -> Result<DatabaseConfig> {
+        let config = self
+            .config
+            .get_database_config(env)
+            .with_context(|| format!("Config for environment '{}' not found", env))?;
+        Ok(DatabaseConfigResolver::apply_env_overrides(&config))
     }
 }

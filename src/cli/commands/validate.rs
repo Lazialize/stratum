@@ -9,7 +9,7 @@
 use crate::cli::command_context::CommandContext;
 use crate::services::schema_parser::SchemaParserService;
 use crate::services::schema_validator::SchemaValidatorService;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 /// 検証結果のサマリー情報
@@ -58,14 +58,7 @@ impl ValidateCommandHandler {
         let config = &context.config;
 
         // スキーマディレクトリのパスを解決
-        let schema_dir = if let Some(ref custom_dir) = command.schema_dir {
-            if !custom_dir.exists() {
-                return Err(anyhow!("Schema directory not found: {:?}", custom_dir));
-            }
-            custom_dir.clone()
-        } else {
-            context.require_schema_dir()?
-        };
+        let schema_dir = context.resolve_schema_dir(command.schema_dir.as_ref())?;
 
         // スキーマ定義を読み込む
         let parser = SchemaParserService::new();
