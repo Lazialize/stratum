@@ -11,7 +11,7 @@ use crate::cli::command_context::CommandContext;
 use crate::core::config::Dialect;
 use crate::core::schema::Schema;
 use crate::services::schema_conversion::{RawTableInfo, SchemaConversionService};
-use crate::services::schema_serializer::SchemaSerializerService;
+use crate::services::schema_io::schema_serializer::SchemaSerializerService;
 use anyhow::{Context, Result};
 use sqlx::AnyPool;
 use std::collections::HashSet;
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn test_serialize_schema_new_syntax_format() {
         use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
-        use crate::services::schema_serializer::SchemaSerializerService;
+        use crate::services::schema_io::schema_serializer::SchemaSerializerService;
 
         // 内部モデルを作成
         let mut schema = Schema::new("1.0".to_string());

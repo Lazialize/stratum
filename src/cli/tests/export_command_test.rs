@@ -1,54 +1,13 @@
 // exportコマンドハンドラーのテスト
 
-use anyhow::Result;
 use sqlx::any::install_default_drivers;
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use strata::cli::commands::export::{ExportCommand, ExportCommandHandler};
-use strata::core::config::{Config, DatabaseConfig, Dialect};
+use strata::core::config::Dialect;
 use tempfile::TempDir;
 
-/// テスト用のConfig作成ヘルパー
-fn create_test_config(dialect: Dialect, database_path: Option<&str>) -> Config {
-    let mut environments = HashMap::new();
-
-    let db_config = DatabaseConfig {
-        host: String::new(),
-        port: 0,
-        database: database_path.unwrap_or(":memory:").to_string(),
-        user: None,
-        password: None,
-        timeout: None,
-    };
-
-    environments.insert("development".to_string(), db_config);
-
-    Config {
-        version: "1.0".to_string(),
-        dialect,
-        schema_dir: PathBuf::from("schema"),
-        migrations_dir: PathBuf::from("migrations"),
-        environments,
-    }
-}
-
-/// テスト用のプロジェクトディレクトリを作成
-fn setup_test_project() -> Result<(TempDir, PathBuf)> {
-    let temp_dir = TempDir::new()?;
-    let project_path = temp_dir.path().to_path_buf();
-
-    // 設定ファイルを作成
-    let config = create_test_config(Dialect::SQLite, None);
-    let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
-    let config_yaml = serde_saphyr::to_string(&config)?;
-    fs::write(&config_path, config_yaml)?;
-
-    // スキーマディレクトリを作成
-    fs::create_dir_all(project_path.join("schema"))?;
-
-    Ok((temp_dir, project_path))
-}
+mod common;
 
 #[test]
 fn test_new_handler() {
@@ -91,7 +50,8 @@ async fn test_export_no_config_file() {
 
 #[tokio::test]
 async fn test_export_invalid_environment() {
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, false).unwrap();
 
     let handler = ExportCommandHandler::new();
     let command = ExportCommand {
@@ -110,15 +70,17 @@ async fn test_export_invalid_environment() {
 #[ignore] // 統合テスト - 実際のデータベースが必要
 async fn test_export_from_sqlite_database() {
     install_default_drivers();
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, false).unwrap();
 
     // データベースファイルのパス
     let db_path = project_path.join("test.db");
     fs::File::create(&db_path).unwrap();
 
     // 設定ファイルにデータベース接続情報を追加
-    let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
-    let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
+    let config =
+        common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config_path = project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH);
     let config_yaml = serde_saphyr::to_string(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
@@ -193,15 +155,17 @@ async fn test_export_from_sqlite_database() {
 #[ignore] // 統合テスト - 実際のデータベースが必要
 async fn test_export_to_stdout() {
     install_default_drivers();
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, false).unwrap();
 
     // データベースファイルのパス
     let db_path = project_path.join("test.db");
     fs::File::create(&db_path).unwrap();
 
     // 設定ファイルにデータベース接続情報を追加
-    let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
-    let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
+    let config =
+        common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config_path = project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH);
     let config_yaml = serde_saphyr::to_string(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 

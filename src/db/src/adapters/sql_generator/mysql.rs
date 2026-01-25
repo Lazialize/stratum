@@ -2,7 +2,7 @@
 //
 // スキーマ定義からMySQL用のDDL文を生成します。
 
-use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
+use crate::adapters::sql_generator::{build_column_definition, MigrationDirection, SqlGenerator};
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
@@ -20,31 +20,13 @@ impl MysqlSqlGenerator {
 
     /// カラム定義のSQL文字列を生成
     fn generate_column_definition(&self, column: &Column) -> String {
-        let mut parts = Vec::new();
-
-        // カラム名
-        parts.push(column.name.clone());
-
-        // データ型
         let type_str = self.map_column_type(&column.column_type, column.auto_increment);
-        parts.push(type_str);
-
-        // NULL制約
-        if !column.nullable {
-            parts.push("NOT NULL".to_string());
-        }
-
-        // AUTO_INCREMENT（MySQLではデータ型の後に指定）
-        if column.auto_increment.unwrap_or(false) {
-            parts.push("AUTO_INCREMENT".to_string());
-        }
-
-        // デフォルト値
-        if let Some(ref default_value) = column.default_value {
-            parts.push(format!("DEFAULT {}", default_value));
-        }
-
-        parts.join(" ")
+        let auto_increment = if column.auto_increment.unwrap_or(false) {
+            "AUTO_INCREMENT"
+        } else {
+            ""
+        };
+        build_column_definition(column, type_str, &[auto_increment])
     }
 
     /// ColumnTypeをMySQLの型文字列にマッピング
@@ -92,32 +74,16 @@ impl MysqlSqlGenerator {
         column_name: &str,
         target_column: &Column,
     ) -> String {
-        let mut parts = Vec::new();
-
-        // カラム名
-        parts.push(column_name.to_string());
-
-        // データ型
         let type_str =
             self.map_column_type(&target_column.column_type, target_column.auto_increment);
-        parts.push(type_str);
-
-        // NULL制約
-        if !target_column.nullable {
-            parts.push("NOT NULL".to_string());
-        }
-
-        // AUTO_INCREMENT
-        if target_column.auto_increment.unwrap_or(false) {
-            parts.push("AUTO_INCREMENT".to_string());
-        }
-
-        // デフォルト値
-        if let Some(ref default_value) = target_column.default_value {
-            parts.push(format!("DEFAULT {}", default_value));
-        }
-
-        parts.join(" ")
+        let auto_increment = if target_column.auto_increment.unwrap_or(false) {
+            "AUTO_INCREMENT"
+        } else {
+            ""
+        };
+        let mut column = target_column.clone();
+        column.name = column_name.to_string();
+        build_column_definition(&column, type_str, &[auto_increment])
     }
 }
 

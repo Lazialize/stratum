@@ -6,6 +6,7 @@
 // - 初期化済みプロジェクトの検出と警告
 
 use crate::core::config::{Config, DatabaseConfig, Dialect};
+use crate::services::config_serializer::ConfigSerializer;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::fs;
@@ -167,8 +168,7 @@ impl InitCommandHandler {
         };
 
         // YAMLにシリアライズ
-        let yaml =
-            serde_saphyr::to_string(&config).with_context(|| "Failed to serialize config file")?;
+        let yaml = ConfigSerializer::to_yaml(&config)?;
 
         // ファイルに書き込み
         let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);

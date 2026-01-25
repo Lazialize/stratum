@@ -13,7 +13,7 @@ mod column_rename_integration_tests {
     use strata::core::config::Dialect;
     use strata::services::migration_pipeline::MigrationPipeline;
     use strata::services::schema_diff_detector::SchemaDiffDetector;
-    use strata::services::schema_parser::SchemaParserService;
+    use strata::services::schema_io::schema_parser::SchemaParserService;
     use strata::services::schema_validator::SchemaValidatorService;
 
     // ==========================================
@@ -748,7 +748,7 @@ tables:
     /// renamed_fromがNoneの場合、YAMLから除外されることを確認
     #[test]
     fn test_renamed_from_none_not_serialized() {
-        use strata::services::schema_serializer::SchemaSerializerService;
+        use strata::services::schema_io::schema_serializer::SchemaSerializerService;
 
         let yaml_without_renamed_from = r#"
 version: "1.0"

@@ -2,6 +2,7 @@
 // ドメインロジックを実行するサービス層
 
 pub mod config_loader;
+pub mod config_serializer;
 pub mod database_config_resolver;
 pub mod migration_generator;
 pub mod migration_pipeline;
@@ -11,5 +12,3 @@ pub mod schema_diff_detector;
 pub mod schema_io;
 pub mod schema_validator;
 pub mod type_change_validator;
-
-pub use schema_io::{dto, dto_converter, schema_parser, schema_serializer};

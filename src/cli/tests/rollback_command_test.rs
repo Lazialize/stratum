@@ -1,87 +1,14 @@
 // rollbackコマンドハンドラーのテスト
 
-use anyhow::Result;
 use sqlx::any::install_default_drivers;
-use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use strata::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
-use strata::core::config::{Config, DatabaseConfig, Dialect};
+use strata::core::config::Dialect;
 use strata::services::config_loader::ConfigLoader;
 use tempfile::TempDir;
 
-/// テスト用のConfig作成ヘルパー
-fn create_test_config(dialect: Dialect, database_path: Option<&str>) -> Config {
-    let mut environments = HashMap::new();
-
-    let db_config = DatabaseConfig {
-        host: String::new(),
-        port: 0,
-        database: database_path.unwrap_or(":memory:").to_string(),
-        user: None,
-        password: None,
-        timeout: None,
-    };
-
-    environments.insert("development".to_string(), db_config);
-
-    Config {
-        version: "1.0".to_string(),
-        dialect,
-        schema_dir: PathBuf::from("schema"),
-        migrations_dir: PathBuf::from("migrations"),
-        environments,
-    }
-}
-
-/// テスト用のプロジェクトディレクトリを作成
-fn setup_test_project() -> Result<(TempDir, PathBuf)> {
-    let temp_dir = TempDir::new()?;
-    let project_path = temp_dir.path().to_path_buf();
-
-    // 設定ファイルを作成
-    let config = create_test_config(Dialect::SQLite, None);
-    let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
-    let config_yaml = serde_saphyr::to_string(&config)?;
-    fs::write(&config_path, config_yaml)?;
-
-    // スキーマディレクトリを作成
-    fs::create_dir_all(project_path.join("schema"))?;
-
-    // マイグレーションディレクトリを作成
-    fs::create_dir_all(project_path.join("migrations"))?;
-
-    Ok((temp_dir, project_path))
-}
-
-/// テスト用のマイグレーションファイルを作成
-fn create_test_migration(
-    project_path: &Path,
-    version: &str,
-    description: &str,
-    up_sql: &str,
-    down_sql: &str,
-) -> Result<()> {
-    let migration_dir = project_path
-        .join("migrations")
-        .join(format!("{}_{}", version, description));
-    fs::create_dir_all(&migration_dir)?;
-
-    // up.sql
-    fs::write(migration_dir.join("up.sql"), up_sql)?;
-
-    // down.sql
-    fs::write(migration_dir.join("down.sql"), down_sql)?;
-
-    // .meta.yaml
-    let meta = format!(
-        "version: \"{}\"\ndescription: \"{}\"\nchecksum: \"test_checksum\"\n",
-        version, description
-    );
-    fs::write(migration_dir.join(".meta.yaml"), meta)?;
-
-    Ok(())
-}
+mod common;
 
 #[test]
 fn test_new_handler() {
@@ -124,7 +51,8 @@ async fn test_rollback_no_config_file() {
 
 #[tokio::test]
 async fn test_rollback_no_migrations_dir() {
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, true).unwrap();
 
     // マイグレーションディレクトリを削除
     fs::remove_dir_all(project_path.join("migrations")).unwrap();
@@ -146,24 +74,27 @@ async fn test_rollback_no_migrations_dir() {
 
 #[tokio::test]
 async fn test_load_available_migrations() {
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, true).unwrap();
 
     // テストマイグレーションを作成
-    create_test_migration(
+    common::create_test_migration(
         &project_path,
         "20260121120000",
         "create_users",
         "CREATE TABLE users (id INTEGER PRIMARY KEY);",
         "DROP TABLE users;",
+        "test_checksum_20260121120000",
     )
     .unwrap();
 
-    create_test_migration(
+    common::create_test_migration(
         &project_path,
         "20260121120001",
         "create_posts",
         "CREATE TABLE posts (id INTEGER PRIMARY KEY);",
         "DROP TABLE posts;",
+        "test_checksum_20260121120001",
     )
     .unwrap();
 
@@ -183,25 +114,28 @@ async fn test_load_available_migrations() {
 #[ignore] // 統合テスト - 実際のデータベースが必要
 async fn test_rollback_single_migration_sqlite() {
     install_default_drivers();
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, true).unwrap();
 
     // データベースファイルのパス
     let db_path = project_path.join("test.db");
     fs::File::create(&db_path).unwrap();
 
     // 設定ファイルにデータベース接続情報を追加
-    let config = create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
-    let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
+    let config =
+        common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config_path = project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH);
     let config_yaml = serde_saphyr::to_string(&config).unwrap();
     fs::write(&config_path, config_yaml).unwrap();
 
     // マイグレーションを作成
-    create_test_migration(
+    common::create_test_migration(
         &project_path,
         "20260121120000",
         "create_users",
         "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);",
         "DROP TABLE users;",
+        "test_checksum_20260121120000",
     )
     .unwrap();
 
@@ -209,7 +143,10 @@ async fn test_rollback_single_migration_sqlite() {
     use strata::adapters::database::DatabaseConnectionService;
     use strata::adapters::database_migrator::DatabaseMigratorService;
 
-    let config = ConfigLoader::from_file(&project_path.join(Config::DEFAULT_CONFIG_PATH)).unwrap();
+    let config = ConfigLoader::from_file(
+        &project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH),
+    )
+    .unwrap();
     let db_config = config.get_database_config("development").unwrap();
 
     let db_service = DatabaseConnectionService::new();

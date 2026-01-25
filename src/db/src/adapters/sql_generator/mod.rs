@@ -10,6 +10,34 @@ pub mod sqlite_table_recreator;
 use crate::core::schema::{Column, ColumnType, EnumDefinition, Index, Table};
 use crate::core::schema_diff::{ColumnDiff, EnumDiff, RenamedColumn};
 
+/// カラム定義の共通組み立てヘルパー
+pub(crate) fn build_column_definition(
+    column: &Column,
+    type_str: String,
+    extra_parts: &[&str],
+) -> String {
+    let mut parts = Vec::new();
+
+    parts.push(column.name.clone());
+    parts.push(type_str);
+
+    if !column.nullable {
+        parts.push("NOT NULL".to_string());
+    }
+
+    for part in extra_parts {
+        if !part.is_empty() {
+            parts.push((*part).to_string());
+        }
+    }
+
+    if let Some(ref default_value) = column.default_value {
+        parts.push(format!("DEFAULT {}", default_value));
+    }
+
+    parts.join(" ")
+}
+
 /// マイグレーション方向
 ///
 /// マイグレーションの適用方向を表現します。

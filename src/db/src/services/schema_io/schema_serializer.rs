@@ -6,7 +6,7 @@
 // DTO変換はDtoConverterServiceに委譲しています。
 
 use crate::core::schema::Schema;
-use crate::services::dto_converter::DtoConverterService;
+use crate::services::schema_io::dto_converter::DtoConverterService;
 use anyhow::Result;
 use std::fs;
 use std::path::Path;
@@ -375,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_round_trip_serialize_parse() {
-        use crate::services::schema_parser::SchemaParserService;
+        use crate::services::schema_io::schema_parser::SchemaParserService;
 
         // 内部モデルを作成
         let mut schema = Schema::new("1.0".to_string());
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_full_schema_round_trip() {
-        use crate::services::schema_parser::SchemaParserService;
+        use crate::services::schema_io::schema_parser::SchemaParserService;
 
         // 複雑なスキーマを作成
         let mut schema = Schema::new("1.0".to_string());

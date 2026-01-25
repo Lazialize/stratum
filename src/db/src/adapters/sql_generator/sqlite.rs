@@ -4,7 +4,7 @@
 // SQLiteはALTER TABLEの機能が制限されているため、制約はCREATE TABLE内で定義します。
 
 use crate::adapters::sql_generator::sqlite_table_recreator::SqliteTableRecreator;
-use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
+use crate::adapters::sql_generator::{build_column_definition, MigrationDirection, SqlGenerator};
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
@@ -22,26 +22,8 @@ impl SqliteSqlGenerator {
 
     /// カラム定義のSQL文字列を生成
     fn generate_column_definition(&self, column: &Column) -> String {
-        let mut parts = Vec::new();
-
-        // カラム名
-        parts.push(column.name.clone());
-
-        // データ型
         let type_str = self.map_column_type(&column.column_type);
-        parts.push(type_str);
-
-        // NULL制約
-        if !column.nullable {
-            parts.push("NOT NULL".to_string());
-        }
-
-        // デフォルト値
-        if let Some(ref default_value) = column.default_value {
-            parts.push(format!("DEFAULT {}", default_value));
-        }
-
-        parts.join(" ")
+        build_column_definition(column, type_str, &[])
     }
 
     /// ColumnTypeをSQLiteの型文字列にマッピング

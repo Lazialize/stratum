@@ -7,8 +7,8 @@
 
 use crate::core::error::IoError;
 use crate::core::schema::Schema;
-use crate::services::dto::SchemaDto;
-use crate::services::dto_converter::DtoConverterService;
+use crate::services::schema_io::dto::SchemaDto;
+use crate::services::schema_io::dto_converter::DtoConverterService;
 use anyhow::{Context, Result};
 use regex::Regex;
 use std::fs;

@@ -12,8 +12,8 @@ use crate::core::schema::Schema;
 use crate::services::migration_generator::MigrationGenerator;
 use crate::services::schema_checksum::SchemaChecksumService;
 use crate::services::schema_diff_detector::SchemaDiffDetector;
-use crate::services::schema_parser::SchemaParserService;
-use crate::services::schema_serializer::SchemaSerializerService;
+use crate::services::schema_io::schema_parser::SchemaParserService;
+use crate::services::schema_io::schema_serializer::SchemaSerializerService;
 use crate::services::schema_validator::SchemaValidatorService;
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
@@ -182,7 +182,7 @@ impl GenerateCommandHandler {
         }
 
         // Create migration directory
-        let migrations_dir = command.project_path.join(&config.migrations_dir);
+        let migrations_dir = context.migrations_dir();
         let migration_dir = migrations_dir.join(&migration_name);
         fs::create_dir_all(&migration_dir).with_context(|| {
             format!("Failed to create migration directory: {:?}", migration_dir)
@@ -1033,7 +1033,7 @@ mod tests {
     #[test]
     fn test_snapshot_serialization_uses_new_syntax() {
         use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
-        use crate::services::schema_serializer::SchemaSerializerService;
+        use crate::services::schema_io::schema_serializer::SchemaSerializerService;
 
         // 内部モデルを作成
         let mut schema = Schema::new("1.0".to_string());

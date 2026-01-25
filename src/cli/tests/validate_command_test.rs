@@ -1,56 +1,12 @@
 // validateコマンドハンドラーのテスト
 
-use anyhow::Result;
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use strata::cli::commands::validate::{ValidateCommand, ValidateCommandHandler};
-use strata::core::config::{Config, DatabaseConfig, Dialect};
+use strata::core::config::Dialect;
 use tempfile::TempDir;
 
-/// テスト用のConfig作成ヘルパー
-fn create_test_config(dialect: Dialect) -> Config {
-    let mut environments = HashMap::new();
-
-    let db_config = DatabaseConfig {
-        host: String::new(),
-        port: 0,
-        database: ":memory:".to_string(),
-        user: None,
-        password: None,
-        timeout: None,
-    };
-
-    environments.insert("development".to_string(), db_config);
-
-    Config {
-        version: "1.0".to_string(),
-        dialect,
-        schema_dir: PathBuf::from("schema"),
-        migrations_dir: PathBuf::from("migrations"),
-        environments,
-    }
-}
-
-/// テスト用のプロジェクトディレクトリを作成
-fn setup_test_project() -> Result<(TempDir, PathBuf)> {
-    let temp_dir = TempDir::new()?;
-    let project_path = temp_dir.path().to_path_buf();
-
-    // 設定ファイルを作成
-    let config = create_test_config(Dialect::SQLite);
-    let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
-    let config_yaml = serde_saphyr::to_string(&config)?;
-    fs::write(&config_path, config_yaml)?;
-
-    // スキーマディレクトリを作成
-    fs::create_dir_all(project_path.join("schema"))?;
-
-    // マイグレーションディレクトリを作成
-    fs::create_dir_all(project_path.join("migrations"))?;
-
-    Ok((temp_dir, project_path))
-}
+mod common;
 
 #[test]
 fn test_new_handler() {
@@ -90,7 +46,8 @@ fn test_validate_no_config_file() {
 
 #[test]
 fn test_validate_no_schema_dir() {
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, true).unwrap();
 
     // スキーマディレクトリを削除
     fs::remove_dir_all(project_path.join("schema")).unwrap();
@@ -111,7 +68,8 @@ fn test_validate_no_schema_dir() {
 
 #[test]
 fn test_validate_empty_schema_dir() {
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, true).unwrap();
 
     let handler = ValidateCommandHandler::new();
     let command = ValidateCommand {
@@ -129,7 +87,8 @@ fn test_validate_empty_schema_dir() {
 
 #[test]
 fn test_validate_valid_schema() {
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, true).unwrap();
 
     // 有効なスキーマファイルを作成（新構文）
     let schema_yaml = r#"
@@ -174,7 +133,8 @@ tables:
 
 #[test]
 fn test_validate_invalid_schema_no_primary_key() {
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, true).unwrap();
 
     // プライマリキーがないスキーマファイルを作成（新構文）
     let schema_yaml = r#"
@@ -210,7 +170,8 @@ tables:
 
 #[test]
 fn test_validate_invalid_foreign_key() {
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, true).unwrap();
 
     // 存在しないテーブルを参照する外部キーを持つスキーマを作成（新構文）
     let schema_yaml = r#"
@@ -254,7 +215,8 @@ tables:
 
 #[test]
 fn test_validate_custom_schema_dir() {
-    let (_temp_dir, project_path) = setup_test_project().unwrap();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, true).unwrap();
 
     // カスタムスキーマディレクトリを作成
     let custom_schema_dir = project_path.join("custom_schema");

@@ -9,7 +9,7 @@ use tempfile::TempDir;
 #[cfg(test)]
 mod schema_parser_tests {
     use super::*;
-    use strata::services::schema_parser::SchemaParserService;
+    use strata::services::schema_io::schema_parser::SchemaParserService;
 
     /// テスト用の一時ディレクトリとスキーマファイルを作成
     fn setup_test_schema_dir() -> TempDir {
@@ -454,7 +454,7 @@ tables:
     /// 往復テスト: パース→シリアライズ→パース
     #[test]
     fn test_round_trip_parse_serialize_parse() {
-        use strata::services::schema_serializer::SchemaSerializerService;
+        use strata::services::schema_io::schema_serializer::SchemaSerializerService;
 
         let temp_dir = TempDir::new().unwrap();
         let original_file = temp_dir.path().join("original.yaml");

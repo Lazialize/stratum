@@ -7,7 +7,7 @@
 // - 検証結果のサマリー表示
 
 use crate::cli::command_context::CommandContext;
-use crate::services::schema_parser::SchemaParserService;
+use crate::services::schema_io::schema_parser::SchemaParserService;
 use crate::services::schema_validator::SchemaValidatorService;
 use anyhow::{Context, Result};
 use std::path::PathBuf;

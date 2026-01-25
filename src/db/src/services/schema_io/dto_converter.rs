@@ -4,7 +4,7 @@
 // パース(DTO→Schema)とシリアライズ(Schema→DTO)の整合性を保証します。
 
 use crate::core::schema::{Constraint, Schema, Table};
-use crate::services::dto::{ConstraintDto, SchemaDto, TableDto};
+use crate::services::schema_io::dto::{ConstraintDto, SchemaDto, TableDto};
 use anyhow::Result;
 use std::collections::HashMap;
 
