@@ -9,6 +9,62 @@ pub mod sqlite_table_recreator;
 
 use crate::core::schema::{Column, ColumnType, EnumDefinition, Index, Table};
 use crate::core::schema_diff::{ColumnDiff, EnumDiff, RenamedColumn};
+use sha2::{Digest, Sha256};
+
+/// PostgreSQL/MySQLの識別子最大長
+const MAX_IDENTIFIER_LENGTH: usize = 63;
+
+/// 外部キー制約名を生成
+///
+/// `fk_{table_name}_{columns}_{referenced_table}`形式で名前を生成します。
+/// 63文字を超える場合は、末尾にハッシュを付けて切り詰めます。
+///
+/// # Arguments
+///
+/// * `table_name` - 制約を持つテーブル名
+/// * `columns` - 制約対象のカラム名のスライス
+/// * `referenced_table` - 参照先テーブル名
+///
+/// # Returns
+///
+/// 63文字以内の制約名
+pub(crate) fn generate_fk_constraint_name(
+    table_name: &str,
+    columns: &[String],
+    referenced_table: &str,
+) -> String {
+    let base_name = format!(
+        "fk_{}_{}_{}",
+        table_name,
+        columns.join("_"),
+        referenced_table
+    );
+
+    if base_name.len() <= MAX_IDENTIFIER_LENGTH {
+        return base_name;
+    }
+
+    // 長すぎる場合はハッシュを付けて切り詰める
+    // ハッシュは元の完全な名前から生成するため、同じ入力には同じ出力を保証
+    let mut hasher = Sha256::new();
+    hasher.update(base_name.as_bytes());
+    let hash = hasher.finalize();
+    let hash_suffix = format!(
+        "_{:x}",
+        &hash[..4].iter().fold(0u32, |acc, &b| acc << 8 | b as u32)
+    );
+
+    // fk_ + hash_suffix(_xxxxxxxx) の長さを引いた残りを使用
+    // hash_suffix は "_" + 8文字 = 9文字
+    let available_length = MAX_IDENTIFIER_LENGTH - 3 - hash_suffix.len(); // "fk_" = 3文字
+    let truncated_base = &base_name[3..]; // "fk_"を除いた部分
+
+    if truncated_base.len() <= available_length {
+        format!("fk_{}{}", truncated_base, hash_suffix)
+    } else {
+        format!("fk_{}{}", &truncated_base[..available_length], hash_suffix)
+    }
+}
 
 /// カラム定義の共通組み立てヘルパー
 pub(crate) fn build_column_definition(
@@ -396,5 +452,91 @@ mod tests {
             MigrationDirection::Down.source_type(&old_type, &new_type),
             &new_type
         );
+    }
+
+    // ==========================================
+    // generate_fk_constraint_name のテスト
+    // ==========================================
+
+    #[test]
+    fn test_generate_fk_constraint_name_short() {
+        // 63文字以下の場合はそのまま返す
+        let name = generate_fk_constraint_name("posts", &vec!["user_id".to_string()], "users");
+        assert_eq!(name, "fk_posts_user_id_users");
+        assert!(name.len() <= 63);
+    }
+
+    #[test]
+    fn test_generate_fk_constraint_name_composite() {
+        // 複合キーの場合
+        let name = generate_fk_constraint_name(
+            "order_items",
+            &vec!["order_id".to_string(), "product_id".to_string()],
+            "orders",
+        );
+        assert_eq!(name, "fk_order_items_order_id_product_id_orders");
+        assert!(name.len() <= 63);
+    }
+
+    #[test]
+    fn test_generate_fk_constraint_name_truncated() {
+        // 63文字を超える場合はハッシュ付きで切り詰め
+        let name = generate_fk_constraint_name(
+            "very_long_table_name_with_many_characters",
+            &vec!["organization_id".to_string(), "department_id".to_string()],
+            "another_very_long_table_name_here",
+        );
+
+        // 63文字以下であることを確認
+        assert!(
+            name.len() <= 63,
+            "Constraint name '{}' exceeds 63 characters (len={})",
+            name,
+            name.len()
+        );
+
+        // fk_プレフィックスで始まることを確認
+        assert!(name.starts_with("fk_"));
+
+        // ハッシュサフィックスが付いていることを確認（_xxxxxxxx形式）
+        assert!(name.contains("_"), "Expected hash suffix in '{}'", name);
+    }
+
+    #[test]
+    fn test_generate_fk_constraint_name_deterministic() {
+        // 同じ入力には同じ出力を保証
+        let name1 = generate_fk_constraint_name(
+            "very_long_table_name_with_many_characters",
+            &vec!["organization_id".to_string()],
+            "another_very_long_table_name_here",
+        );
+        let name2 = generate_fk_constraint_name(
+            "very_long_table_name_with_many_characters",
+            &vec!["organization_id".to_string()],
+            "another_very_long_table_name_here",
+        );
+        assert_eq!(name1, name2);
+    }
+
+    #[test]
+    fn test_generate_fk_constraint_name_different_inputs_different_outputs() {
+        // 異なる入力には異なる出力（ハッシュが異なる）
+        let name1 = generate_fk_constraint_name(
+            "very_long_table_name_with_many_characters_a",
+            &vec!["column_id".to_string()],
+            "referenced_table",
+        );
+        let name2 = generate_fk_constraint_name(
+            "very_long_table_name_with_many_characters_b",
+            &vec!["column_id".to_string()],
+            "referenced_table",
+        );
+
+        // 両方63文字以下
+        assert!(name1.len() <= 63);
+        assert!(name2.len() <= 63);
+
+        // 異なる名前が生成される
+        assert_ne!(name1, name2);
     }
 }

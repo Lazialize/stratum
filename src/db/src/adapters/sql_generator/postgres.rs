@@ -2,7 +2,9 @@
 //
 // スキーマ定義からPostgreSQL用のDDL文を生成します。
 
-use crate::adapters::sql_generator::{build_column_definition, MigrationDirection, SqlGenerator};
+use crate::adapters::sql_generator::{
+    build_column_definition, generate_fk_constraint_name, MigrationDirection, SqlGenerator,
+};
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, EnumDefinition, Index, Table};
@@ -349,12 +351,8 @@ impl SqlGenerator for PostgresSqlGenerator {
                     referenced_table,
                     referenced_columns,
                 } => {
-                    let constraint_name = format!(
-                        "fk_{}_{}_{}",
-                        table.name,
-                        columns.join("_"),
-                        referenced_table
-                    );
+                    let constraint_name =
+                        generate_fk_constraint_name(&table.name, columns, referenced_table);
 
                     format!(
                         "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
@@ -403,12 +401,8 @@ impl SqlGenerator for PostgresSqlGenerator {
                 referenced_table,
                 referenced_columns,
             } => {
-                let constraint_name = format!(
-                    "fk_{}_{}_{}",
-                    table_name,
-                    columns.join("_"),
-                    referenced_table
-                );
+                let constraint_name =
+                    generate_fk_constraint_name(table_name, columns, referenced_table);
 
                 format!(
                     "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
@@ -437,12 +431,8 @@ impl SqlGenerator for PostgresSqlGenerator {
                 referenced_table,
                 ..
             } => {
-                let constraint_name = format!(
-                    "fk_{}_{}_{}",
-                    table_name,
-                    columns.join("_"),
-                    referenced_table
-                );
+                let constraint_name =
+                    generate_fk_constraint_name(table_name, columns, referenced_table);
 
                 format!(
                     "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {}",
@@ -845,5 +835,234 @@ mod tests {
 
         assert_eq!(sql.len(), 1);
         assert_eq!(sql[0], "ALTER TABLE users RENAME COLUMN user_name TO name");
+    }
+
+    // ==========================================
+    // SERIAL変換のテスト
+    // ==========================================
+
+    #[test]
+    fn test_alter_column_integer_to_serial() {
+        // INTEGER → SERIAL: 型は同じだがauto_incrementが変わる
+        // 型変更SQLは生成されず、シーケンス関連のSQLのみ生成される
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        let mut old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        old_column.auto_increment = Some(false);
+
+        let mut new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        new_column.auto_increment = Some(true);
+
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        // 型変更SQLは含まれない（INTEGERのまま）
+        // シーケンス関連のSQLが4つ生成される
+        assert_eq!(sql.len(), 4);
+        assert!(sql[0].contains("CREATE SEQUENCE"));
+        assert!(sql[1].contains("setval"));
+        assert!(sql[2].contains("SET DEFAULT nextval"));
+        assert!(sql[3].contains("OWNED BY"));
+
+        // 型変更SQLがないことを確認
+        assert!(!sql.iter().any(|s| s.contains("ALTER COLUMN id TYPE")));
+    }
+
+    #[test]
+    fn test_alter_column_integer_to_bigserial() {
+        // INTEGER → BIGSERIAL: 型もauto_incrementも変わる
+        // 型変更SQLが1回だけ生成され、その後にシーケンス関連SQLが続く
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        let mut old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        old_column.auto_increment = Some(false);
+
+        let mut new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: Some(8) }, // BIGINT
+            false,
+        );
+        new_column.auto_increment = Some(true);
+
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        // 型変更SQL(1) + シーケンス関連SQL(4) = 5
+        assert_eq!(sql.len(), 5);
+
+        // 最初は型変更SQL（BIGINT、SERIALではない）
+        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE BIGINT");
+
+        // シーケンス関連SQL
+        assert!(sql[1].contains("CREATE SEQUENCE"));
+        assert!(sql[2].contains("setval"));
+        assert!(sql[3].contains("SET DEFAULT nextval"));
+        assert!(sql[4].contains("OWNED BY"));
+
+        // 型変更SQLは1回だけであることを確認
+        let type_change_count = sql
+            .iter()
+            .filter(|s| s.contains("ALTER COLUMN id TYPE"))
+            .count();
+        assert_eq!(type_change_count, 1);
+    }
+
+    #[test]
+    fn test_alter_column_serial_to_integer() {
+        // SERIAL → INTEGER: auto_incrementがtrueからfalseに
+        // DEFAULTドロップとシーケンス削除が生成される
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        let mut old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        old_column.auto_increment = Some(true);
+
+        let mut new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        new_column.auto_increment = Some(false);
+
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        // DEFAULTドロップ + シーケンス削除 = 2
+        assert_eq!(sql.len(), 2);
+        assert!(sql[0].contains("DROP DEFAULT"));
+        assert!(sql[1].contains("DROP SEQUENCE IF EXISTS"));
+        assert!(sql[1].contains("CASCADE"));
+    }
+
+    #[test]
+    fn test_alter_column_bigserial_to_integer() {
+        // BIGSERIAL → INTEGER: 型もauto_incrementも変わる
+        // 型変更SQL + DEFAULTドロップ + シーケンス削除
+        let generator = PostgresSqlGenerator::new();
+        let table = create_test_table();
+
+        let mut old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: Some(8) }, // BIGINT
+            false,
+        );
+        old_column.auto_increment = Some(true);
+
+        let mut new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        new_column.auto_increment = Some(false);
+
+        let diff = ColumnDiff::new("id".to_string(), old_column, new_column);
+
+        let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
+
+        // 型変更SQL(1) + DEFAULTドロップ(1) + シーケンス削除(1) = 3
+        assert_eq!(sql.len(), 3);
+        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE INTEGER");
+        assert!(sql[1].contains("DROP DEFAULT"));
+        assert!(sql[2].contains("DROP SEQUENCE IF EXISTS"));
+    }
+
+    // ==========================================
+    // 制約メソッドのテスト
+    // ==========================================
+
+    #[test]
+    fn test_generate_add_constraint_for_existing_table_foreign_key() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        };
+
+        let sql = generator.generate_add_constraint_for_existing_table("posts", &constraint);
+
+        assert_eq!(
+            sql,
+            "ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id_users FOREIGN KEY (user_id) REFERENCES users (id)"
+        );
+    }
+
+    #[test]
+    fn test_generate_add_constraint_for_existing_table_composite_foreign_key() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::FOREIGN_KEY {
+            columns: vec!["org_id".to_string(), "user_id".to_string()],
+            referenced_table: "org_users".to_string(),
+            referenced_columns: vec!["organization_id".to_string(), "user_id".to_string()],
+        };
+
+        let sql = generator.generate_add_constraint_for_existing_table("posts", &constraint);
+
+        assert_eq!(
+            sql,
+            "ALTER TABLE posts ADD CONSTRAINT fk_posts_org_id_user_id_org_users FOREIGN KEY (org_id, user_id) REFERENCES org_users (organization_id, user_id)"
+        );
+    }
+
+    #[test]
+    fn test_generate_add_constraint_for_existing_table_non_fk_returns_empty() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::UNIQUE {
+            columns: vec!["email".to_string()],
+        };
+
+        let sql = generator.generate_add_constraint_for_existing_table("users", &constraint);
+
+        assert!(sql.is_empty());
+    }
+
+    #[test]
+    fn test_generate_drop_constraint_for_existing_table_foreign_key() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        };
+
+        let sql = generator.generate_drop_constraint_for_existing_table("posts", &constraint);
+
+        assert_eq!(
+            sql,
+            "ALTER TABLE posts DROP CONSTRAINT IF EXISTS fk_posts_user_id_users"
+        );
+    }
+
+    #[test]
+    fn test_generate_drop_constraint_for_existing_table_non_fk_returns_empty() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        };
+
+        let sql = generator.generate_drop_constraint_for_existing_table("users", &constraint);
+
+        assert!(sql.is_empty());
     }
 }
