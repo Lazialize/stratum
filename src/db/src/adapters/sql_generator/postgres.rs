@@ -233,8 +233,9 @@ impl SqlGenerator for PostgresSqlGenerator {
             let quoted_column = format!("\"{}\"", column_name);
             statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", sequence_name));
             // 既存データがある場合に備えてシーケンスを最大値に初期化
+            // COALESCE(..., 0) により空テーブルでは nextval() が 1 を返す
             statements.push(format!(
-                "SELECT setval('{}', COALESCE((SELECT MAX({}) FROM {}), 1))",
+                "SELECT setval('{}', COALESCE((SELECT MAX({}) FROM {}), 0))",
                 sequence_name, quoted_column, quoted_table
             ));
             statements.push(format!(
