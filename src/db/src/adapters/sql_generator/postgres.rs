@@ -228,38 +228,34 @@ impl SqlGenerator for PostgresSqlGenerator {
         // PostgreSQLではALTER COLUMN TYPE SERIALは使用できないため、
         // シーケンスの作成とDEFAULT設定で対応
         if !source_is_auto && target_is_auto {
-            let sequence_name = format!("\"{}_{}_seq\"", table.name, column_name);
-            let quoted_table = format!("\"{}\"", table.name);
-            let quoted_column = format!("\"{}\"", column_name);
+            let sequence_name = format!("{}_{}_seq", table.name, column_name);
             statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", sequence_name));
             // 既存データがある場合に備えてシーケンスを最大値に初期化
             // COALESCE(..., 0) により空テーブルでは nextval() が 1 を返す
             statements.push(format!(
                 "SELECT setval('{}', COALESCE((SELECT MAX({}) FROM {}), 0))",
-                sequence_name, quoted_column, quoted_table
+                sequence_name, column_name, table.name
             ));
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval('{}')",
-                quoted_table, quoted_column, sequence_name
+                table.name, column_name, sequence_name
             ));
             statements.push(format!(
                 "ALTER SEQUENCE {} OWNED BY {}.{}",
-                sequence_name, quoted_table, quoted_column
+                sequence_name, table.name, column_name
             ));
         }
 
         // SERIAL → INTEGER (auto_increment: true → false)
         // シーケンスはこのカラム専用として作成されたものと仮定し、
-        // DROP SEQUENCE IF EXISTS で安全に削除を試みる
+        // DROP SEQUENCE IF EXISTS CASCADE で安全に削除を試みる
         if source_is_auto && !target_is_auto {
-            let quoted_table = format!("\"{}\"", table.name);
-            let quoted_column = format!("\"{}\"", column_name);
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
-                quoted_table, quoted_column
+                table.name, column_name
             ));
-            let sequence_name = format!("\"{}_{}_seq\"", table.name, column_name);
-            statements.push(format!("DROP SEQUENCE IF EXISTS {}", sequence_name));
+            let sequence_name = format!("{}_{}_seq", table.name, column_name);
+            statements.push(format!("DROP SEQUENCE IF EXISTS {} CASCADE", sequence_name));
         }
 
         // 型変更の処理
@@ -447,7 +443,7 @@ impl SqlGenerator for PostgresSqlGenerator {
                 );
 
                 format!(
-                    "ALTER TABLE \"{}\" DROP CONSTRAINT IF EXISTS \"{}\"",
+                    "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {}",
                     table_name, constraint_name
                 )
             }

@@ -1665,4 +1665,105 @@ mod tests {
             sql
         );
     }
+
+    // ==========================================
+    // Down Migration テスト
+    // ==========================================
+
+    #[test]
+    fn test_pipeline_down_drops_added_foreign_key_constraint() {
+        // Down migrationで追加された外部キー制約が削除されること
+        let mut diff = SchemaDiff::new();
+
+        let mut table_diff = TableDiff::new("posts".to_string());
+        table_diff.added_constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains("DROP CONSTRAINT"),
+            "Expected DROP CONSTRAINT in down SQL: {}",
+            sql
+        );
+        assert!(
+            sql.contains("fk_posts_user_id_users"),
+            "Expected constraint name in down SQL: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_down_serial_to_integer_reversal() {
+        // Down migrationでSERIAL→INTEGER変換が逆転されること
+        let mut old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        old_column.auto_increment = Some(false);
+
+        let mut new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        new_column.auto_increment = Some(true);
+
+        let column_diff = ColumnDiff {
+            column_name: "id".to_string(),
+            old_column: old_column.clone(),
+            new_column: new_column.clone(),
+            changes: vec![ColumnChange::AutoIncrementChanged {
+                old_auto_increment: Some(false),
+                new_auto_increment: Some(true),
+            }],
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_columns.push(column_diff);
+
+        let mut diff = SchemaDiff::new();
+        diff.modified_tables.push(table_diff);
+
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.columns.push(old_column);
+        old_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        old_schema.tables.insert("users".to_string(), old_table);
+
+        let mut new_schema = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("users".to_string());
+        new_table.columns.push(new_column);
+        new_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        new_schema.tables.insert("users".to_string(), new_table);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)
+            .with_schemas(&old_schema, &new_schema);
+        let result = pipeline.generate_down();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+
+        // Down方向ではSERIAL→INTEGERの逆、つまりINTEGER→SERIAL変換が行われる
+        // (Up: INTEGER→SERIAL, Down: SERIAL→INTEGER)
+        // しかし、down migrationでは old_schema を基準にするため、
+        // 実際にはDROP DEFAULTとDROP SEQUENCEが生成される
+        assert!(
+            sql.contains("DROP DEFAULT") || sql.contains("DROP SEQUENCE"),
+            "Expected DROP DEFAULT or DROP SEQUENCE in down SQL: {}",
+            sql
+        );
+    }
 }
