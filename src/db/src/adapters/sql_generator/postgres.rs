@@ -224,6 +224,36 @@ impl SqlGenerator for PostgresSqlGenerator {
         let source_is_auto = source_auto_increment.unwrap_or(false);
         let target_is_auto = target_auto_increment.unwrap_or(false);
 
+        // 型変更の処理
+        // auto_incrementの変更と同時に型変更がある場合も処理する（例: INTEGER→BIGSERIAL）
+        // 型変更はシーケンス作成より先に実行（型の不一致を避けるため）
+        let has_type_change = source_type != target_type;
+        if has_type_change {
+            // auto_incrementがtrueの場合、SERIAL系の型名ではなく基底の整数型を使用
+            // （シーケンス設定は下記で別途処理）
+            let target_type_str = if target_is_auto {
+                // SERIAL変換時は基底型（INTEGER/BIGINT/SMALLINT）で型変更
+                self.map_column_type(target_type, Some(false))
+            } else {
+                self.map_column_type(target_type, target_auto_increment)
+            };
+
+            let needs_using = self.needs_using_clause(source_type, target_type);
+
+            let sql = if needs_using {
+                format!(
+                    "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{}",
+                    table.name, column_name, target_type_str, column_name, target_type_str
+                )
+            } else {
+                format!(
+                    "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
+                    table.name, column_name, target_type_str
+                )
+            };
+            statements.push(sql);
+        }
+
         // INTEGER → SERIAL (auto_increment: false → true)
         // PostgreSQLではALTER COLUMN TYPE SERIALは使用できないため、
         // シーケンスの作成とDEFAULT設定で対応
@@ -232,8 +262,9 @@ impl SqlGenerator for PostgresSqlGenerator {
             statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", sequence_name));
             // 既存データがある場合に備えてシーケンスを最大値に初期化
             // COALESCE(..., 0) により空テーブルでは nextval() が 1 を返す
+            // 第3引数 true により次の nextval() は max+1 を返す
             statements.push(format!(
-                "SELECT setval('{}', COALESCE((SELECT MAX({}) FROM {}), 0))",
+                "SELECT setval('{}', COALESCE((SELECT MAX({}) FROM {}), 0), true)",
                 sequence_name, column_name, table.name
             ));
             statements.push(format!(
@@ -256,35 +287,6 @@ impl SqlGenerator for PostgresSqlGenerator {
             ));
             let sequence_name = format!("{}_{}_seq", table.name, column_name);
             statements.push(format!("DROP SEQUENCE IF EXISTS {} CASCADE", sequence_name));
-        }
-
-        // 型変更の処理
-        // auto_incrementの変更と同時に型変更がある場合も処理する（例: INTEGER→BIGSERIAL）
-        let has_type_change = source_type != target_type;
-        if has_type_change {
-            // auto_incrementがtrueの場合、SERIAL系の型名ではなく基底の整数型を使用
-            // （シーケンス設定は上記で別途処理済み）
-            let target_type_str = if target_is_auto {
-                // SERIAL変換時は基底型（INTEGER/BIGINT/SMALLINT）で型変更
-                self.map_column_type(target_type, Some(false))
-            } else {
-                self.map_column_type(target_type, target_auto_increment)
-            };
-
-            let needs_using = self.needs_using_clause(source_type, target_type);
-
-            let sql = if needs_using {
-                format!(
-                    "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{}",
-                    table.name, column_name, target_type_str, column_name, target_type_str
-                )
-            } else {
-                format!(
-                    "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
-                    table.name, column_name, target_type_str
-                )
-            };
-            statements.push(sql);
         }
 
         statements
