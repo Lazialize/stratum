@@ -1572,4 +1572,86 @@ mod tests {
             sql
         );
     }
+
+    #[test]
+    fn test_pipeline_integer_to_bigserial_postgresql() {
+        // PostgreSQLでのINTEGER→BIGSERIAL変換テスト（型変更＋auto_increment変更）
+        let mut old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        old_column.auto_increment = Some(false);
+
+        let mut new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: Some(8) }, // BIGINT
+            false,
+        );
+        new_column.auto_increment = Some(true);
+
+        let column_diff = ColumnDiff {
+            column_name: "id".to_string(),
+            old_column: old_column.clone(),
+            new_column: new_column.clone(),
+            changes: vec![
+                ColumnChange::TypeChanged {
+                    old_type: "INTEGER".to_string(),
+                    new_type: "BIGINT".to_string(),
+                },
+                ColumnChange::AutoIncrementChanged {
+                    old_auto_increment: Some(false),
+                    new_auto_increment: Some(true),
+                },
+            ],
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_columns.push(column_diff);
+
+        let mut diff = SchemaDiff::new();
+        diff.modified_tables.push(table_diff);
+
+        // スキーマを作成
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.columns.push(old_column);
+        old_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        old_schema.tables.insert("users".to_string(), old_table);
+
+        let mut new_schema = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("users".to_string());
+        new_table.columns.push(new_column);
+        new_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        new_schema.tables.insert("users".to_string(), new_table);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)
+            .with_schemas(&old_schema, &new_schema);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+
+        // シーケンス作成とDEFAULT設定が含まれること
+        assert!(
+            sql.contains("CREATE SEQUENCE"),
+            "Expected CREATE SEQUENCE in: {}",
+            sql
+        );
+        assert!(
+            sql.contains("SET DEFAULT nextval"),
+            "Expected SET DEFAULT nextval in: {}",
+            sql
+        );
+        // 型変更（INTEGER→BIGINT）も含まれること
+        assert!(
+            sql.contains("ALTER COLUMN id TYPE BIGINT"),
+            "Expected ALTER COLUMN TYPE BIGINT in: {}",
+            sql
+        );
+    }
 }

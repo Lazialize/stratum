@@ -225,9 +225,9 @@ impl SqlGenerator for PostgresSqlGenerator {
         let target_is_auto = target_auto_increment.unwrap_or(false);
 
         // INTEGER → SERIAL (auto_increment: false → true)
+        // PostgreSQLではALTER COLUMN TYPE SERIALは使用できないため、
+        // シーケンスの作成とDEFAULT設定で対応
         if !source_is_auto && target_is_auto {
-            // PostgreSQLではALTER COLUMN TYPE SERIALは使用できないため、
-            // シーケンスの作成とDEFAULT設定で対応
             let sequence_name = format!("{}_{}_seq", table.name, column_name);
             statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", sequence_name));
             statements.push(format!(
@@ -238,41 +238,50 @@ impl SqlGenerator for PostgresSqlGenerator {
                 "ALTER SEQUENCE {} OWNED BY {}.{}",
                 sequence_name, table.name, column_name
             ));
-            return statements;
         }
 
         // SERIAL → INTEGER (auto_increment: true → false)
+        // シーケンスはこのカラム専用として作成されたものと仮定し、
+        // DROP SEQUENCE IF EXISTS で安全に削除を試みる
         if source_is_auto && !target_is_auto {
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
                 table.name, column_name
             ));
-            // シーケンスの削除はオプション（他のカラムで使用されている可能性があるため）
             let sequence_name = format!("{}_{}_seq", table.name, column_name);
             statements.push(format!("DROP SEQUENCE IF EXISTS {}", sequence_name));
-            return statements;
         }
 
-        // 通常の型変更
-        // auto_incrementフラグは変更されていないが、型自体が変更されている場合
-        let target_type_str = self.map_column_type(target_type, target_auto_increment);
+        // 型変更の処理
+        // auto_incrementの変更と同時に型変更がある場合も処理する（例: INTEGER→BIGSERIAL）
+        let has_type_change = source_type != target_type;
+        if has_type_change {
+            // auto_incrementがtrueの場合、SERIAL系の型名ではなく基底の整数型を使用
+            // （シーケンス設定は上記で別途処理済み）
+            let target_type_str = if target_is_auto {
+                // SERIAL変換時は基底型（INTEGER/BIGINT/SMALLINT）で型変更
+                self.map_column_type(target_type, Some(false))
+            } else {
+                self.map_column_type(target_type, target_auto_increment)
+            };
 
-        // USING句が必要かどうかを判定
-        let needs_using = self.needs_using_clause(source_type, target_type);
+            let needs_using = self.needs_using_clause(source_type, target_type);
 
-        let sql = if needs_using {
-            format!(
-                "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{}",
-                table.name, column_name, target_type_str, column_name, target_type_str
-            )
-        } else {
-            format!(
-                "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
-                table.name, column_name, target_type_str
-            )
-        };
+            let sql = if needs_using {
+                format!(
+                    "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{}",
+                    table.name, column_name, target_type_str, column_name, target_type_str
+                )
+            } else {
+                format!(
+                    "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
+                    table.name, column_name, target_type_str
+                )
+            };
+            statements.push(sql);
+        }
 
-        vec![sql]
+        statements
     }
 
     fn generate_create_table(&self, table: &Table) -> String {
