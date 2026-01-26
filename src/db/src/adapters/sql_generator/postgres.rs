@@ -228,15 +228,22 @@ impl SqlGenerator for PostgresSqlGenerator {
         // PostgreSQLではALTER COLUMN TYPE SERIALは使用できないため、
         // シーケンスの作成とDEFAULT設定で対応
         if !source_is_auto && target_is_auto {
-            let sequence_name = format!("{}_{}_seq", table.name, column_name);
+            let sequence_name = format!("\"{}_{}_seq\"", table.name, column_name);
+            let quoted_table = format!("\"{}\"", table.name);
+            let quoted_column = format!("\"{}\"", column_name);
             statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", sequence_name));
+            // 既存データがある場合に備えてシーケンスを最大値に初期化
+            statements.push(format!(
+                "SELECT setval('{}', COALESCE((SELECT MAX({}) FROM {}), 1))",
+                sequence_name, quoted_column, quoted_table
+            ));
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval('{}')",
-                table.name, column_name, sequence_name
+                quoted_table, quoted_column, sequence_name
             ));
             statements.push(format!(
                 "ALTER SEQUENCE {} OWNED BY {}.{}",
-                sequence_name, table.name, column_name
+                sequence_name, quoted_table, quoted_column
             ));
         }
 
@@ -244,11 +251,13 @@ impl SqlGenerator for PostgresSqlGenerator {
         // シーケンスはこのカラム専用として作成されたものと仮定し、
         // DROP SEQUENCE IF EXISTS で安全に削除を試みる
         if source_is_auto && !target_is_auto {
+            let quoted_table = format!("\"{}\"", table.name);
+            let quoted_column = format!("\"{}\"", column_name);
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
-                table.name, column_name
+                quoted_table, quoted_column
             ));
-            let sequence_name = format!("{}_{}_seq", table.name, column_name);
+            let sequence_name = format!("\"{}_{}_seq\"", table.name, column_name);
             statements.push(format!("DROP SEQUENCE IF EXISTS {}", sequence_name));
         }
 
@@ -409,6 +418,36 @@ impl SqlGenerator for PostgresSqlGenerator {
                     columns.join(", "),
                     referenced_table,
                     referenced_columns.join(", ")
+                )
+            }
+            _ => {
+                // FOREIGN KEY以外の制約は現時点ではサポートしない
+                String::new()
+            }
+        }
+    }
+
+    fn generate_drop_constraint_for_existing_table(
+        &self,
+        table_name: &str,
+        constraint: &Constraint,
+    ) -> String {
+        match constraint {
+            Constraint::FOREIGN_KEY {
+                columns,
+                referenced_table,
+                ..
+            } => {
+                let constraint_name = format!(
+                    "fk_{}_{}_{}",
+                    table_name,
+                    columns.join("_"),
+                    referenced_table
+                );
+
+                format!(
+                    "ALTER TABLE \"{}\" DROP CONSTRAINT IF EXISTS \"{}\"",
+                    table_name, constraint_name
                 )
             }
             _ => {

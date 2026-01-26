@@ -232,6 +232,17 @@ impl<'a> MigrationPipeline<'a> {
             for index in &table_diff.added_indexes {
                 statements.push(generator.generate_drop_index(&table_diff.table_name, index));
             }
+
+            // 追加された制約を削除（Down方向で逆操作）
+            for constraint in &table_diff.added_constraints {
+                let sql = generator.generate_drop_constraint_for_existing_table(
+                    &table_diff.table_name,
+                    constraint,
+                );
+                if !sql.is_empty() {
+                    statements.push(sql);
+                }
+            }
         }
 
         // 削除されたテーブルを再作成（手動対応が必要）

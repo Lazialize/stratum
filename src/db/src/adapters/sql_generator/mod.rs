@@ -189,6 +189,26 @@ pub trait SqlGenerator {
         String::new()
     }
 
+    /// 既存テーブルからの制約削除SQL文を生成
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - テーブル名
+    /// * `constraint` - 削除する制約
+    ///
+    /// # Returns
+    ///
+    /// ALTER TABLE DROP CONSTRAINT文のSQL文字列
+    fn generate_drop_constraint_for_existing_table(
+        &self,
+        table_name: &str,
+        constraint: &crate::core::schema::Constraint,
+    ) -> String {
+        // デフォルト実装：空文字列
+        let _ = (table_name, constraint);
+        String::new()
+    }
+
     /// カラム型変更のALTER TABLE文を生成
     ///
     /// # Arguments

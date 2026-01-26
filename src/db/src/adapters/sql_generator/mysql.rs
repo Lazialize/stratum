@@ -273,6 +273,37 @@ impl SqlGenerator for MysqlSqlGenerator {
             }
         }
     }
+
+    fn generate_drop_constraint_for_existing_table(
+        &self,
+        table_name: &str,
+        constraint: &Constraint,
+    ) -> String {
+        match constraint {
+            Constraint::FOREIGN_KEY {
+                columns,
+                referenced_table,
+                ..
+            } => {
+                let constraint_name = format!(
+                    "fk_{}_{}_{}",
+                    table_name,
+                    columns.join("_"),
+                    referenced_table
+                );
+
+                // MySQLではDROP FOREIGN KEYを使用
+                format!(
+                    "ALTER TABLE `{}` DROP FOREIGN KEY `{}`",
+                    table_name, constraint_name
+                )
+            }
+            _ => {
+                // FOREIGN KEY以外の制約は現時点ではサポートしない
+                String::new()
+            }
+        }
+    }
 }
 
 impl Default for MysqlSqlGenerator {
