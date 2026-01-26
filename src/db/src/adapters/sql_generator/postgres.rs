@@ -201,20 +201,67 @@ impl SqlGenerator for PostgresSqlGenerator {
     ) -> Vec<String> {
         let column_name = &column_diff.column_name;
 
-        // 方向に応じて対象の型を決定
-        let (source_type, target_type) = match direction {
-            MigrationDirection::Up => (
-                &column_diff.old_column.column_type,
-                &column_diff.new_column.column_type,
-            ),
-            MigrationDirection::Down => (
-                &column_diff.new_column.column_type,
-                &column_diff.old_column.column_type,
-            ),
-        };
+        // 方向に応じて対象の型とauto_incrementフラグを決定
+        let (source_type, target_type, source_auto_increment, target_auto_increment) =
+            match direction {
+                MigrationDirection::Up => (
+                    &column_diff.old_column.column_type,
+                    &column_diff.new_column.column_type,
+                    column_diff.old_column.auto_increment,
+                    column_diff.new_column.auto_increment,
+                ),
+                MigrationDirection::Down => (
+                    &column_diff.new_column.column_type,
+                    &column_diff.old_column.column_type,
+                    column_diff.new_column.auto_increment,
+                    column_diff.old_column.auto_increment,
+                ),
+            };
 
-        // 対象の型をPostgreSQL型文字列にマッピング
-        let target_type_str = self.map_column_type(target_type, None);
+        let mut statements = Vec::new();
+
+        // auto_incrementの変更を検出
+        let source_is_auto = source_auto_increment.unwrap_or(false);
+        let target_is_auto = target_auto_increment.unwrap_or(false);
+
+        // INTEGER → SERIAL (auto_increment: false → true)
+        if !source_is_auto && target_is_auto {
+            // PostgreSQLではALTER COLUMN TYPE SERIALは使用できないため、
+            // シーケンスの作成とDEFAULT設定で対応
+            let sequence_name = format!("{}_{}_seq", table.name, column_name);
+            statements.push(format!(
+                "CREATE SEQUENCE IF NOT EXISTS {}",
+                sequence_name
+            ));
+            statements.push(format!(
+                "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval('{}')",
+                table.name, column_name, sequence_name
+            ));
+            statements.push(format!(
+                "ALTER SEQUENCE {} OWNED BY {}.{}",
+                sequence_name, table.name, column_name
+            ));
+            return statements;
+        }
+
+        // SERIAL → INTEGER (auto_increment: true → false)
+        if source_is_auto && !target_is_auto {
+            statements.push(format!(
+                "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
+                table.name, column_name
+            ));
+            // シーケンスの削除はオプション（他のカラムで使用されている可能性があるため）
+            let sequence_name = format!("{}_{}_seq", table.name, column_name);
+            statements.push(format!(
+                "DROP SEQUENCE IF EXISTS {}",
+                sequence_name
+            ));
+            return statements;
+        }
+
+        // 通常の型変更
+        // auto_incrementフラグは変更されていないが、型自体が変更されている場合
+        let target_type_str = self.map_column_type(target_type, target_auto_increment);
 
         // USING句が必要かどうかを判定
         let needs_using = self.needs_using_clause(source_type, target_type);
@@ -332,6 +379,40 @@ impl SqlGenerator for PostgresSqlGenerator {
             "ALTER TABLE {} RENAME COLUMN {} TO {}",
             table.name, from_name, to_name
         )]
+    }
+
+    fn generate_add_constraint_for_existing_table(
+        &self,
+        table_name: &str,
+        constraint: &Constraint,
+    ) -> String {
+        match constraint {
+            Constraint::FOREIGN_KEY {
+                columns,
+                referenced_table,
+                referenced_columns,
+            } => {
+                let constraint_name = format!(
+                    "fk_{}_{}_{}",
+                    table_name,
+                    columns.join("_"),
+                    referenced_table
+                );
+
+                format!(
+                    "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
+                    table_name,
+                    constraint_name,
+                    columns.join(", "),
+                    referenced_table,
+                    referenced_columns.join(", ")
+                )
+            }
+            _ => {
+                // FOREIGN KEY以外の制約は現時点ではサポートしない
+                String::new()
+            }
+        }
     }
 }
 

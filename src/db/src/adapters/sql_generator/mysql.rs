@@ -239,6 +239,40 @@ impl SqlGenerator for MysqlSqlGenerator {
             table.name, from_name, column_def
         )]
     }
+
+    fn generate_add_constraint_for_existing_table(
+        &self,
+        table_name: &str,
+        constraint: &Constraint,
+    ) -> String {
+        match constraint {
+            Constraint::FOREIGN_KEY {
+                columns,
+                referenced_table,
+                referenced_columns,
+            } => {
+                let constraint_name = format!(
+                    "fk_{}_{}_{}",
+                    table_name,
+                    columns.join("_"),
+                    referenced_table
+                );
+
+                format!(
+                    "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
+                    table_name,
+                    constraint_name,
+                    columns.join(", "),
+                    referenced_table,
+                    referenced_columns.join(", ")
+                )
+            }
+            _ => {
+                // FOREIGN KEY以外の制約は現時点ではサポートしない
+                String::new()
+            }
+        }
+    }
 }
 
 impl Default for MysqlSqlGenerator {

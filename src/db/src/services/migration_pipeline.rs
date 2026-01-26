@@ -454,9 +454,22 @@ impl<'a> MigrationPipeline<'a> {
     }
 
     /// ステージ5: constraint_statements - 制約追加
-    fn stage_constraint_statements(&self, _generator: &dyn SqlGenerator) -> Vec<String> {
-        // 現時点では追加制約は table_statements で処理されている
-        Vec::new()
+    fn stage_constraint_statements(&self, generator: &dyn SqlGenerator) -> Vec<String> {
+        let mut statements = Vec::new();
+
+        // 既存テーブルへの制約追加を処理
+        for table_diff in &self.diff.modified_tables {
+            for constraint in &table_diff.added_constraints {
+                // FOREIGN KEY制約のみ処理（SQLiteは空文字列を返す）
+                let sql = generator
+                    .generate_add_constraint_for_existing_table(&table_diff.table_name, constraint);
+                if !sql.is_empty() {
+                    statements.push(sql);
+                }
+            }
+        }
+
+        statements
     }
 
     /// ステージ6: cleanup_statements - DROP TABLE/TYPE
@@ -486,23 +499,30 @@ impl<'a> MigrationPipeline<'a> {
         statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" }
     }
 
-    /// カラム差分がTypeChangedを含むかどうか
+    /// カラム差分がTypeChangedまたはAutoIncrementChangedを含むかどうか
+    ///
+    /// PostgreSQLでは auto_increment の変更はSERIAL型への変換を伴うため、
+    /// 型変更として扱う必要があります。
     fn has_type_change(&self, column_diff: &crate::core::schema_diff::ColumnDiff) -> bool {
-        column_diff
-            .changes
-            .iter()
-            .any(|change| matches!(change, ColumnChange::TypeChanged { .. }))
+        column_diff.changes.iter().any(|change| {
+            matches!(
+                change,
+                ColumnChange::TypeChanged { .. } | ColumnChange::AutoIncrementChanged { .. }
+            )
+        })
     }
 
-    /// リネームカラムがTypeChangedを含むかどうか
+    /// リネームカラムがTypeChangedまたはAutoIncrementChangedを含むかどうか
     fn has_type_change_in_renamed(
         &self,
         renamed_column: &crate::core::schema_diff::RenamedColumn,
     ) -> bool {
-        renamed_column
-            .changes
-            .iter()
-            .any(|change| matches!(change, ColumnChange::TypeChanged { .. }))
+        renamed_column.changes.iter().any(|change| {
+            matches!(
+                change,
+                ColumnChange::TypeChanged { .. } | ColumnChange::AutoIncrementChanged { .. }
+            )
+        })
     }
 }
 
@@ -1314,6 +1334,245 @@ mod tests {
         assert!(
             type_change_pos < rename_pos,
             "Type change should come before rename in down direction. SQL: {}",
+            sql
+        );
+    }
+
+    // ==========================================
+    // 外部キー制約追加のテスト
+    // ==========================================
+
+    #[test]
+    fn test_pipeline_add_foreign_key_constraint_to_existing_table() {
+        // 既存テーブルへの外部キー制約追加のテスト
+        let mut diff = SchemaDiff::new();
+
+        let mut table_diff = TableDiff::new("posts".to_string());
+        table_diff.added_constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains("ALTER TABLE posts ADD CONSTRAINT"),
+            "Expected ALTER TABLE ADD CONSTRAINT in: {}",
+            sql
+        );
+        assert!(
+            sql.contains("FOREIGN KEY (user_id)"),
+            "Expected FOREIGN KEY in: {}",
+            sql
+        );
+        assert!(
+            sql.contains("REFERENCES users (id)"),
+            "Expected REFERENCES in: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_add_foreign_key_constraint_mysql() {
+        // MySQLでの外部キー制約追加テスト
+        let mut diff = SchemaDiff::new();
+
+        let mut table_diff = TableDiff::new("posts".to_string());
+        table_diff.added_constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::MySQL);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains("ALTER TABLE posts ADD CONSTRAINT"),
+            "Expected ALTER TABLE ADD CONSTRAINT in: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_add_foreign_key_constraint_sqlite_not_supported() {
+        // SQLiteでは外部キー制約追加はサポートされない
+        let mut diff = SchemaDiff::new();
+
+        let mut table_diff = TableDiff::new("posts".to_string());
+        table_diff.added_constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::SQLite);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        // SQLiteではALTER TABLE ADD CONSTRAINTがサポートされないため、空のSQL
+        assert!(
+            !sql.contains("ALTER TABLE"),
+            "SQLite should not generate ALTER TABLE for constraint: {}",
+            sql
+        );
+    }
+
+    // ==========================================
+    // INTEGER→SERIAL変換のテスト
+    // ==========================================
+
+    #[test]
+    fn test_pipeline_integer_to_serial_postgresql() {
+        // PostgreSQLでのINTEGER→SERIAL変換テスト
+        let mut old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        old_column.auto_increment = Some(false);
+
+        let mut new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        new_column.auto_increment = Some(true);
+
+        let column_diff = ColumnDiff {
+            column_name: "id".to_string(),
+            old_column: old_column.clone(),
+            new_column: new_column.clone(),
+            changes: vec![ColumnChange::AutoIncrementChanged {
+                old_auto_increment: Some(false),
+                new_auto_increment: Some(true),
+            }],
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_columns.push(column_diff);
+
+        let mut diff = SchemaDiff::new();
+        diff.modified_tables.push(table_diff);
+
+        // スキーマを作成
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.columns.push(old_column);
+        old_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        old_schema.tables.insert("users".to_string(), old_table);
+
+        let mut new_schema = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("users".to_string());
+        new_table.columns.push(new_column);
+        new_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        new_schema.tables.insert("users".to_string(), new_table);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)
+            .with_schemas(&old_schema, &new_schema);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+
+        // シーケンス作成とDEFAULT設定が含まれること
+        assert!(
+            sql.contains("CREATE SEQUENCE"),
+            "Expected CREATE SEQUENCE in: {}",
+            sql
+        );
+        assert!(
+            sql.contains("SET DEFAULT nextval"),
+            "Expected SET DEFAULT nextval in: {}",
+            sql
+        );
+        assert!(
+            sql.contains("OWNED BY"),
+            "Expected OWNED BY in: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_serial_to_integer_postgresql() {
+        // PostgreSQLでのSERIAL→INTEGER変換テスト
+        let mut old_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        old_column.auto_increment = Some(true);
+
+        let mut new_column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        new_column.auto_increment = Some(false);
+
+        let column_diff = ColumnDiff {
+            column_name: "id".to_string(),
+            old_column: old_column.clone(),
+            new_column: new_column.clone(),
+            changes: vec![ColumnChange::AutoIncrementChanged {
+                old_auto_increment: Some(true),
+                new_auto_increment: Some(false),
+            }],
+        };
+
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_columns.push(column_diff);
+
+        let mut diff = SchemaDiff::new();
+        diff.modified_tables.push(table_diff);
+
+        // スキーマを作成
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.columns.push(old_column);
+        old_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        old_schema.tables.insert("users".to_string(), old_table);
+
+        let mut new_schema = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("users".to_string());
+        new_table.columns.push(new_column);
+        new_table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        new_schema.tables.insert("users".to_string(), new_table);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)
+            .with_schemas(&old_schema, &new_schema);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+
+        // DROP DEFAULTとシーケンス削除が含まれること
+        assert!(
+            sql.contains("DROP DEFAULT"),
+            "Expected DROP DEFAULT in: {}",
+            sql
+        );
+        assert!(
+            sql.contains("DROP SEQUENCE"),
+            "Expected DROP SEQUENCE in: {}",
             sql
         );
     }
