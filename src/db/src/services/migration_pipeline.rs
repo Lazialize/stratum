@@ -1500,11 +1500,7 @@ mod tests {
             "Expected SET DEFAULT nextval in: {}",
             sql
         );
-        assert!(
-            sql.contains("OWNED BY"),
-            "Expected OWNED BY in: {}",
-            sql
-        );
+        assert!(sql.contains("OWNED BY"), "Expected OWNED BY in: {}", sql);
     }
 
     #[test]

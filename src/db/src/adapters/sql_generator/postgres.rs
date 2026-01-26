@@ -229,10 +229,7 @@ impl SqlGenerator for PostgresSqlGenerator {
             // PostgreSQLではALTER COLUMN TYPE SERIALは使用できないため、
             // シーケンスの作成とDEFAULT設定で対応
             let sequence_name = format!("{}_{}_seq", table.name, column_name);
-            statements.push(format!(
-                "CREATE SEQUENCE IF NOT EXISTS {}",
-                sequence_name
-            ));
+            statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", sequence_name));
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval('{}')",
                 table.name, column_name, sequence_name
@@ -252,10 +249,7 @@ impl SqlGenerator for PostgresSqlGenerator {
             ));
             // シーケンスの削除はオプション（他のカラムで使用されている可能性があるため）
             let sequence_name = format!("{}_{}_seq", table.name, column_name);
-            statements.push(format!(
-                "DROP SEQUENCE IF EXISTS {}",
-                sequence_name
-            ));
+            statements.push(format!("DROP SEQUENCE IF EXISTS {}", sequence_name));
             return statements;
         }
 
