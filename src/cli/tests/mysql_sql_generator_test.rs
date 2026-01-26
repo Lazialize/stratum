@@ -33,9 +33,9 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("id INT NOT NULL"));
-        assert!(sql.contains("name VARCHAR(100) NOT NULL"));
+        assert!(sql.contains("CREATE TABLE `users`"));
+        assert!(sql.contains("`id` INT NOT NULL"));
+        assert!(sql.contains("`name` VARCHAR(100) NOT NULL"));
     }
 
     /// PRIMARY KEY制約を含むCREATE TABLE文の生成テスト
@@ -55,8 +55,8 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("PRIMARY KEY (id)"));
+        assert!(sql.contains("CREATE TABLE `users`"));
+        assert!(sql.contains("PRIMARY KEY (`id`)"));
     }
 
     /// 複合PRIMARY KEY制約のテスト
@@ -81,7 +81,7 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("PRIMARY KEY (user_id, role_id)"));
+        assert!(sql.contains("PRIMARY KEY (`user_id`, `role_id`)"));
     }
 
     /// NULL許可カラムのテスト
@@ -98,9 +98,9 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("bio TEXT"));
+        assert!(sql.contains("`bio` TEXT"));
         // MySQLでは明示的にNULLを指定しない場合がある
-        assert!(!sql.contains("bio TEXT NOT NULL"));
+        assert!(!sql.contains("`bio` TEXT NOT NULL"));
     }
 
     /// デフォルト値を持つカラムのテスト
@@ -119,7 +119,7 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("status VARCHAR(20) NOT NULL DEFAULT 'active'"));
+        assert!(sql.contains("`status` VARCHAR(20) NOT NULL DEFAULT 'active'"));
     }
 
     /// UNIQUE制約を含むCREATE TABLE文の生成テスト
@@ -139,7 +139,7 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("UNIQUE (email)"));
+        assert!(sql.contains("UNIQUE (`email`)"));
     }
 
     /// FOREIGN KEY制約のALTER TABLE文生成テスト
@@ -161,10 +161,10 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_alter_table_add_constraint(&table, 0);
 
-        assert!(sql.contains("ALTER TABLE posts"));
+        assert!(sql.contains("ALTER TABLE `posts`"));
         assert!(sql.contains("ADD CONSTRAINT"));
-        assert!(sql.contains("FOREIGN KEY (user_id)"));
-        assert!(sql.contains("REFERENCES users (id)"));
+        assert!(sql.contains("FOREIGN KEY (`user_id`)"));
+        assert!(sql.contains("REFERENCES `users` (`id`)"));
     }
 
     /// CHECK制約のテスト（MySQL 8.0.16以降）
@@ -198,9 +198,9 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_index(&table, &index);
 
-        assert!(sql.contains("CREATE INDEX idx_email"));
-        assert!(sql.contains("ON users"));
-        assert!(sql.contains("(email)"));
+        assert!(sql.contains("CREATE INDEX `idx_email`"));
+        assert!(sql.contains("ON `users`"));
+        assert!(sql.contains("(`email`)"));
     }
 
     /// CREATE UNIQUE INDEX文の生成テスト
@@ -217,9 +217,9 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_index(&table, &index);
 
-        assert!(sql.contains("CREATE UNIQUE INDEX idx_username"));
-        assert!(sql.contains("ON users"));
-        assert!(sql.contains("(username)"));
+        assert!(sql.contains("CREATE UNIQUE INDEX `idx_username`"));
+        assert!(sql.contains("ON `users`"));
+        assert!(sql.contains("(`username`)"));
     }
 
     /// 複合インデックスの生成テスト
@@ -236,9 +236,9 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_index(&table, &index);
 
-        assert!(sql.contains("CREATE INDEX idx_user_created"));
-        assert!(sql.contains("ON posts"));
-        assert!(sql.contains("(user_id, created_at)"));
+        assert!(sql.contains("CREATE INDEX `idx_user_created`"));
+        assert!(sql.contains("ON `posts`"));
+        assert!(sql.contains("(`user_id`, `created_at`)"));
     }
 
     /// 様々なMySQL型のマッピングテスト
@@ -293,13 +293,13 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("col_int INT NOT NULL"));
-        assert!(sql.contains("col_bigint BIGINT NOT NULL"));
-        assert!(sql.contains("col_varchar VARCHAR(255) NOT NULL"));
-        assert!(sql.contains("col_text TEXT NOT NULL"));
-        assert!(sql.contains("col_bool BOOLEAN NOT NULL"));
-        assert!(sql.contains("col_timestamp TIMESTAMP NOT NULL"));
-        assert!(sql.contains("col_json JSON NOT NULL"));
+        assert!(sql.contains("`col_int` INT NOT NULL"));
+        assert!(sql.contains("`col_bigint` BIGINT NOT NULL"));
+        assert!(sql.contains("`col_varchar` VARCHAR(255) NOT NULL"));
+        assert!(sql.contains("`col_text` TEXT NOT NULL"));
+        assert!(sql.contains("`col_bool` BOOLEAN NOT NULL"));
+        assert!(sql.contains("`col_timestamp` TIMESTAMP NOT NULL"));
+        assert!(sql.contains("`col_json` JSON NOT NULL"));
     }
 
     /// AUTO_INCREMENTのテスト
@@ -318,7 +318,7 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("id INT NOT NULL AUTO_INCREMENT"));
+        assert!(sql.contains("`id` INT NOT NULL AUTO_INCREMENT"));
     }
 
     /// BIGINT AUTO_INCREMENTのテスト
@@ -337,7 +337,7 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("id BIGINT NOT NULL AUTO_INCREMENT"));
+        assert!(sql.contains("`id` BIGINT NOT NULL AUTO_INCREMENT"));
     }
 
     /// 複数の制約を含むテーブルのテスト
@@ -384,12 +384,12 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("id INT NOT NULL AUTO_INCREMENT"));
-        assert!(sql.contains("email VARCHAR(255) NOT NULL"));
-        assert!(sql.contains("status VARCHAR(20) NOT NULL DEFAULT 'active'"));
-        assert!(sql.contains("PRIMARY KEY (id)"));
-        assert!(sql.contains("UNIQUE (email)"));
+        assert!(sql.contains("CREATE TABLE `users`"));
+        assert!(sql.contains("`id` INT NOT NULL AUTO_INCREMENT"));
+        assert!(sql.contains("`email` VARCHAR(255) NOT NULL"));
+        assert!(sql.contains("`status` VARCHAR(20) NOT NULL DEFAULT 'active'"));
+        assert!(sql.contains("PRIMARY KEY (`id`)"));
+        assert!(sql.contains("UNIQUE (`email`)"));
         assert!(sql.contains("CHECK (status IN ('active', 'inactive'))"));
     }
 
@@ -409,7 +409,7 @@ mod mysql_sql_generator_tests {
 
         // ENGINEはデフォルトで指定しない（MySQLのデフォルトを使用）
         // または明示的にENGINE=InnoDBを指定する場合もある
-        assert!(sql.contains("CREATE TABLE users"));
+        assert!(sql.contains("CREATE TABLE `users`"));
     }
 
     // Phase 4: 新規データ型のマッピングテスト
@@ -428,7 +428,7 @@ mod mysql_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("price DECIMAL(10, 2) NOT NULL"));
+        assert!(sql.contains("`price` DECIMAL(10, 2) NOT NULL"));
     }
 
     #[test]
@@ -438,7 +438,7 @@ mod mysql_sql_generator_tests {
         table.add_column(Column::new("value".to_string(), ColumnType::FLOAT, false));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("value FLOAT NOT NULL"));
+        assert!(sql.contains("`value` FLOAT NOT NULL"));
     }
 
     #[test]
@@ -452,7 +452,7 @@ mod mysql_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("latitude DOUBLE NOT NULL"));
+        assert!(sql.contains("`latitude` DOUBLE NOT NULL"));
     }
 
     #[test]
@@ -466,7 +466,7 @@ mod mysql_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("code CHAR(10) NOT NULL"));
+        assert!(sql.contains("`code` CHAR(10) NOT NULL"));
     }
 
     #[test]
@@ -480,7 +480,7 @@ mod mysql_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("event_date DATE NOT NULL"));
+        assert!(sql.contains("`event_date` DATE NOT NULL"));
     }
 
     #[test]
@@ -496,7 +496,7 @@ mod mysql_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("start_time TIME NOT NULL"));
+        assert!(sql.contains("`start_time` TIME NOT NULL"));
     }
 
     #[test]
@@ -506,7 +506,7 @@ mod mysql_sql_generator_tests {
         table.add_column(Column::new("content".to_string(), ColumnType::BLOB, false));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("content BLOB NOT NULL"));
+        assert!(sql.contains("`content` BLOB NOT NULL"));
     }
 
     #[test]
@@ -517,7 +517,7 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
         // MySQL では UUID を CHAR(36) にマッピング
-        assert!(sql.contains("user_id CHAR(36) NOT NULL"));
+        assert!(sql.contains("`user_id` CHAR(36) NOT NULL"));
     }
 
     #[test]
@@ -528,6 +528,6 @@ mod mysql_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
         // MySQL では JSONB を JSON にフォールバック
-        assert!(sql.contains("config JSON NOT NULL"));
+        assert!(sql.contains("`config` JSON NOT NULL"));
     }
 }

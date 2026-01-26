@@ -89,7 +89,7 @@ mod migration_generator_tests {
             .generate_up_sql(&diff, Dialect::PostgreSQL)
             .unwrap();
 
-        assert!(up_sql.contains("CREATE TABLE users"));
+        assert!(up_sql.contains(r#"CREATE TABLE "users""#));
     }
 
     /// テーブル削除のDOWN SQL生成テスト
@@ -131,7 +131,7 @@ mod migration_generator_tests {
             .generate_up_sql(&diff, Dialect::PostgreSQL)
             .unwrap();
 
-        assert!(up_sql.contains("CREATE TABLE users"));
+        assert!(up_sql.contains(r#"CREATE TABLE "users""#));
     }
 
     /// マイグレーションメタデータ生成のテスト
@@ -188,9 +188,9 @@ mod migration_generator_tests {
         let up_sql = generator
             .generate_up_sql(&diff, Dialect::PostgreSQL)
             .unwrap();
-        assert!(up_sql.contains("CREATE TABLE users"));
-        assert!(up_sql.contains("id"));
-        assert!(up_sql.contains("email"));
+        assert!(up_sql.contains(r#"CREATE TABLE "users""#));
+        assert!(up_sql.contains(r#""id""#));
+        assert!(up_sql.contains(r#""email""#));
 
         // DOWN SQLの生成
         let down_sql = generator

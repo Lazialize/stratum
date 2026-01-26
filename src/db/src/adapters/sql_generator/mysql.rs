@@ -3,7 +3,8 @@
 // スキーマ定義からMySQL用のDDL文を生成します。
 
 use crate::adapters::sql_generator::{
-    build_column_definition, generate_fk_constraint_name, MigrationDirection, SqlGenerator,
+    build_column_definition, generate_fk_constraint_name, quote_columns_mysql,
+    quote_identifier_mysql, MigrationDirection, SqlGenerator,
 };
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
@@ -28,7 +29,8 @@ impl MysqlSqlGenerator {
         } else {
             ""
         };
-        build_column_definition(column, type_str, &[auto_increment])
+        let quoted_name = quote_identifier_mysql(&column.name);
+        build_column_definition(&quoted_name, column, type_str, &[auto_increment])
     }
 
     /// ColumnTypeをMySQLの型文字列にマッピング
@@ -43,10 +45,10 @@ impl MysqlSqlGenerator {
     fn generate_constraint_definition(&self, constraint: &Constraint) -> String {
         match constraint {
             Constraint::PRIMARY_KEY { columns } => {
-                format!("PRIMARY KEY ({})", columns.join(", "))
+                format!("PRIMARY KEY ({})", quote_columns_mysql(columns))
             }
             Constraint::UNIQUE { columns } => {
-                format!("UNIQUE ({})", columns.join(", "))
+                format!("UNIQUE ({})", quote_columns_mysql(columns))
             }
             Constraint::CHECK {
                 check_expression, ..
@@ -85,7 +87,8 @@ impl MysqlSqlGenerator {
         };
         let mut column = target_column.clone();
         column.name = column_name.to_string();
-        build_column_definition(&column, type_str, &[auto_increment])
+        let quoted_name = quote_identifier_mysql(column_name);
+        build_column_definition(&quoted_name, &column, type_str, &[auto_increment])
     }
 }
 
@@ -93,21 +96,29 @@ impl SqlGenerator for MysqlSqlGenerator {
     fn generate_add_column(&self, table_name: &str, column: &Column) -> String {
         format!(
             "ALTER TABLE {} ADD COLUMN {}",
-            table_name,
+            quote_identifier_mysql(table_name),
             self.generate_column_definition(column)
         )
     }
 
     fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
-        format!("ALTER TABLE {} DROP COLUMN {}", table_name, column_name)
+        format!(
+            "ALTER TABLE {} DROP COLUMN {}",
+            quote_identifier_mysql(table_name),
+            quote_identifier_mysql(column_name)
+        )
     }
 
     fn generate_drop_table(&self, table_name: &str) -> String {
-        format!("DROP TABLE {}", table_name)
+        format!("DROP TABLE {}", quote_identifier_mysql(table_name))
     }
 
     fn generate_drop_index(&self, table_name: &str, index: &Index) -> String {
-        format!("DROP INDEX {} ON {}", index.name, table_name)
+        format!(
+            "DROP INDEX {} ON {}",
+            quote_identifier_mysql(&index.name),
+            quote_identifier_mysql(table_name)
+        )
     }
 
     fn generate_alter_column_type(
@@ -129,7 +140,11 @@ impl SqlGenerator for MysqlSqlGenerator {
         let column_def =
             self.generate_column_definition_for_modify(table, column_name, target_column);
 
-        let sql = format!("ALTER TABLE {} MODIFY COLUMN {}", table.name, column_def);
+        let sql = format!(
+            "ALTER TABLE {} MODIFY COLUMN {}",
+            quote_identifier_mysql(&table.name),
+            column_def
+        );
 
         vec![sql]
     }
@@ -137,7 +152,10 @@ impl SqlGenerator for MysqlSqlGenerator {
     fn generate_create_table(&self, table: &Table) -> String {
         let mut parts = Vec::new();
 
-        parts.push(format!("CREATE TABLE {}", table.name));
+        parts.push(format!(
+            "CREATE TABLE {}",
+            quote_identifier_mysql(&table.name)
+        ));
         parts.push("(".to_string());
 
         let mut elements = Vec::new();
@@ -173,9 +191,9 @@ impl SqlGenerator for MysqlSqlGenerator {
         format!(
             "CREATE {} {} ON {} ({})",
             index_type,
-            index.name,
-            table.name,
-            index.columns.join(", ")
+            quote_identifier_mysql(&index.name),
+            quote_identifier_mysql(&table.name),
+            quote_columns_mysql(&index.columns)
         )
     }
 
@@ -196,11 +214,11 @@ impl SqlGenerator for MysqlSqlGenerator {
 
                     format!(
                         "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
-                        table.name,
-                        constraint_name,
-                        columns.join(", "),
-                        referenced_table,
-                        referenced_columns.join(", ")
+                        quote_identifier_mysql(&table.name),
+                        quote_identifier_mysql(&constraint_name),
+                        quote_columns_mysql(columns),
+                        quote_identifier_mysql(referenced_table),
+                        quote_columns_mysql(referenced_columns)
                     )
                 }
                 _ => {
@@ -234,7 +252,9 @@ impl SqlGenerator for MysqlSqlGenerator {
 
         vec![format!(
             "ALTER TABLE {} CHANGE COLUMN {} {}",
-            table.name, from_name, column_def
+            quote_identifier_mysql(&table.name),
+            quote_identifier_mysql(from_name),
+            column_def
         )]
     }
 
@@ -254,11 +274,11 @@ impl SqlGenerator for MysqlSqlGenerator {
 
                 format!(
                     "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
-                    table_name,
-                    constraint_name,
-                    columns.join(", "),
-                    referenced_table,
-                    referenced_columns.join(", ")
+                    quote_identifier_mysql(table_name),
+                    quote_identifier_mysql(&constraint_name),
+                    quote_columns_mysql(columns),
+                    quote_identifier_mysql(referenced_table),
+                    quote_columns_mysql(referenced_columns)
                 )
             }
             _ => {
@@ -285,7 +305,8 @@ impl SqlGenerator for MysqlSqlGenerator {
                 // MySQLではDROP FOREIGN KEYを使用
                 format!(
                     "ALTER TABLE {} DROP FOREIGN KEY {}",
-                    table_name, constraint_name
+                    quote_identifier_mysql(table_name),
+                    quote_identifier_mysql(&constraint_name)
                 )
             }
             _ => {
@@ -350,7 +371,7 @@ mod tests {
         );
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "name VARCHAR(100) NOT NULL");
+        assert_eq!(def, "`name` VARCHAR(100) NOT NULL");
     }
 
     #[test]
@@ -363,7 +384,7 @@ mod tests {
         );
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "bio TEXT");
+        assert_eq!(def, "`bio` TEXT");
     }
 
     #[test]
@@ -377,7 +398,7 @@ mod tests {
         column.default_value = Some("'active'".to_string());
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "status VARCHAR(20) NOT NULL DEFAULT 'active'");
+        assert_eq!(def, "`status` VARCHAR(20) NOT NULL DEFAULT 'active'");
     }
 
     #[test]
@@ -391,7 +412,7 @@ mod tests {
         column.auto_increment = Some(true);
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "id INT NOT NULL AUTO_INCREMENT");
+        assert_eq!(def, "`id` INT NOT NULL AUTO_INCREMENT");
     }
 
     #[test]
@@ -402,7 +423,7 @@ mod tests {
         };
 
         let def = generator.generate_constraint_definition(&constraint);
-        assert_eq!(def, "PRIMARY KEY (id)");
+        assert_eq!(def, "PRIMARY KEY (`id`)");
     }
 
     #[test]
@@ -413,7 +434,7 @@ mod tests {
         };
 
         let def = generator.generate_constraint_definition(&constraint);
-        assert_eq!(def, "UNIQUE (email)");
+        assert_eq!(def, "UNIQUE (`email`)");
     }
 
     #[test]
@@ -473,7 +494,7 @@ mod tests {
         let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE users MODIFY COLUMN id BIGINT NOT NULL");
+        assert_eq!(sql[0], "ALTER TABLE `users` MODIFY COLUMN `id` BIGINT NOT NULL");
     }
 
     #[test]
@@ -496,7 +517,7 @@ mod tests {
 
         assert_eq!(sql.len(), 1);
         // NULLableなのでNOT NULLが含まれない
-        assert_eq!(sql[0], "ALTER TABLE users MODIFY COLUMN bio VARCHAR(500)");
+        assert_eq!(sql[0], "ALTER TABLE `users` MODIFY COLUMN `bio` VARCHAR(500)");
     }
 
     #[test]
@@ -531,7 +552,7 @@ mod tests {
         assert_eq!(sql.len(), 1);
         assert_eq!(
             sql[0],
-            "ALTER TABLE users MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'active'"
+            "ALTER TABLE `users` MODIFY COLUMN `status` VARCHAR(50) NOT NULL DEFAULT 'active'"
         );
     }
 
@@ -567,7 +588,7 @@ mod tests {
         assert_eq!(sql.len(), 1);
         assert_eq!(
             sql[0],
-            "ALTER TABLE users MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT"
+            "ALTER TABLE `users` MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT"
         );
     }
 
@@ -598,7 +619,7 @@ mod tests {
 
         assert_eq!(sql.len(), 1);
         // Down方向なので old_type (INT) に戻す
-        assert_eq!(sql[0], "ALTER TABLE users MODIFY COLUMN id INT NOT NULL");
+        assert_eq!(sql[0], "ALTER TABLE `users` MODIFY COLUMN `id` INT NOT NULL");
     }
 
     #[test]
@@ -621,7 +642,7 @@ mod tests {
         let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE posts MODIFY COLUMN content TEXT");
+        assert_eq!(sql[0], "ALTER TABLE `posts` MODIFY COLUMN `content` TEXT");
     }
 
     // ==========================================
@@ -674,7 +695,7 @@ mod tests {
         // MySQLではCHANGE COLUMN構文を使用（new_columnの定義を使用）
         assert_eq!(
             sql[0],
-            "ALTER TABLE users CHANGE COLUMN name user_name VARCHAR(100) NOT NULL"
+            "ALTER TABLE `users` CHANGE COLUMN `name` `user_name` VARCHAR(100) NOT NULL"
         );
     }
 
@@ -707,7 +728,7 @@ mod tests {
         // Down方向ではold_columnの定義を使用してロールバック
         assert_eq!(
             sql[0],
-            "ALTER TABLE users CHANGE COLUMN user_name name VARCHAR(100) NOT NULL"
+            "ALTER TABLE `users` CHANGE COLUMN `user_name` `name` VARCHAR(100) NOT NULL"
         );
     }
 
@@ -740,7 +761,7 @@ mod tests {
         // 新しい定義（VARCHAR(200)、nullable）でリネーム
         assert_eq!(
             sql[0],
-            "ALTER TABLE users CHANGE COLUMN name user_name VARCHAR(200)"
+            "ALTER TABLE `users` CHANGE COLUMN `name` `user_name` VARCHAR(200)"
         );
     }
 
@@ -761,7 +782,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            "ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id_users FOREIGN KEY (user_id) REFERENCES users (id)"
+            "ALTER TABLE `posts` ADD CONSTRAINT `fk_posts_user_id_users` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)"
         );
     }
 
@@ -778,7 +799,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            "ALTER TABLE posts ADD CONSTRAINT fk_posts_org_id_user_id_org_users FOREIGN KEY (org_id, user_id) REFERENCES org_users (organization_id, user_id)"
+            "ALTER TABLE `posts` ADD CONSTRAINT `fk_posts_org_id_user_id_org_users` FOREIGN KEY (`org_id`, `user_id`) REFERENCES `org_users` (`organization_id`, `user_id`)"
         );
     }
 
@@ -808,7 +829,7 @@ mod tests {
         // MySQLではDROP FOREIGN KEYを使用
         assert_eq!(
             sql,
-            "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id_users"
+            "ALTER TABLE `posts` DROP FOREIGN KEY `fk_posts_user_id_users`"
         );
     }
 

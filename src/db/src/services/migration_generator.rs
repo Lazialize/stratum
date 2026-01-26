@@ -266,7 +266,7 @@ mod tests {
             .generate_up_sql(&diff, Dialect::PostgreSQL)
             .unwrap();
 
-        assert!(sql.contains("CREATE TYPE status AS ENUM ('active', 'inactive')"));
+        assert!(sql.contains(r#"CREATE TYPE "status" AS ENUM ('active', 'inactive')"#));
     }
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
             .generate_up_sql(&diff, Dialect::PostgreSQL)
             .unwrap();
 
-        assert!(sql.contains("ALTER TYPE status ADD VALUE 'inactive'"));
+        assert!(sql.contains(r#"ALTER TYPE "status" ADD VALUE 'inactive'"#));
     }
 
     #[test]
@@ -331,12 +331,12 @@ mod tests {
             .generate_up_sql(&diff, Dialect::PostgreSQL)
             .unwrap();
 
-        assert!(sql.contains("ALTER TYPE status RENAME TO status_old"));
-        assert!(sql.contains("CREATE TYPE status AS ENUM ('inactive', 'active')"));
+        assert!(sql.contains(r#"ALTER TYPE "status" RENAME TO "status_old""#));
+        assert!(sql.contains(r#"CREATE TYPE "status" AS ENUM ('inactive', 'active')"#));
         assert!(sql.contains(
-            "ALTER TABLE users ALTER COLUMN status TYPE status USING status::text::status"
+            r#"ALTER TABLE "users" ALTER COLUMN "status" TYPE "status" USING "status"::text::"status""#
         ));
-        assert!(sql.contains("DROP TYPE status_old"));
+        assert!(sql.contains(r#"DROP TYPE "status_old""#));
     }
 
     #[test]
@@ -430,7 +430,7 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, validation_result) = result.unwrap();
-        assert!(sql.contains("ALTER TABLE users ALTER COLUMN age TYPE"));
+        assert!(sql.contains(r#"ALTER TABLE "users" ALTER COLUMN "age" TYPE"#));
         assert!(validation_result.is_valid()); // Numeric → String は安全
     }
 
@@ -445,7 +445,7 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
-        assert!(sql.contains("ALTER TABLE users MODIFY COLUMN age"));
+        assert!(sql.contains("ALTER TABLE `users` MODIFY COLUMN `age`"));
     }
 
     #[test]
@@ -466,7 +466,7 @@ mod tests {
         // SQLiteはテーブル再作成パターンを使用
         assert!(sql.contains("PRAGMA foreign_keys=off"));
         assert!(sql.contains("BEGIN TRANSACTION"));
-        assert!(sql.contains("CREATE TABLE new_users"));
+        assert!(sql.contains(r#"CREATE TABLE "new_users""#));
     }
 
     #[test]
@@ -485,7 +485,7 @@ mod tests {
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
         // Down方向では元の型(INTEGER)に戻す
-        assert!(sql.contains("ALTER TABLE users ALTER COLUMN age TYPE INTEGER"));
+        assert!(sql.contains(r#"ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER"#));
     }
 
     #[test]
@@ -672,7 +672,7 @@ mod tests {
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
         assert!(
-            sql.contains("ALTER TABLE users RENAME COLUMN name TO user_name"),
+            sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#),
             "SQL should contain RENAME COLUMN statement, got: {}",
             sql
         );
@@ -691,7 +691,7 @@ mod tests {
         let (sql, _) = result.unwrap();
         // MySQLではCHANGE COLUMN構文を使用（完全なカラム定義が必要）
         assert!(
-            sql.contains("ALTER TABLE users CHANGE COLUMN name user_name"),
+            sql.contains("ALTER TABLE `users` CHANGE COLUMN `name` `user_name`"),
             "SQL should contain CHANGE COLUMN statement, got: {}",
             sql
         );
@@ -713,7 +713,7 @@ mod tests {
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
         assert!(
-            sql.contains("ALTER TABLE users RENAME COLUMN name TO user_name"),
+            sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#),
             "SQL should contain RENAME COLUMN statement, got: {}",
             sql
         );
@@ -736,7 +736,7 @@ mod tests {
         let (sql, _) = result.unwrap();
         // Down方向ではuser_nameをnameに戻す
         assert!(
-            sql.contains("ALTER TABLE users RENAME COLUMN user_name TO name"),
+            sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#),
             "SQL should contain reverse RENAME COLUMN statement, got: {}",
             sql
         );
@@ -833,8 +833,8 @@ mod tests {
         let (sql, _) = result.unwrap();
 
         // Up方向: まずリネーム、次に型変更
-        let rename_pos = sql.find("ALTER TABLE users RENAME COLUMN age TO age_years");
-        let type_pos = sql.find("ALTER TABLE users ALTER COLUMN age_years TYPE");
+        let rename_pos = sql.find(r#"ALTER TABLE "users" RENAME COLUMN "age" TO "age_years""#);
+        let type_pos = sql.find(r#"ALTER TABLE "users" ALTER COLUMN "age_years" TYPE"#);
 
         assert!(
             rename_pos.is_some(),
@@ -871,8 +871,8 @@ mod tests {
         let (sql, _) = result.unwrap();
 
         // Down方向: まず型変更の逆操作、次にリネームの逆操作
-        let type_pos = sql.find("ALTER TABLE users ALTER COLUMN age_years TYPE INTEGER");
-        let rename_pos = sql.find("ALTER TABLE users RENAME COLUMN age_years TO age");
+        let type_pos = sql.find(r#"ALTER TABLE "users" ALTER COLUMN "age_years" TYPE INTEGER"#);
+        let rename_pos = sql.find(r#"ALTER TABLE "users" RENAME COLUMN "age_years" TO "age""#);
 
         assert!(
             type_pos.is_some(),

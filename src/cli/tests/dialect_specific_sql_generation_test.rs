@@ -30,10 +30,10 @@ mod postgres_dialect_specific_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        // SERIALがそのまま出力されているか確認
+        // SERIALがそのまま出力されているか確認（クォート付き）
         assert!(
-            sql.contains("id SERIAL"),
-            "Expected 'id SERIAL' in SQL: {}",
+            sql.contains(r#""id" SERIAL"#),
+            "Expected '\"id\" SERIAL' in SQL: {}",
             sql
         );
         assert!(
@@ -159,10 +159,10 @@ mod mysql_dialect_specific_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        // TINYINTがそのまま出力されているか確認
+        // TINYINTがそのまま出力されているか確認（クォート付き）
         assert!(
-            sql.contains("flag TINYINT"),
-            "Expected 'flag TINYINT' in SQL: {}",
+            sql.contains("`flag` TINYINT"),
+            "Expected '`flag` TINYINT' in SQL: {}",
             sql
         );
     }
@@ -223,10 +223,10 @@ mod sqlite_dialect_specific_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        // BLOBがそのまま出力されているか確認
+        // BLOBがそのまま出力されているか確認（クォート付き）
         assert!(
-            sql.contains("data BLOB"),
-            "Expected 'data BLOB' in SQL: {}",
+            sql.contains(r#""data" BLOB"#),
+            "Expected '\"data\" BLOB' in SQL: {}",
             sql
         );
     }
@@ -281,20 +281,20 @@ mod mixed_types_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        // 3つのカラムが全て正しく生成されているか確認
+        // 3つのカラムが全て正しく生成されているか確認（クォート付き）
         assert!(
-            sql.contains("id SERIAL"),
-            "Expected 'id SERIAL' in SQL: {}",
+            sql.contains(r#""id" SERIAL"#),
+            "Expected '\"id\" SERIAL' in SQL: {}",
             sql
         );
         assert!(
-            sql.contains("name VARCHAR(255)"),
-            "Expected 'name VARCHAR(255)' in SQL: {}",
+            sql.contains(r#""name" VARCHAR(255)"#),
+            "Expected '\"name\" VARCHAR(255)' in SQL: {}",
             sql
         );
         assert!(
-            sql.contains("price NUMERIC(10, 2)"),
-            "Expected 'price NUMERIC(10, 2)' in SQL: {}",
+            sql.contains(r#""price" NUMERIC(10, 2)"#),
+            "Expected '\"price\" NUMERIC(10, 2)' in SQL: {}",
             sql
         );
     }

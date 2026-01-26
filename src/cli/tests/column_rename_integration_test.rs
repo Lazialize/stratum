@@ -354,16 +354,16 @@ tables:
         let (up_sql, _) = pipeline.generate_up().unwrap();
         let (down_sql, _) = pipeline.generate_down().unwrap();
 
-        // Up SQL にリネーム文が含まれることを確認
+        // Up SQL にリネーム文が含まれることを確認（クォート付き）
         assert!(
-            up_sql.contains("ALTER TABLE users RENAME COLUMN name TO user_name"),
+            up_sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#),
             "Expected rename SQL in up.sql: {}",
             up_sql
         );
 
-        // Down SQL に逆リネーム文が含まれることを確認
+        // Down SQL に逆リネーム文が含まれることを確認（クォート付き）
         assert!(
-            down_sql.contains("ALTER TABLE users RENAME COLUMN user_name TO name"),
+            down_sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#),
             "Expected reverse rename SQL in down.sql: {}",
             down_sql
         );
@@ -395,24 +395,24 @@ tables:
 
         let (up_sql, _) = pipeline.generate_up().unwrap();
 
-        // リネームSQLが含まれることを確認
+        // リネームSQLが含まれることを確認（クォート付き）
         assert!(
-            up_sql.contains("RENAME COLUMN name TO user_name"),
+            up_sql.contains(r#"RENAME COLUMN "name" TO "user_name""#),
             "Expected rename SQL in up.sql: {}",
             up_sql
         );
 
-        // 型変更SQLが含まれることを確認
+        // 型変更SQLが含まれることを確認（クォート付き）
         assert!(
-            up_sql.contains("ALTER TABLE users ALTER COLUMN user_name TYPE"),
+            up_sql.contains(r#"ALTER TABLE "users" ALTER COLUMN "user_name" TYPE"#),
             "Expected type change SQL in up.sql: {}",
             up_sql
         );
 
         // Up方向: リネームが型変更より先に実行されることを確認
-        let rename_pos = up_sql.find("RENAME COLUMN name TO user_name").unwrap();
+        let rename_pos = up_sql.find(r#"RENAME COLUMN "name" TO "user_name""#).unwrap();
         let type_change_pos = up_sql
-            .find("ALTER TABLE users ALTER COLUMN user_name TYPE")
+            .find(r#"ALTER TABLE "users" ALTER COLUMN "user_name" TYPE"#)
             .unwrap();
         assert!(
             rename_pos < type_change_pos,
@@ -447,15 +447,15 @@ tables:
         let (up_sql, _) = pipeline.generate_up().unwrap();
         let (down_sql, _) = pipeline.generate_down().unwrap();
 
-        // MySQLではCHANGE COLUMN構文を使用（完全なカラム定義が必要）
+        // MySQLではCHANGE COLUMN構文を使用（完全なカラム定義が必要、クォート付き）
         assert!(
-            up_sql.contains("ALTER TABLE users CHANGE COLUMN name user_name"),
+            up_sql.contains("ALTER TABLE `users` CHANGE COLUMN `name` `user_name`"),
             "Expected MySQL CHANGE COLUMN SQL in up.sql: {}",
             up_sql
         );
 
         assert!(
-            down_sql.contains("ALTER TABLE users CHANGE COLUMN user_name name"),
+            down_sql.contains("ALTER TABLE `users` CHANGE COLUMN `user_name` `name`"),
             "Expected MySQL reverse CHANGE COLUMN SQL in down.sql: {}",
             down_sql
         );
@@ -483,10 +483,10 @@ tables:
 
         let (up_sql, _) = pipeline.generate_up().unwrap();
 
-        // MySQLではCHANGE COLUMN構文を使用
+        // MySQLではCHANGE COLUMN構文を使用（クォート付き）
         assert!(
-            up_sql.contains("CHANGE COLUMN name full_name")
-                || up_sql.contains("CHANGE COLUMN email email_address"),
+            up_sql.contains("CHANGE COLUMN `name` `full_name`")
+                || up_sql.contains("CHANGE COLUMN `email` `email_address`"),
             "Expected CHANGE COLUMN SQLs in up.sql: {}",
             up_sql
         );
@@ -519,15 +519,15 @@ tables:
         let (up_sql, _) = pipeline.generate_up().unwrap();
         let (down_sql, _) = pipeline.generate_down().unwrap();
 
-        // SQLite 3.25.0+形式のリネームSQL
+        // SQLite 3.25.0+形式のリネームSQL（クォート付き）
         assert!(
-            up_sql.contains("ALTER TABLE users RENAME COLUMN name TO user_name"),
+            up_sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#),
             "Expected SQLite rename SQL in up.sql: {}",
             up_sql
         );
 
         assert!(
-            down_sql.contains("ALTER TABLE users RENAME COLUMN user_name TO name"),
+            down_sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#),
             "Expected SQLite reverse rename SQL in down.sql: {}",
             down_sql
         );
@@ -584,7 +584,7 @@ tables:
         let detector = SchemaDiffDetector::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
-        // PostgreSQLとSQLiteはRENAME COLUMN構文
+        // PostgreSQLとSQLiteはRENAME COLUMN構文（クォート付き）
         for dialect in [Dialect::PostgreSQL, Dialect::SQLite] {
             let pipeline =
                 MigrationPipeline::new(&diff, dialect).with_schemas(&old_schema, &new_schema);
@@ -592,21 +592,21 @@ tables:
             let (up_sql, _) = pipeline.generate_up().unwrap();
 
             assert!(
-                up_sql.contains("RENAME COLUMN name TO user_name"),
+                up_sql.contains(r#"RENAME COLUMN "name" TO "user_name""#),
                 "Expected RENAME COLUMN SQL for {:?}: {}",
                 dialect,
                 up_sql
             );
         }
 
-        // MySQLはCHANGE COLUMN構文
+        // MySQLはCHANGE COLUMN構文（クォート付き）
         let pipeline =
             MigrationPipeline::new(&diff, Dialect::MySQL).with_schemas(&old_schema, &new_schema);
 
         let (up_sql, _) = pipeline.generate_up().unwrap();
 
         assert!(
-            up_sql.contains("CHANGE COLUMN name user_name"),
+            up_sql.contains("CHANGE COLUMN `name` `user_name`"),
             "Expected CHANGE COLUMN SQL for MySQL: {}",
             up_sql
         );

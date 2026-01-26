@@ -3,7 +3,8 @@
 // スキーマ定義からPostgreSQL用のDDL文を生成します。
 
 use crate::adapters::sql_generator::{
-    build_column_definition, generate_fk_constraint_name, MigrationDirection, SqlGenerator,
+    build_column_definition, generate_fk_constraint_name, quote_columns_postgres,
+    quote_identifier_postgres, MigrationDirection, SqlGenerator,
 };
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
@@ -24,7 +25,8 @@ impl PostgresSqlGenerator {
     /// カラム定義のSQL文字列を生成
     fn generate_column_definition(&self, column: &Column) -> String {
         let type_str = self.map_column_type(&column.column_type, column.auto_increment);
-        build_column_definition(column, type_str, &[])
+        let quoted_name = quote_identifier_postgres(&column.name);
+        build_column_definition(&quoted_name, column, type_str, &[])
     }
 
     /// ColumnTypeをPostgreSQLの型文字列にマッピング
@@ -39,10 +41,10 @@ impl PostgresSqlGenerator {
     fn generate_constraint_definition(&self, constraint: &Constraint) -> String {
         match constraint {
             Constraint::PRIMARY_KEY { columns } => {
-                format!("PRIMARY KEY ({})", columns.join(", "))
+                format!("PRIMARY KEY ({})", quote_columns_postgres(columns))
             }
             Constraint::UNIQUE { columns } => {
-                format!("UNIQUE ({})", columns.join(", "))
+                format!("UNIQUE ({})", quote_columns_postgres(columns))
             }
             Constraint::CHECK {
                 check_expression, ..
@@ -129,35 +131,40 @@ impl SqlGenerator for PostgresSqlGenerator {
     fn generate_add_column(&self, table_name: &str, column: &Column) -> String {
         format!(
             "ALTER TABLE {} ADD COLUMN {}",
-            table_name,
+            quote_identifier_postgres(table_name),
             self.generate_column_definition(column)
         )
     }
 
     fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
-        format!("ALTER TABLE {} DROP COLUMN {}", table_name, column_name)
+        format!(
+            "ALTER TABLE {} DROP COLUMN {}",
+            quote_identifier_postgres(table_name),
+            quote_identifier_postgres(column_name)
+        )
     }
 
     fn generate_drop_table(&self, table_name: &str) -> String {
-        format!("DROP TABLE {}", table_name)
+        format!("DROP TABLE {}", quote_identifier_postgres(table_name))
     }
 
     fn generate_drop_index(&self, _table_name: &str, index: &Index) -> String {
-        format!("DROP INDEX {}", index.name)
+        format!("DROP INDEX {}", quote_identifier_postgres(&index.name))
     }
 
     fn generate_create_enum_type(&self, enum_def: &EnumDefinition) -> Vec<String> {
         let values = self.format_enum_values(&enum_def.values);
         vec![format!(
             "CREATE TYPE {} AS ENUM ({})",
-            enum_def.name, values
+            quote_identifier_postgres(&enum_def.name),
+            values
         )]
     }
 
     fn generate_add_enum_value(&self, enum_name: &str, value: &str) -> Vec<String> {
         vec![format!(
             "ALTER TYPE {} ADD VALUE '{}'",
-            enum_name,
+            quote_identifier_postgres(enum_name),
             self.escape_enum_value(value)
         )]
     }
@@ -169,30 +176,35 @@ impl SqlGenerator for PostgresSqlGenerator {
 
         statements.push(format!(
             "ALTER TYPE {} RENAME TO {}",
-            enum_diff.enum_name, old_name
+            quote_identifier_postgres(&enum_diff.enum_name),
+            quote_identifier_postgres(&old_name)
         ));
         statements.push(format!(
             "CREATE TYPE {} AS ENUM ({})",
-            enum_diff.enum_name, values
+            quote_identifier_postgres(&enum_diff.enum_name),
+            values
         ));
 
         for column in &enum_diff.columns {
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::text::{}",
-                column.table_name,
-                column.column_name,
-                enum_diff.enum_name,
-                column.column_name,
-                enum_diff.enum_name
+                quote_identifier_postgres(&column.table_name),
+                quote_identifier_postgres(&column.column_name),
+                quote_identifier_postgres(&enum_diff.enum_name),
+                quote_identifier_postgres(&column.column_name),
+                quote_identifier_postgres(&enum_diff.enum_name)
             ));
         }
 
-        statements.push(format!("DROP TYPE {}", old_name));
+        statements.push(format!(
+            "DROP TYPE {}",
+            quote_identifier_postgres(&old_name)
+        ));
         statements
     }
 
     fn generate_drop_enum_type(&self, enum_name: &str) -> Vec<String> {
-        vec![format!("DROP TYPE {}", enum_name)]
+        vec![format!("DROP TYPE {}", quote_identifier_postgres(enum_name))]
     }
 
     fn generate_alter_column_type(
@@ -202,6 +214,8 @@ impl SqlGenerator for PostgresSqlGenerator {
         direction: MigrationDirection,
     ) -> Vec<String> {
         let column_name = &column_diff.column_name;
+        let quoted_table = quote_identifier_postgres(&table.name);
+        let quoted_column = quote_identifier_postgres(column_name);
 
         // 方向に応じて対象の型とauto_incrementフラグを決定
         let (source_type, target_type, source_auto_increment, target_auto_increment) =
@@ -245,12 +259,12 @@ impl SqlGenerator for PostgresSqlGenerator {
             let sql = if needs_using {
                 format!(
                     "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{}",
-                    table.name, column_name, target_type_str, column_name, target_type_str
+                    quoted_table, quoted_column, target_type_str, quoted_column, target_type_str
                 )
             } else {
                 format!(
                     "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
-                    table.name, column_name, target_type_str
+                    quoted_table, quoted_column, target_type_str
                 )
             };
             statements.push(sql);
@@ -261,21 +275,25 @@ impl SqlGenerator for PostgresSqlGenerator {
         // シーケンスの作成とDEFAULT設定で対応
         if !source_is_auto && target_is_auto {
             let sequence_name = format!("{}_{}_seq", table.name, column_name);
-            statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", sequence_name));
+            let quoted_sequence = quote_identifier_postgres(&sequence_name);
+            statements.push(format!(
+                "CREATE SEQUENCE IF NOT EXISTS {}",
+                quoted_sequence
+            ));
             // 既存データがある場合に備えてシーケンスを最大値に初期化
             // COALESCE(..., 0) により空テーブルでは nextval() が 1 を返す
             // 第3引数 true により次の nextval() は max+1 を返す
             statements.push(format!(
                 "SELECT setval('{}', COALESCE((SELECT MAX({}) FROM {}), 0), true)",
-                sequence_name, column_name, table.name
+                sequence_name, quoted_column, quoted_table
             ));
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval('{}')",
-                table.name, column_name, sequence_name
+                quoted_table, quoted_column, sequence_name
             ));
             statements.push(format!(
                 "ALTER SEQUENCE {} OWNED BY {}.{}",
-                sequence_name, table.name, column_name
+                quoted_sequence, quoted_table, quoted_column
             ));
         }
 
@@ -285,10 +303,14 @@ impl SqlGenerator for PostgresSqlGenerator {
         if source_is_auto && !target_is_auto {
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
-                table.name, column_name
+                quoted_table, quoted_column
             ));
             let sequence_name = format!("{}_{}_seq", table.name, column_name);
-            statements.push(format!("DROP SEQUENCE IF EXISTS {} CASCADE", sequence_name));
+            let quoted_sequence = quote_identifier_postgres(&sequence_name);
+            statements.push(format!(
+                "DROP SEQUENCE IF EXISTS {} CASCADE",
+                quoted_sequence
+            ));
         }
 
         statements
@@ -297,7 +319,10 @@ impl SqlGenerator for PostgresSqlGenerator {
     fn generate_create_table(&self, table: &Table) -> String {
         let mut parts = Vec::new();
 
-        parts.push(format!("CREATE TABLE {}", table.name));
+        parts.push(format!(
+            "CREATE TABLE {}",
+            quote_identifier_postgres(&table.name)
+        ));
         parts.push("(".to_string());
 
         let mut elements = Vec::new();
@@ -333,9 +358,9 @@ impl SqlGenerator for PostgresSqlGenerator {
         format!(
             "CREATE {} {} ON {} ({})",
             index_type,
-            index.name,
-            table.name,
-            index.columns.join(", ")
+            quote_identifier_postgres(&index.name),
+            quote_identifier_postgres(&table.name),
+            quote_columns_postgres(&index.columns)
         )
     }
 
@@ -356,11 +381,11 @@ impl SqlGenerator for PostgresSqlGenerator {
 
                     format!(
                         "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
-                        table.name,
-                        constraint_name,
-                        columns.join(", "),
-                        referenced_table,
-                        referenced_columns.join(", ")
+                        quote_identifier_postgres(&table.name),
+                        quote_identifier_postgres(&constraint_name),
+                        quote_columns_postgres(columns),
+                        quote_identifier_postgres(referenced_table),
+                        quote_columns_postgres(referenced_columns)
                     )
                 }
                 _ => {
@@ -386,7 +411,9 @@ impl SqlGenerator for PostgresSqlGenerator {
 
         vec![format!(
             "ALTER TABLE {} RENAME COLUMN {} TO {}",
-            table.name, from_name, to_name
+            quote_identifier_postgres(&table.name),
+            quote_identifier_postgres(from_name),
+            quote_identifier_postgres(to_name)
         )]
     }
 
@@ -406,11 +433,11 @@ impl SqlGenerator for PostgresSqlGenerator {
 
                 format!(
                     "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
-                    table_name,
-                    constraint_name,
-                    columns.join(", "),
-                    referenced_table,
-                    referenced_columns.join(", ")
+                    quote_identifier_postgres(table_name),
+                    quote_identifier_postgres(&constraint_name),
+                    quote_columns_postgres(columns),
+                    quote_identifier_postgres(referenced_table),
+                    quote_columns_postgres(referenced_columns)
                 )
             }
             _ => {
@@ -436,7 +463,8 @@ impl SqlGenerator for PostgresSqlGenerator {
 
                 format!(
                     "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {}",
-                    table_name, constraint_name
+                    quote_identifier_postgres(table_name),
+                    quote_identifier_postgres(&constraint_name)
                 )
             }
             _ => {
@@ -506,7 +534,7 @@ mod tests {
         );
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "name VARCHAR(100) NOT NULL");
+        assert_eq!(def, r#""name" VARCHAR(100) NOT NULL"#);
     }
 
     #[test]
@@ -519,7 +547,7 @@ mod tests {
         );
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "bio TEXT");
+        assert_eq!(def, r#""bio" TEXT"#);
     }
 
     #[test]
@@ -533,7 +561,7 @@ mod tests {
         column.default_value = Some("'active'".to_string());
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "status VARCHAR(20) NOT NULL DEFAULT 'active'");
+        assert_eq!(def, r#""status" VARCHAR(20) NOT NULL DEFAULT 'active'"#);
     }
 
     #[test]
@@ -544,7 +572,7 @@ mod tests {
         };
 
         let def = generator.generate_constraint_definition(&constraint);
-        assert_eq!(def, "PRIMARY KEY (id)");
+        assert_eq!(def, r#"PRIMARY KEY ("id")"#);
     }
 
     #[test]
@@ -555,7 +583,7 @@ mod tests {
         };
 
         let def = generator.generate_constraint_definition(&constraint);
-        assert_eq!(def, "UNIQUE (email)");
+        assert_eq!(def, r#"UNIQUE ("email")"#);
     }
 
     #[test]
@@ -613,7 +641,7 @@ mod tests {
         let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE BIGINT");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE BIGINT"#);
     }
 
     #[test]
@@ -633,7 +661,7 @@ mod tests {
         let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE TEXT");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE TEXT"#);
     }
 
     #[test]
@@ -655,7 +683,7 @@ mod tests {
         assert_eq!(sql.len(), 1);
         assert_eq!(
             sql[0],
-            "ALTER TABLE users ALTER COLUMN name TYPE INTEGER USING name::INTEGER"
+            r#"ALTER TABLE "users" ALTER COLUMN "name" TYPE INTEGER USING "name"::INTEGER"#
         );
     }
 
@@ -678,7 +706,7 @@ mod tests {
         assert_eq!(sql.len(), 1);
         assert_eq!(
             sql[0],
-            "ALTER TABLE users ALTER COLUMN name TYPE BOOLEAN USING name::BOOLEAN"
+            r#"ALTER TABLE "users" ALTER COLUMN "name" TYPE BOOLEAN USING "name"::BOOLEAN"#
         );
     }
 
@@ -697,7 +725,7 @@ mod tests {
         assert_eq!(sql.len(), 1);
         assert_eq!(
             sql[0],
-            "ALTER TABLE users ALTER COLUMN name TYPE JSONB USING name::JSONB"
+            r#"ALTER TABLE "users" ALTER COLUMN "name" TYPE JSONB USING "name"::JSONB"#
         );
     }
 
@@ -723,7 +751,7 @@ mod tests {
 
         assert_eq!(sql.len(), 1);
         // Down方向なので old_type (INTEGER) に戻す
-        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE INTEGER");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE INTEGER"#);
     }
 
     #[test]
@@ -745,7 +773,7 @@ mod tests {
         let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN name TYPE TEXT");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "name" TYPE TEXT"#);
     }
 
     #[test]
@@ -769,7 +797,7 @@ mod tests {
         assert_eq!(sql.len(), 1);
         assert_eq!(
             sql[0],
-            "ALTER TABLE users ALTER COLUMN name TYPE TIMESTAMP USING name::TIMESTAMP"
+            r#"ALTER TABLE "users" ALTER COLUMN "name" TYPE TIMESTAMP USING "name"::TIMESTAMP"#
         );
     }
 
@@ -805,7 +833,7 @@ mod tests {
         let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE users RENAME COLUMN name TO user_name");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#);
     }
 
     #[test]
@@ -834,7 +862,7 @@ mod tests {
         let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Down);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE users RENAME COLUMN user_name TO name");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#);
     }
 
     // ==========================================
@@ -907,7 +935,7 @@ mod tests {
         assert_eq!(sql.len(), 5);
 
         // 最初は型変更SQL（BIGINT、SERIALではない）
-        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE BIGINT");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE BIGINT"#);
 
         // シーケンス関連SQL
         assert!(sql[1].contains("CREATE SEQUENCE"));
@@ -918,7 +946,7 @@ mod tests {
         // 型変更SQLは1回だけであることを確認
         let type_change_count = sql
             .iter()
-            .filter(|s| s.contains("ALTER COLUMN id TYPE"))
+            .filter(|s| s.contains(r#"ALTER COLUMN "id" TYPE"#))
             .count();
         assert_eq!(type_change_count, 1);
     }
@@ -982,7 +1010,7 @@ mod tests {
 
         // 型変更SQL(1) + DEFAULTドロップ(1) + シーケンス削除(1) = 3
         assert_eq!(sql.len(), 3);
-        assert_eq!(sql[0], "ALTER TABLE users ALTER COLUMN id TYPE INTEGER");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE INTEGER"#);
         assert!(sql[1].contains("DROP DEFAULT"));
         assert!(sql[2].contains("DROP SEQUENCE IF EXISTS"));
     }
@@ -1004,7 +1032,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            "ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id_users FOREIGN KEY (user_id) REFERENCES users (id)"
+            r#"ALTER TABLE "posts" ADD CONSTRAINT "fk_posts_user_id_users" FOREIGN KEY ("user_id") REFERENCES "users" ("id")"#
         );
     }
 
@@ -1021,7 +1049,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            "ALTER TABLE posts ADD CONSTRAINT fk_posts_org_id_user_id_org_users FOREIGN KEY (org_id, user_id) REFERENCES org_users (organization_id, user_id)"
+            r#"ALTER TABLE "posts" ADD CONSTRAINT "fk_posts_org_id_user_id_org_users" FOREIGN KEY ("org_id", "user_id") REFERENCES "org_users" ("organization_id", "user_id")"#
         );
     }
 
@@ -1050,7 +1078,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            "ALTER TABLE posts DROP CONSTRAINT IF EXISTS fk_posts_user_id_users"
+            r#"ALTER TABLE "posts" DROP CONSTRAINT IF EXISTS "fk_posts_user_id_users""#
         );
     }
 

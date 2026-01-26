@@ -4,7 +4,10 @@
 // SQLiteはALTER TABLEの機能が制限されているため、制約はCREATE TABLE内で定義します。
 
 use crate::adapters::sql_generator::sqlite_table_recreator::SqliteTableRecreator;
-use crate::adapters::sql_generator::{build_column_definition, MigrationDirection, SqlGenerator};
+use crate::adapters::sql_generator::{
+    build_column_definition, quote_columns_sqlite, quote_identifier_sqlite, MigrationDirection,
+    SqlGenerator,
+};
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
@@ -23,7 +26,8 @@ impl SqliteSqlGenerator {
     /// カラム定義のSQL文字列を生成
     fn generate_column_definition(&self, column: &Column) -> String {
         let type_str = self.map_column_type(&column.column_type);
-        build_column_definition(column, type_str, &[])
+        let quoted_name = quote_identifier_sqlite(&column.name);
+        build_column_definition(&quoted_name, column, type_str, &[])
     }
 
     /// ColumnTypeをSQLiteの型文字列にマッピング
@@ -38,10 +42,10 @@ impl SqliteSqlGenerator {
     fn generate_constraint_definition(&self, constraint: &Constraint) -> String {
         match constraint {
             Constraint::PRIMARY_KEY { columns } => {
-                format!("PRIMARY KEY ({})", columns.join(", "))
+                format!("PRIMARY KEY ({})", quote_columns_sqlite(columns))
             }
             Constraint::UNIQUE { columns } => {
-                format!("UNIQUE ({})", columns.join(", "))
+                format!("UNIQUE ({})", quote_columns_sqlite(columns))
             }
             Constraint::CHECK {
                 check_expression, ..
@@ -56,9 +60,9 @@ impl SqliteSqlGenerator {
                 // SQLiteではFOREIGN KEYをCREATE TABLE内で定義
                 format!(
                     "FOREIGN KEY ({}) REFERENCES {} ({})",
-                    columns.join(", "),
-                    referenced_table,
-                    referenced_columns.join(", ")
+                    quote_columns_sqlite(columns),
+                    quote_identifier_sqlite(referenced_table),
+                    quote_columns_sqlite(referenced_columns)
                 )
             }
         }
@@ -69,23 +73,30 @@ impl SqlGenerator for SqliteSqlGenerator {
     fn generate_add_column(&self, table_name: &str, column: &Column) -> String {
         format!(
             "ALTER TABLE {} ADD COLUMN {}",
-            table_name,
+            quote_identifier_sqlite(table_name),
             self.generate_column_definition(column)
         )
     }
 
     fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
-        format!("ALTER TABLE {} DROP COLUMN {}", table_name, column_name)
+        format!(
+            "ALTER TABLE {} DROP COLUMN {}",
+            quote_identifier_sqlite(table_name),
+            quote_identifier_sqlite(column_name)
+        )
     }
 
     fn generate_drop_table(&self, table_name: &str) -> String {
-        format!("DROP TABLE {}", table_name)
+        format!("DROP TABLE {}", quote_identifier_sqlite(table_name))
     }
 
     fn generate_create_table(&self, table: &Table) -> String {
         let mut parts = Vec::new();
 
-        parts.push(format!("CREATE TABLE {}", table.name));
+        parts.push(format!(
+            "CREATE TABLE {}",
+            quote_identifier_sqlite(&table.name)
+        ));
         parts.push("(".to_string());
 
         let mut elements = Vec::new();
@@ -119,9 +130,9 @@ impl SqlGenerator for SqliteSqlGenerator {
         format!(
             "CREATE {} {} ON {} ({})",
             index_type,
-            index.name,
-            table.name,
-            index.columns.join(", ")
+            quote_identifier_sqlite(&index.name),
+            quote_identifier_sqlite(&table.name),
+            quote_columns_sqlite(&index.columns)
         )
     }
 
@@ -199,7 +210,9 @@ impl SqlGenerator for SqliteSqlGenerator {
 
         vec![format!(
             "ALTER TABLE {} RENAME COLUMN {} TO {}",
-            table.name, from_name, to_name
+            quote_identifier_sqlite(&table.name),
+            quote_identifier_sqlite(from_name),
+            quote_identifier_sqlite(to_name)
         )]
     }
 }
@@ -268,7 +281,7 @@ mod tests {
         );
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "name TEXT NOT NULL");
+        assert_eq!(def, r#""name" TEXT NOT NULL"#);
     }
 
     #[test]
@@ -281,7 +294,7 @@ mod tests {
         );
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "bio TEXT");
+        assert_eq!(def, r#""bio" TEXT"#);
     }
 
     #[test]
@@ -295,7 +308,7 @@ mod tests {
         column.default_value = Some("'active'".to_string());
 
         let def = generator.generate_column_definition(&column);
-        assert_eq!(def, "status TEXT NOT NULL DEFAULT 'active'");
+        assert_eq!(def, r#""status" TEXT NOT NULL DEFAULT 'active'"#);
     }
 
     #[test]
@@ -306,7 +319,7 @@ mod tests {
         };
 
         let def = generator.generate_constraint_definition(&constraint);
-        assert_eq!(def, "PRIMARY KEY (id)");
+        assert_eq!(def, r#"PRIMARY KEY ("id")"#);
     }
 
     #[test]
@@ -317,7 +330,7 @@ mod tests {
         };
 
         let def = generator.generate_constraint_definition(&constraint);
-        assert_eq!(def, "UNIQUE (email)");
+        assert_eq!(def, r#"UNIQUE ("email")"#);
     }
 
     #[test]
@@ -342,7 +355,7 @@ mod tests {
         };
 
         let def = generator.generate_constraint_definition(&constraint);
-        assert_eq!(def, "FOREIGN KEY (user_id) REFERENCES users (id)");
+        assert_eq!(def, r#"FOREIGN KEY ("user_id") REFERENCES "users" ("id")"#);
     }
 
     #[test]
@@ -411,10 +424,10 @@ mod tests {
         assert!(statements.len() >= 9);
         assert_eq!(statements[0], "PRAGMA foreign_keys=off");
         assert_eq!(statements[1], "BEGIN TRANSACTION");
-        assert!(statements[2].contains("CREATE TABLE new_users"));
-        assert!(statements[3].contains("INSERT INTO new_users"));
-        assert!(statements[4].contains("DROP TABLE users"));
-        assert!(statements[5].contains("ALTER TABLE new_users RENAME TO users"));
+        assert!(statements[2].contains(r#"CREATE TABLE "new_users""#));
+        assert!(statements[3].contains(r#"INSERT INTO "new_users""#));
+        assert!(statements[4].contains(r#"DROP TABLE "users""#));
+        assert!(statements[5].contains(r#"ALTER TABLE "new_users" RENAME TO "users""#));
     }
 
     #[test]
@@ -586,7 +599,7 @@ mod tests {
         let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE users RENAME COLUMN name TO user_name");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#);
     }
 
     #[test]
@@ -615,6 +628,6 @@ mod tests {
         let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Down);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE users RENAME COLUMN user_name TO name");
+        assert_eq!(sql[0], r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#);
     }
 }

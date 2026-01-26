@@ -14,6 +14,54 @@ use sha2::{Digest, Sha256};
 /// PostgreSQL/MySQLの識別子最大長
 const MAX_IDENTIFIER_LENGTH: usize = 63;
 
+/// PostgreSQL用識別子クォート（ダブルクォート）
+///
+/// 識別子内のダブルクォートは二重にエスケープします。
+pub(crate) fn quote_identifier_postgres(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// MySQL用識別子クォート（バッククォート）
+///
+/// 識別子内のバッククォートは二重にエスケープします。
+pub(crate) fn quote_identifier_mysql(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
+}
+
+/// SQLite用識別子クォート（ダブルクォート）
+///
+/// 識別子内のダブルクォートは二重にエスケープします。
+pub(crate) fn quote_identifier_sqlite(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// カラム名リストをクォートしてカンマ区切りで結合（PostgreSQL用）
+pub(crate) fn quote_columns_postgres(columns: &[String]) -> String {
+    columns
+        .iter()
+        .map(|c| quote_identifier_postgres(c))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// カラム名リストをクォートしてカンマ区切りで結合（MySQL用）
+pub(crate) fn quote_columns_mysql(columns: &[String]) -> String {
+    columns
+        .iter()
+        .map(|c| quote_identifier_mysql(c))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// カラム名リストをクォートしてカンマ区切りで結合（SQLite用）
+pub(crate) fn quote_columns_sqlite(columns: &[String]) -> String {
+    columns
+        .iter()
+        .map(|c| quote_identifier_sqlite(c))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// 外部キー制約名を生成
 ///
 /// `fk_{table_name}_{columns}_{referenced_table}`形式で名前を生成します。
@@ -67,14 +115,22 @@ pub(crate) fn generate_fk_constraint_name(
 }
 
 /// カラム定義の共通組み立てヘルパー
+///
+/// # Arguments
+///
+/// * `quoted_name` - クォート済みのカラム名
+/// * `column` - カラム定義（nullable, default_valueなどを参照）
+/// * `type_str` - SQL型文字列
+/// * `extra_parts` - 追加の修飾子（AUTO_INCREMENTなど）
 pub(crate) fn build_column_definition(
+    quoted_name: &str,
     column: &Column,
     type_str: String,
     extra_parts: &[&str],
 ) -> String {
     let mut parts = Vec::new();
 
-    parts.push(column.name.clone());
+    parts.push(quoted_name.to_string());
     parts.push(type_str);
 
     if !column.nullable {

@@ -33,10 +33,10 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("id INTEGER NOT NULL"));
+        assert!(sql.contains(r#"CREATE TABLE "users""#));
+        assert!(sql.contains(r#""id" INTEGER NOT NULL"#));
         // SQLiteではVARCHARの長さ指定は無視されるが、記述可能
-        assert!(sql.contains("name TEXT NOT NULL"));
+        assert!(sql.contains(r#""name" TEXT NOT NULL"#));
     }
 
     /// PRIMARY KEY制約を含むCREATE TABLE文の生成テスト
@@ -56,8 +56,8 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("PRIMARY KEY (id)"));
+        assert!(sql.contains(r#"CREATE TABLE "users""#));
+        assert!(sql.contains(r#"PRIMARY KEY ("id")"#));
     }
 
     /// 複合PRIMARY KEY制約のテスト
@@ -82,7 +82,7 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("PRIMARY KEY (user_id, role_id)"));
+        assert!(sql.contains(r#"PRIMARY KEY ("user_id", "role_id")"#));
     }
 
     /// NULL許可カラムのテスト
@@ -99,8 +99,8 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("bio TEXT"));
-        assert!(!sql.contains("bio TEXT NOT NULL"));
+        assert!(sql.contains(r#""bio" TEXT"#));
+        assert!(!sql.contains(r#""bio" TEXT NOT NULL"#));
     }
 
     /// デフォルト値を持つカラムのテスト
@@ -119,7 +119,7 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("status TEXT NOT NULL DEFAULT 'active'"));
+        assert!(sql.contains(r#""status" TEXT NOT NULL DEFAULT 'active'"#));
     }
 
     /// UNIQUE制約を含むCREATE TABLE文の生成テスト
@@ -139,7 +139,7 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("UNIQUE (email)"));
+        assert!(sql.contains(r#"UNIQUE ("email")"#));
     }
 
     /// FOREIGN KEY制約のテスト（SQLiteではCREATE TABLE内で定義）
@@ -162,8 +162,8 @@ mod sqlite_sql_generator_tests {
         let sql = generator.generate_create_table(&table);
 
         // SQLiteではFOREIGN KEYをCREATE TABLE内で定義
-        assert!(sql.contains("FOREIGN KEY (user_id)"));
-        assert!(sql.contains("REFERENCES users (id)"));
+        assert!(sql.contains(r#"FOREIGN KEY ("user_id")"#));
+        assert!(sql.contains(r#"REFERENCES "users" ("id")"#));
     }
 
     /// ALTER TABLE文生成テスト（SQLiteの制限により空文字列を返す）
@@ -220,9 +220,9 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_index(&table, &index);
 
-        assert!(sql.contains("CREATE INDEX idx_email"));
-        assert!(sql.contains("ON users"));
-        assert!(sql.contains("(email)"));
+        assert!(sql.contains(r#"CREATE INDEX "idx_email""#));
+        assert!(sql.contains(r#"ON "users""#));
+        assert!(sql.contains(r#"("email")"#));
     }
 
     /// CREATE UNIQUE INDEX文の生成テスト
@@ -239,9 +239,9 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_index(&table, &index);
 
-        assert!(sql.contains("CREATE UNIQUE INDEX idx_username"));
-        assert!(sql.contains("ON users"));
-        assert!(sql.contains("(username)"));
+        assert!(sql.contains(r#"CREATE UNIQUE INDEX "idx_username""#));
+        assert!(sql.contains(r#"ON "users""#));
+        assert!(sql.contains(r#"("username")"#));
     }
 
     /// 複合インデックスの生成テスト
@@ -258,9 +258,9 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_index(&table, &index);
 
-        assert!(sql.contains("CREATE INDEX idx_user_created"));
-        assert!(sql.contains("ON posts"));
-        assert!(sql.contains("(user_id, created_at)"));
+        assert!(sql.contains(r#"CREATE INDEX "idx_user_created""#));
+        assert!(sql.contains(r#"ON "posts""#));
+        assert!(sql.contains(r#"("user_id", "created_at")"#));
     }
 
     /// 様々なSQLite型のマッピングテスト
@@ -315,13 +315,13 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("col_int INTEGER NOT NULL"));
-        assert!(sql.contains("col_bigint INTEGER NOT NULL"));
-        assert!(sql.contains("col_varchar TEXT NOT NULL"));
-        assert!(sql.contains("col_text TEXT NOT NULL"));
-        assert!(sql.contains("col_bool INTEGER NOT NULL"));
-        assert!(sql.contains("col_timestamp TEXT NOT NULL"));
-        assert!(sql.contains("col_json TEXT NOT NULL"));
+        assert!(sql.contains(r#""col_int" INTEGER NOT NULL"#));
+        assert!(sql.contains(r#""col_bigint" INTEGER NOT NULL"#));
+        assert!(sql.contains(r#""col_varchar" TEXT NOT NULL"#));
+        assert!(sql.contains(r#""col_text" TEXT NOT NULL"#));
+        assert!(sql.contains(r#""col_bool" INTEGER NOT NULL"#));
+        assert!(sql.contains(r#""col_timestamp" TEXT NOT NULL"#));
+        assert!(sql.contains(r#""col_json" TEXT NOT NULL"#));
     }
 
     /// AUTOINCREMENT（INTEGER PRIMARY KEY）のテスト
@@ -344,8 +344,8 @@ mod sqlite_sql_generator_tests {
         let sql = generator.generate_create_table(&table);
 
         // SQLiteではINTEGER PRIMARY KEYで自動インクリメント
-        assert!(sql.contains("id INTEGER NOT NULL"));
-        assert!(sql.contains("PRIMARY KEY (id)"));
+        assert!(sql.contains(r#""id" INTEGER NOT NULL"#));
+        assert!(sql.contains(r#"PRIMARY KEY ("id")"#));
     }
 
     /// 複数の制約を含むテーブルのテスト
@@ -392,12 +392,12 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("id INTEGER NOT NULL"));
-        assert!(sql.contains("email TEXT NOT NULL"));
-        assert!(sql.contains("status TEXT NOT NULL DEFAULT 'active'"));
-        assert!(sql.contains("PRIMARY KEY (id)"));
-        assert!(sql.contains("UNIQUE (email)"));
+        assert!(sql.contains(r#"CREATE TABLE "users""#));
+        assert!(sql.contains(r#""id" INTEGER NOT NULL"#));
+        assert!(sql.contains(r#""email" TEXT NOT NULL"#));
+        assert!(sql.contains(r#""status" TEXT NOT NULL DEFAULT 'active'"#));
+        assert!(sql.contains(r#"PRIMARY KEY ("id")"#));
+        assert!(sql.contains(r#"UNIQUE ("email")"#));
         assert!(sql.contains("CHECK (status IN ('active', 'inactive'))"));
     }
 
@@ -441,8 +441,8 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("FOREIGN KEY (user_id) REFERENCES users (id)"));
-        assert!(sql.contains("FOREIGN KEY (category_id) REFERENCES categories (id)"));
+        assert!(sql.contains(r#"FOREIGN KEY ("user_id") REFERENCES "users" ("id")"#));
+        assert!(sql.contains(r#"FOREIGN KEY ("category_id") REFERENCES "categories" ("id")"#));
     }
 
     // Phase 4: 新規データ型のマッピングテスト
@@ -462,7 +462,7 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
         // SQLite では DECIMAL を TEXT にマッピング（精度保証のため）
-        assert!(sql.contains("price TEXT NOT NULL"));
+        assert!(sql.contains(r#""price" TEXT NOT NULL"#));
     }
 
     #[test]
@@ -472,7 +472,7 @@ mod sqlite_sql_generator_tests {
         table.add_column(Column::new("value".to_string(), ColumnType::FLOAT, false));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("value REAL NOT NULL"));
+        assert!(sql.contains(r#""value" REAL NOT NULL"#));
     }
 
     #[test]
@@ -487,7 +487,7 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
         // SQLite では FLOAT も DOUBLE も REAL にマッピング
-        assert!(sql.contains("latitude REAL NOT NULL"));
+        assert!(sql.contains(r#""latitude" REAL NOT NULL"#));
     }
 
     #[test]
@@ -501,7 +501,7 @@ mod sqlite_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("code TEXT NOT NULL"));
+        assert!(sql.contains(r#""code" TEXT NOT NULL"#));
     }
 
     #[test]
@@ -515,7 +515,7 @@ mod sqlite_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("event_date TEXT NOT NULL"));
+        assert!(sql.contains(r#""event_date" TEXT NOT NULL"#));
     }
 
     #[test]
@@ -531,7 +531,7 @@ mod sqlite_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("start_time TEXT NOT NULL"));
+        assert!(sql.contains(r#""start_time" TEXT NOT NULL"#));
     }
 
     #[test]
@@ -541,7 +541,7 @@ mod sqlite_sql_generator_tests {
         table.add_column(Column::new("content".to_string(), ColumnType::BLOB, false));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("content BLOB NOT NULL"));
+        assert!(sql.contains(r#""content" BLOB NOT NULL"#));
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
         // SQLite では UUID を TEXT にマッピング
-        assert!(sql.contains("user_id TEXT NOT NULL"));
+        assert!(sql.contains(r#""user_id" TEXT NOT NULL"#));
     }
 
     #[test]
@@ -563,6 +563,6 @@ mod sqlite_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
         // SQLite では JSONB を TEXT にマッピング
-        assert!(sql.contains("config TEXT NOT NULL"));
+        assert!(sql.contains(r#""config" TEXT NOT NULL"#));
     }
 }
