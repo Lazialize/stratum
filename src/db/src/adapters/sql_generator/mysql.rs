@@ -294,7 +294,7 @@ impl SqlGenerator for MysqlSqlGenerator {
 
                 // MySQLではDROP FOREIGN KEYを使用
                 format!(
-                    "ALTER TABLE `{}` DROP FOREIGN KEY `{}`",
+                    "ALTER TABLE {} DROP FOREIGN KEY {}",
                     table_name, constraint_name
                 )
             }
