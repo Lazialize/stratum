@@ -2,7 +2,9 @@
 //
 // スキーマ定義からMySQL用のDDL文を生成します。
 
-use crate::adapters::sql_generator::{build_column_definition, MigrationDirection, SqlGenerator};
+use crate::adapters::sql_generator::{
+    build_column_definition, generate_fk_constraint_name, MigrationDirection, SqlGenerator,
+};
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
@@ -189,12 +191,8 @@ impl SqlGenerator for MysqlSqlGenerator {
                     referenced_table,
                     referenced_columns,
                 } => {
-                    let constraint_name = format!(
-                        "fk_{}_{}_{}",
-                        table.name,
-                        columns.join("_"),
-                        referenced_table
-                    );
+                    let constraint_name =
+                        generate_fk_constraint_name(&table.name, columns, referenced_table);
 
                     format!(
                         "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
@@ -238,6 +236,63 @@ impl SqlGenerator for MysqlSqlGenerator {
             "ALTER TABLE {} CHANGE COLUMN {} {}",
             table.name, from_name, column_def
         )]
+    }
+
+    fn generate_add_constraint_for_existing_table(
+        &self,
+        table_name: &str,
+        constraint: &Constraint,
+    ) -> String {
+        match constraint {
+            Constraint::FOREIGN_KEY {
+                columns,
+                referenced_table,
+                referenced_columns,
+            } => {
+                let constraint_name =
+                    generate_fk_constraint_name(table_name, columns, referenced_table);
+
+                format!(
+                    "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
+                    table_name,
+                    constraint_name,
+                    columns.join(", "),
+                    referenced_table,
+                    referenced_columns.join(", ")
+                )
+            }
+            _ => {
+                // FOREIGN KEY以外の制約は現時点ではサポートしない
+                String::new()
+            }
+        }
+    }
+
+    fn generate_drop_constraint_for_existing_table(
+        &self,
+        table_name: &str,
+        constraint: &Constraint,
+    ) -> String {
+        match constraint {
+            Constraint::FOREIGN_KEY {
+                columns,
+                referenced_table,
+                ..
+            } => {
+                let constraint_name =
+                    generate_fk_constraint_name(table_name, columns, referenced_table);
+
+                // MySQLではDROP FOREIGN KEYを使用
+                format!(
+                    "ALTER TABLE {} DROP FOREIGN KEY {}",
+                    table_name, constraint_name
+                )
+            }
+            _ => {
+                // FOREIGN KEY以外の制約は現時点ではサポートしない
+                String::new()
+            }
+        }
     }
 }
 
@@ -687,5 +742,85 @@ mod tests {
             sql[0],
             "ALTER TABLE users CHANGE COLUMN name user_name VARCHAR(200)"
         );
+    }
+
+    // ==========================================
+    // 制約メソッドのテスト
+    // ==========================================
+
+    #[test]
+    fn test_generate_add_constraint_for_existing_table_foreign_key() {
+        let generator = MysqlSqlGenerator::new();
+        let constraint = Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        };
+
+        let sql = generator.generate_add_constraint_for_existing_table("posts", &constraint);
+
+        assert_eq!(
+            sql,
+            "ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id_users FOREIGN KEY (user_id) REFERENCES users (id)"
+        );
+    }
+
+    #[test]
+    fn test_generate_add_constraint_for_existing_table_composite_foreign_key() {
+        let generator = MysqlSqlGenerator::new();
+        let constraint = Constraint::FOREIGN_KEY {
+            columns: vec!["org_id".to_string(), "user_id".to_string()],
+            referenced_table: "org_users".to_string(),
+            referenced_columns: vec!["organization_id".to_string(), "user_id".to_string()],
+        };
+
+        let sql = generator.generate_add_constraint_for_existing_table("posts", &constraint);
+
+        assert_eq!(
+            sql,
+            "ALTER TABLE posts ADD CONSTRAINT fk_posts_org_id_user_id_org_users FOREIGN KEY (org_id, user_id) REFERENCES org_users (organization_id, user_id)"
+        );
+    }
+
+    #[test]
+    fn test_generate_add_constraint_for_existing_table_non_fk_returns_empty() {
+        let generator = MysqlSqlGenerator::new();
+        let constraint = Constraint::UNIQUE {
+            columns: vec!["email".to_string()],
+        };
+
+        let sql = generator.generate_add_constraint_for_existing_table("users", &constraint);
+
+        assert!(sql.is_empty());
+    }
+
+    #[test]
+    fn test_generate_drop_constraint_for_existing_table_foreign_key() {
+        let generator = MysqlSqlGenerator::new();
+        let constraint = Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        };
+
+        let sql = generator.generate_drop_constraint_for_existing_table("posts", &constraint);
+
+        // MySQLではDROP FOREIGN KEYを使用
+        assert_eq!(
+            sql,
+            "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id_users"
+        );
+    }
+
+    #[test]
+    fn test_generate_drop_constraint_for_existing_table_non_fk_returns_empty() {
+        let generator = MysqlSqlGenerator::new();
+        let constraint = Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        };
+
+        let sql = generator.generate_drop_constraint_for_existing_table("users", &constraint);
+
+        assert!(sql.is_empty());
     }
 }
