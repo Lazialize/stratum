@@ -151,12 +151,14 @@ impl GenerateCommandHandler {
         }
 
         // スキーマ付きでSQLを生成（型変更検証を含む）
+        // dry-run 時は破壊的変更を許可してSQL生成を完了させ、プレビュー表示する
+        let allow_destructive_for_sql = command.allow_destructive || command.dry_run;
         let sql_result = generator.generate_up_sql_with_schemas_and_options(
             &diff,
             &previous_schema,
             &current_schema,
             config.dialect,
-            command.allow_destructive,
+            allow_destructive_for_sql,
         );
 
         // 型変更検証エラーの処理
@@ -190,7 +192,7 @@ impl GenerateCommandHandler {
                 &previous_schema,
                 &current_schema,
                 config.dialect,
-                command.allow_destructive,
+                allow_destructive_for_sql,
             )
             .map_err(|e| anyhow::anyhow!("Failed to generate DOWN SQL: {}", e))?;
 

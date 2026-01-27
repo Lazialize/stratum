@@ -112,27 +112,27 @@
 
 ## Design Decisions
 
-### Decision: Option C (ハイブリッドアプローチ) の採用
+### ~~Decision: Option C (ハイブリッドアプローチ) の採用~~ → Option B に変更（レビュー後決定）
+
+> **Status**: 当初 Option C（ハイブリッド）を採用したが、レビュー後に SQL 解析フォールバックを廃止し、Option B（サービス新設＋メタデータ完全依存）に変更
 
 - **Context**: `generate` と `apply` で異なる情報源を持つため、統一的な検出方法が必要
 - **Alternatives Considered**:
   1. Option A (CLI内包) — CLIが肥大化し、テストが困難
-  2. Option B (サービス新設のみ) — 既存マイグレーションで動作しない
-  3. Option C (ハイブリッド) — 互換性と設計のバランス
-- **Selected Approach**:
+  2. Option B (サービス新設のみ) — メタデータ完全依存、安全性優先
+  3. Option C (ハイブリッド) — 互換性と設計のバランスだが2系統のロジック保守が必要
+- **Selected Approach** (レビュー後最終決定):
   - `DestructiveChangeDetector` サービスを新設し、`SchemaDiff` から破壊的変更を抽出
   - `generate` 時に検出結果を `.meta.yaml` に保存
-  - `apply` 時はメタデータ優先、なければSQL解析でフォールバック
+  - `apply` 時は `.meta.yaml` の `destructive_changes` フィールドのみで判定（SQL解析フォールバックなし）
+  - メタデータが存在しない古いマイグレーションは **破壊的変更ありとみなす**（Legacy扱い）
 - **Rationale**:
-  - ギャップ分析で推奨されたOption Cと一致
-  - 新規マイグレーションは高精度、既存マイグレーションも部分的にサポート可能
+  - SQL解析フォールバックの精度問題と2系統のロジック保守コストを回避
+  - 安全性を最優先（古いマイグレーションは `--allow-destructive` が必須）
   - サービス層に責務を集約することで、CLI層の肥大化を防止
 - **Trade-offs**:
-  - **Benefits**: 互換性維持、段階的な移行、テスタビリティ
-  - **Compromises**: 2系統のロジック（メタデータ vs SQL解析）を保守する必要
-- **Follow-up**:
-  - SQL解析の精度は完全である必要はない（警告的な位置づけ）
-  - 将来的にはメタデータのみに一本化可能
+  - **Benefits**: 安全性、明確な動作、単一のロジックで保守性向上
+  - **Compromises**: 古いマイグレーションの適用に `--allow-destructive` フラグが必要
 
 ### Decision: `.meta.yaml` へのフィールド追加
 

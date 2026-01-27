@@ -1,25 +1,25 @@
-# Technical Design: 破壊的変更の安全ガード
+# 技術設計: 破壊的変更の安全ガード
 
-## Overview
+## 概要
 
 本機能は、データベーススキーマの破壊的変更（テーブル削除、カラム削除、カラムリネーム、ENUM削除、ENUM再作成）を検出し、ユーザーが明示的に許可しない限りマイグレーション生成と適用を拒否する安全ガードメカニズムを提供します。デフォルト拒否の原則に基づき、誤操作によるデータ損失を防止します。
 
-**Purpose**: 運用環境での破壊的スキーマ変更の事故を防止し、慎重な判断を促すセーフティネットを構築します。
+**目的**: 運用環境での破壊的スキーマ変更の事故を防止し、慎重な判断を促すセーフティネットを構築します。
 
-**Users**: 以下のユーザーグループが対象です：
+**ユーザー**: 以下のユーザーグループが対象です：
 - **開発者**: dry-runで破壊的変更を事前確認し、安全にマイグレーションを生成
 - **運用者**: 破壊的変更を含むマイグレーションの適用を明示的に承認
 - **チームリーダー**: レビュープロセスで破壊的変更を検出し、リスク評価を実施
 
-**Impact**: 既存の `strata generate` および `strata apply` コマンドの動作を拡張し、破壊的変更検出と拒否メカニズムを追加します。既存のマイグレーションワークフローに対する後方互換性を維持しつつ、新しい安全ガード機能を導入します。
+**影響**: 既存の `strata generate` および `strata apply` コマンドの動作を拡張し、破壊的変更検出と拒否メカニズムを追加します。既存のマイグレーションワークフローに対する後方互換性を維持しつつ、新しい安全ガード機能を導入します。
 
-### Goals
+### 目標
 - 破壊的変更（DROP/RENAME/ENUM削除）を自動検出し、明示的な許可なしでは実行を拒否
 - dry-runプレビューで破壊的変更を視覚的に強調表示し、影響範囲を明示
 - エラーメッセージで具体的な理由と次のアクション（dry-run、許可フラグ、スキーマ見直し）を提示
 - 既存の `enum_recreate_allowed` を `--allow-destructive` フラグに統合し、破壊的変更の許可を一元管理
 
-### Non-Goals
+### 対象外
 - 破壊的変更の自動修正や代替案の提案（ユーザー判断に委ねる）
 - データマイグレーション（ETL）のサポート（スキーマ変更のみを対象）
 - パフォーマンス影響の定量的分析（影響範囲の明示のみ）
@@ -28,9 +28,9 @@
 
 ---
 
-## Architecture
+## アーキテクチャ
 
-### Existing Architecture Analysis
+### 既存アーキテクチャ分析
 
 Strataは以下のレイヤードアーキテクチャを採用しています：
 
@@ -58,7 +58,7 @@ Strataは以下のレイヤードアーキテクチャを採用しています�
 - `apply` コマンドは `up.sql` と `.meta.yaml` のみを参照（`.meta.yaml` の `destructive_changes` フィールドで判定）
 - 既存の `enum_recreate_allowed` フラグは **廃止予定**（`--allow-destructive` に統合）
 
-### Architecture Pattern & Boundary Map
+### アーキテクチャパターンと境界マップ
 
 ```mermaid
 graph TB
@@ -121,7 +121,7 @@ graph TB
   - `MigrationPipeline` 内部で `allow_destructive` フラグを参照するよう変更
 - **Steering compliance**: 安全性優先（Design Principle 4: 安全性優先）、テスタビリティ（単体テストでサービス層を検証可能）
 
-### Technology Stack
+### 技術スタック
 
 | Layer | Choice / Version | Role in Feature | Notes |
 |-------|------------------|-----------------|-------|
@@ -138,7 +138,7 @@ graph TB
 
 ---
 
-## System Flows
+## システムフロー
 
 ### Generate コマンドフロー（破壊的変更検出）
 
@@ -253,7 +253,7 @@ sequenceDiagram
 
 ---
 
-## Requirements Traceability
+## 要件トレーサビリティ
 
 | 要件 | 概要 | コンポーネント | インターフェース | フロー |
 |-----|------|--------------|----------------|-------|
@@ -301,9 +301,9 @@ sequenceDiagram
 
 ---
 
-## Components and Interfaces
+## コンポーネントとインターフェース
 
-### Component Summary
+### コンポーネント概要
 
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies (P0/P1) | Contracts |
 |-----------|--------------|--------|--------------|--------------------------|-----------|
@@ -317,7 +317,7 @@ sequenceDiagram
 
 ---
 
-### Services Layer
+### サービス層
 
 #### DestructiveChangeDetector
 
@@ -369,7 +369,7 @@ impl DestructiveChangeDetector {
 
 ---
 
-### Core Domain
+### コアドメイン
 
 #### DestructiveChangeReport
 
@@ -457,7 +457,7 @@ impl DestructiveChangeDetector {
 
 ---
 
-### CLI Layer
+### CLI層
 
 #### CLI引数定義 (cli.rs)
 
@@ -546,9 +546,9 @@ Apply {
 
 ---
 
-## Data Models
+## データモデル
 
-### Domain Model
+### ドメインモデル
 
 **Aggregates and Transactional Boundaries**:
 - `DestructiveChangeReport` は Value Object（不変、同一性なし）
@@ -563,7 +563,7 @@ Apply {
 - `DroppedColumn.columns` は空でないリストであること
 - `RenamedColumnInfo` の `old_name` と `new_name` は異なること
 
-### Logical Data Model
+### 論理データモデル
 
 **Structure Definition**:
 ```yaml
@@ -607,16 +607,16 @@ destructive_changes:              # 新規追加フィールド（Option型）
 
 ---
 
-## Error Handling
+## エラーハンドリング
 
-### Error Strategy
+### エラー戦略
 
 破壊的変更検出時のエラーは、ユーザーに明確な理由と次のアクションを提示する形式で返します。エラーメッセージは以下の構造を持ちます：
 1. **エラータイトル**: "Destructive changes detected"
 2. **影響範囲の詳細**: 変更種別ごとにグループ化（"Tables to be dropped: users, posts"）
 3. **次のアクション**: 3つの選択肢を明示（dry-run確認、許可フラグ使用、スキーマ見直し）
 
-### Error Categories and Responses
+### エラーカテゴリと対応
 
 **User Errors (4xx相当)**:
 - **破壊的変更の未承認**: `--allow-destructive` フラグなしで破壊的変更を含むマイグレーション生成/適用を試行
@@ -660,7 +660,7 @@ destructive_changes:              # 新規追加フィールド（Option型）
 - **破壊的変更の矛盾**: `SchemaDiff` に破壊的変更が含まれるが、`DestructiveChangeReport` が空の場合（ロジックバグ）
   - **Response**: 内部エラーとして記録し、Issue報告を促す
 
-### Monitoring
+### モニタリング
 
 - **Error tracking**: `generate` と `apply` での破壊的変更拒否回数を記録（将来的なメトリクス収集）
 - **Logging**: 破壊的変更検出時にDEBUGレベルで詳細をログ出力
@@ -668,9 +668,9 @@ destructive_changes:              # 新規追加フィールド（Option型）
 
 ---
 
-## Testing Strategy
+## テスト戦略
 
-### Unit Tests
+### 単体テスト
 1. **DestructiveChangeDetector.detect()**:
    - 空の `SchemaDiff` → 空のレポートを返す
    - 5種類の破壊的変更を含む `SchemaDiff` → すべて正しく分類される
@@ -684,7 +684,7 @@ destructive_changes:              # 新規追加フィールド（Option型）
    - `destructive_changes` フィールドなしのメタデータ → `None` として扱う
    - 空の `destructive_changes` → 破壊的変更なしと判定
 
-### Integration Tests
+### 統合テスト
 1. **generate コマンド統合テスト**:
    - 破壊的変更を含むスキーマ差分で `generate` 実行 → エラーで拒否される
    - `--allow-destructive` 付きで `generate` → `.meta.yaml` に `destructive_changes` が保存される
@@ -700,7 +700,7 @@ destructive_changes:              # 新規追加フィールド（Option型）
    - `--allow-destructive` なしでENUM再作成 → エラーで拒否される
    - `MigrationPipeline` が `allow_destructive` フラグを参照 → ENUM再作成が制御される
 
-### E2E Tests
+### E2Eテスト
 1. **ユーザーワークフロー**:
    - スキーマでテーブル削除 → `generate` でエラー → `--dry-run` で確認 → `--allow-destructive` で生成 → `apply --allow-destructive` で適用
    - カラムリネーム → `generate --allow-destructive` → `.meta.yaml` にリネーム情報保存 → `apply` で検出
@@ -712,9 +712,9 @@ destructive_changes:              # 新規追加フィールド（Option型）
 
 ---
 
-## Optional Sections
+## 補足セクション
 
-### Performance & Scalability
+### パフォーマンスとスケーラビリティ
 
 **Target Metrics**:
 - 破壊的変更検出のオーバーヘッドは、スキーマ差分検出の総実行時間に対して **10%以内**（要件: 非機能要件パフォーマンス1）
@@ -729,7 +729,7 @@ destructive_changes:              # 新規追加フィールド（Option型）
 - `DestructiveChangeReport` は不変のため、キャッシュ不要
 - メタデータは一度読み込んだら変更されない（ファイル単位でのキャッシュ可能）
 
-### Migration Strategy
+### 移行戦略
 
 本機能は既存のマイグレーションワークフローに対して非破壊的に追加されます。以下のフェーズで段階的に導入します：
 
