@@ -140,13 +140,14 @@ impl GenerateCommandHandler {
         }
 
         // 破壊的変更がある場合はデフォルト拒否
-        if destructive_report.has_destructive_changes() && !command.allow_destructive {
-            if !command.dry_run {
-                let formatter = DestructiveChangeFormatter::new();
-                return Err(anyhow!(
-                    formatter.format_error(&destructive_report, "strata generate")
-                ));
-            }
+        if destructive_report.has_destructive_changes()
+            && !command.allow_destructive
+            && !command.dry_run
+        {
+            let formatter = DestructiveChangeFormatter::new();
+            return Err(anyhow!(
+                formatter.format_error(&destructive_report, "strata generate")
+            ));
         }
 
         // スキーマ付きでSQLを生成（型変更検証を含む）

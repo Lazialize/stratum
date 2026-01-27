@@ -39,6 +39,12 @@ pub struct RenamedColumnInfo {
     pub new_name: String,
 }
 
+impl Default for DestructiveChangeReport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DestructiveChangeReport {
     /// 新しい空のレポートを作成
     pub fn new() -> Self {

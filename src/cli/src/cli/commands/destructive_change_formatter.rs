@@ -3,6 +3,12 @@ use colored::Colorize;
 
 pub struct DestructiveChangeFormatter;
 
+impl Default for DestructiveChangeFormatter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DestructiveChangeFormatter {
     pub fn new() -> Self {
         Self
