@@ -106,8 +106,7 @@ impl SqliteTableRecreator {
         statements.push("PRAGMA foreign_keys=on".to_string());
 
         // 10. 外部キー整合性チェック
-        // PRAGMA foreign_key_checkの引数はクォートなしのテーブル名を使用
-        statements.push(format!("PRAGMA foreign_key_check({})", table_name));
+        statements.push(format!("PRAGMA foreign_key_check({})", quoted_table));
 
         statements
     }
@@ -376,7 +375,7 @@ mod tests {
         // インデックスがない場合、次はCOMMIT
         assert!(statements.contains(&"COMMIT".to_string()));
         assert!(statements.contains(&"PRAGMA foreign_keys=on".to_string()));
-        assert!(statements.contains(&"PRAGMA foreign_key_check(users)".to_string()));
+        assert!(statements.contains(&r#"PRAGMA foreign_key_check("users")"#.to_string()));
     }
 
     #[test]

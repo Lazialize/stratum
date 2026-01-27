@@ -285,11 +285,11 @@ impl SqlGenerator for PostgresSqlGenerator {
             // 第3引数 true により次の nextval() は max+1 を返す
             statements.push(format!(
                 "SELECT setval('{}', COALESCE((SELECT MAX({}) FROM {}), 0), true)",
-                sequence_name, quoted_column, quoted_table
+                quoted_sequence, quoted_column, quoted_table
             ));
             statements.push(format!(
                 "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval('{}')",
-                quoted_table, quoted_column, sequence_name
+                quoted_table, quoted_column, quoted_sequence
             ));
             statements.push(format!(
                 "ALTER SEQUENCE {} OWNED BY {}.{}",
