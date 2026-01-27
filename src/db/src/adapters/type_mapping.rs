@@ -8,6 +8,21 @@ use crate::core::schema::ColumnType;
 use anyhow::Result;
 use std::collections::HashSet;
 
+/// PostgreSQL用の識別子クォート（ダブルクォート）
+fn quote_identifier_postgres(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// MySQL用の識別子クォート（バッククォート）
+fn quote_identifier_mysql(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
+}
+
+/// SQLite用の識別子クォート（ダブルクォート）
+fn quote_identifier_sqlite(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
 /// 型メタデータ
 ///
 /// データベースから取得した型の追加情報を保持します。
@@ -240,7 +255,7 @@ impl TypeMapper for PostgresTypeMapper {
             }
             ColumnType::BLOB => "BYTEA".to_string(),
             ColumnType::UUID => "UUID".to_string(),
-            ColumnType::Enum { name } => name.clone(),
+            ColumnType::Enum { name } => quote_identifier_postgres(name),
             ColumnType::DialectSpecific { kind, params } => {
                 self.format_dialect_specific(kind, params)
             }
@@ -342,7 +357,7 @@ impl TypeMapper for MySqlTypeMapper {
             ColumnType::TIME { .. } => "TIME".to_string(),
             ColumnType::BLOB => "BLOB".to_string(),
             ColumnType::UUID => "CHAR(36)".to_string(),
-            ColumnType::Enum { name } => name.clone(),
+            ColumnType::Enum { name } => quote_identifier_mysql(name),
             ColumnType::DialectSpecific { kind, params } => {
                 self.format_dialect_specific(kind, params)
             }
@@ -427,7 +442,7 @@ impl TypeMapper for SqliteTypeMapper {
             ColumnType::TIME { .. } => "TEXT".to_string(),
             ColumnType::BLOB => "BLOB".to_string(),
             ColumnType::UUID => "TEXT".to_string(),
-            ColumnType::Enum { name } => name.clone(),
+            ColumnType::Enum { name } => quote_identifier_sqlite(name),
             ColumnType::DialectSpecific { kind, params } => {
                 self.format_dialect_specific(kind, params)
             }
