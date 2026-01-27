@@ -70,6 +70,8 @@ impl SchemaValidatorService {
             self.validate_primary_keys(schema),
             self.validate_index_references(schema),
             self.validate_constraint_references(schema),
+            self.validate_check_expressions(schema),
+            self.validate_duplicate_unique_constraints(schema),
         ]);
 
         result
@@ -111,6 +113,16 @@ impl SchemaValidatorService {
     /// 制約のカラム/テーブル参照整合性検証
     pub fn validate_constraint_references(&self, schema: &Schema) -> ValidationResult {
         constraint_validator::validate_constraint_references(schema)
+    }
+
+    /// CHECK制約のexpression空チェック
+    pub fn validate_check_expressions(&self, schema: &Schema) -> ValidationResult {
+        constraint_validator::validate_check_expressions(schema)
+    }
+
+    /// 重複UNIQUE制約チェック
+    pub fn validate_duplicate_unique_constraints(&self, schema: &Schema) -> ValidationResult {
+        constraint_validator::validate_duplicate_unique_constraints(schema)
     }
 
     /// 方言固有の警告を生成

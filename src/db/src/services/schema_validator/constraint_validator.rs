@@ -107,6 +107,74 @@ pub fn validate_constraint_references(schema: &Schema) -> ValidationResult {
     result
 }
 
+/// CHECK制約のexpressionが空でないことを検証
+pub fn validate_check_expressions(schema: &Schema) -> ValidationResult {
+    let mut result = ValidationResult::new();
+
+    for (table_name, table) in &schema.tables {
+        for constraint in &table.constraints {
+            if let Constraint::CHECK {
+                check_expression, ..
+            } = constraint
+            {
+                if check_expression.trim().is_empty() {
+                    result.add_error(ValidationError::Constraint {
+                        message: format!(
+                            "テーブル '{}' のCHECK制約の check_expression が空です",
+                            table_name
+                        ),
+                        location: Some(ErrorLocation::with_table(table_name.clone())),
+                        suggestion: Some("CHECK制約には有効なSQL式を指定してください".to_string()),
+                    });
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// 同一テーブル内に同じカラム構成のUNIQUE制約が重複していないか検証
+pub fn validate_duplicate_unique_constraints(schema: &Schema) -> ValidationResult {
+    use crate::core::error::ValidationWarning;
+
+    let mut result = ValidationResult::new();
+
+    for (table_name, table) in &schema.tables {
+        let unique_column_sets: Vec<Vec<String>> = table
+            .constraints
+            .iter()
+            .filter_map(|c| {
+                if let Constraint::UNIQUE { columns } = c {
+                    let mut sorted = columns.clone();
+                    sorted.sort();
+                    Some(sorted)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // 重複チェック
+        for i in 0..unique_column_sets.len() {
+            for j in (i + 1)..unique_column_sets.len() {
+                if unique_column_sets[i] == unique_column_sets[j] {
+                    let columns_str = unique_column_sets[i].join(", ");
+                    result.add_warning(ValidationWarning::compatibility(
+                        format!(
+                            "テーブル '{}' に同じカラム構成 ({}) のUNIQUE制約が複数定義されています",
+                            table_name, columns_str
+                        ),
+                        Some(ErrorLocation::with_table(table_name.clone())),
+                    ));
+                }
+            }
+        }
+    }
+
+    result
+}
+
 /// 外部キー制約の参照整合性を検証
 ///
 /// # Arguments
@@ -258,6 +326,191 @@ mod tests {
             .errors
             .iter()
             .any(|e| e.to_string().contains("Constraint references column")));
+    }
+
+    // ==========================================
+    // CHECK式空文字列バリデーション
+    // ==========================================
+
+    #[test]
+    fn test_validate_check_expression_empty() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_constraint(Constraint::CHECK {
+            columns: vec!["price".to_string()],
+            check_expression: "".to_string(),
+        });
+        schema.add_table(table);
+
+        let result = validate_check_expressions(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_string().contains("products")
+                && e.to_string().contains("check_expression")));
+    }
+
+    #[test]
+    fn test_validate_check_expression_whitespace_only() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_constraint(Constraint::CHECK {
+            columns: vec!["price".to_string()],
+            check_expression: "   ".to_string(),
+        });
+        schema.add_table(table);
+
+        let result = validate_check_expressions(&schema);
+
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_check_expression_valid() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_constraint(Constraint::CHECK {
+            columns: vec!["price".to_string()],
+            check_expression: "price >= 0".to_string(),
+        });
+        schema.add_table(table);
+
+        let result = validate_check_expressions(&schema);
+
+        assert!(result.is_valid());
+    }
+
+    // ==========================================
+    // 重複UNIQUE制約バリデーション
+    // ==========================================
+
+    #[test]
+    fn test_validate_duplicate_unique_constraints() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        // 同じカラム構成のUNIQUE制約が2つ
+        table.add_constraint(Constraint::UNIQUE {
+            columns: vec!["email".to_string()],
+        });
+        table.add_constraint(Constraint::UNIQUE {
+            columns: vec!["email".to_string()],
+        });
+        schema.add_table(table);
+
+        let result = validate_duplicate_unique_constraints(&schema);
+
+        assert!(result.warning_count() > 0);
+        assert!(result
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("users") && w.message.contains("email")));
+    }
+
+    #[test]
+    fn test_validate_duplicate_unique_constraints_different_order() {
+        // カラム順序が違っても同じ構成として検出する
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "first_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        ));
+        table.add_column(Column::new(
+            "last_name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        ));
+        table.add_constraint(Constraint::UNIQUE {
+            columns: vec!["first_name".to_string(), "last_name".to_string()],
+        });
+        table.add_constraint(Constraint::UNIQUE {
+            columns: vec!["last_name".to_string(), "first_name".to_string()],
+        });
+        schema.add_table(table);
+
+        let result = validate_duplicate_unique_constraints(&schema);
+
+        assert!(result.warning_count() > 0);
+    }
+
+    #[test]
+    fn test_validate_no_duplicate_unique_constraints() {
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        table.add_column(Column::new(
+            "username".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        ));
+        table.add_constraint(Constraint::UNIQUE {
+            columns: vec!["email".to_string()],
+        });
+        table.add_constraint(Constraint::UNIQUE {
+            columns: vec!["username".to_string()],
+        });
+        schema.add_table(table);
+
+        let result = validate_duplicate_unique_constraints(&schema);
+
+        assert_eq!(result.warning_count(), 0);
     }
 
     #[test]

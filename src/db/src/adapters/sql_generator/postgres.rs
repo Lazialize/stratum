@@ -3,8 +3,9 @@
 // スキーマ定義からPostgreSQL用のDDL文を生成します。
 
 use crate::adapters::sql_generator::{
-    build_column_definition, generate_fk_constraint_name, quote_columns_postgres,
-    quote_identifier_postgres, quote_regclass_postgres, MigrationDirection, SqlGenerator,
+    build_column_definition, generate_ck_constraint_name, generate_fk_constraint_name,
+    generate_uq_constraint_name, quote_columns_postgres, quote_identifier_postgres,
+    quote_regclass_postgres, MigrationDirection, SqlGenerator,
 };
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
@@ -441,8 +442,31 @@ impl SqlGenerator for PostgresSqlGenerator {
                     quote_columns_postgres(referenced_columns)
                 )
             }
+            Constraint::UNIQUE { columns } => {
+                let constraint_name = generate_uq_constraint_name(table_name, columns);
+
+                format!(
+                    "ALTER TABLE {} ADD CONSTRAINT {} UNIQUE ({})",
+                    quote_identifier_postgres(table_name),
+                    quote_identifier_postgres(&constraint_name),
+                    quote_columns_postgres(columns)
+                )
+            }
+            Constraint::CHECK {
+                columns,
+                check_expression,
+            } => {
+                let constraint_name = generate_ck_constraint_name(table_name, columns);
+
+                format!(
+                    "ALTER TABLE {} ADD CONSTRAINT {} CHECK ({})",
+                    quote_identifier_postgres(table_name),
+                    quote_identifier_postgres(&constraint_name),
+                    check_expression
+                )
+            }
             _ => {
-                // FOREIGN KEY以外の制約は現時点ではサポートしない
+                // PRIMARY_KEYは空文字列を返す
                 String::new()
             }
         }
@@ -468,8 +492,26 @@ impl SqlGenerator for PostgresSqlGenerator {
                     quote_identifier_postgres(&constraint_name)
                 )
             }
+            Constraint::UNIQUE { columns } => {
+                let constraint_name = generate_uq_constraint_name(table_name, columns);
+
+                format!(
+                    "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {}",
+                    quote_identifier_postgres(table_name),
+                    quote_identifier_postgres(&constraint_name)
+                )
+            }
+            Constraint::CHECK { columns, .. } => {
+                let constraint_name = generate_ck_constraint_name(table_name, columns);
+
+                format!(
+                    "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {}",
+                    quote_identifier_postgres(table_name),
+                    quote_identifier_postgres(&constraint_name)
+                )
+            }
             _ => {
-                // FOREIGN KEY以外の制約は現時点ではサポートしない
+                // PRIMARY_KEYは空文字列を返す
                 String::new()
             }
         }
@@ -1076,10 +1118,56 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_add_constraint_for_existing_table_non_fk_returns_empty() {
+    fn test_generate_add_constraint_for_existing_table_unique() {
         let generator = PostgresSqlGenerator::new();
         let constraint = Constraint::UNIQUE {
             columns: vec!["email".to_string()],
+        };
+
+        let sql = generator.generate_add_constraint_for_existing_table("users", &constraint);
+
+        assert_eq!(
+            sql,
+            r#"ALTER TABLE "users" ADD CONSTRAINT "uq_users_email" UNIQUE ("email")"#
+        );
+    }
+
+    #[test]
+    fn test_generate_add_constraint_for_existing_table_unique_composite() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::UNIQUE {
+            columns: vec!["first_name".to_string(), "last_name".to_string()],
+        };
+
+        let sql = generator.generate_add_constraint_for_existing_table("users", &constraint);
+
+        assert_eq!(
+            sql,
+            r#"ALTER TABLE "users" ADD CONSTRAINT "uq_users_first_name_last_name" UNIQUE ("first_name", "last_name")"#
+        );
+    }
+
+    #[test]
+    fn test_generate_add_constraint_for_existing_table_check() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::CHECK {
+            columns: vec!["price".to_string()],
+            check_expression: "price >= 0".to_string(),
+        };
+
+        let sql = generator.generate_add_constraint_for_existing_table("products", &constraint);
+
+        assert_eq!(
+            sql,
+            r#"ALTER TABLE "products" ADD CONSTRAINT "ck_products_price" CHECK (price >= 0)"#
+        );
+    }
+
+    #[test]
+    fn test_generate_add_constraint_for_existing_table_primary_key_returns_empty() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
         };
 
         let sql = generator.generate_add_constraint_for_existing_table("users", &constraint);
@@ -1105,7 +1193,38 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_drop_constraint_for_existing_table_non_fk_returns_empty() {
+    fn test_generate_drop_constraint_for_existing_table_unique() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::UNIQUE {
+            columns: vec!["email".to_string()],
+        };
+
+        let sql = generator.generate_drop_constraint_for_existing_table("users", &constraint);
+
+        assert_eq!(
+            sql,
+            r#"ALTER TABLE "users" DROP CONSTRAINT IF EXISTS "uq_users_email""#
+        );
+    }
+
+    #[test]
+    fn test_generate_drop_constraint_for_existing_table_check() {
+        let generator = PostgresSqlGenerator::new();
+        let constraint = Constraint::CHECK {
+            columns: vec!["price".to_string()],
+            check_expression: "price >= 0".to_string(),
+        };
+
+        let sql = generator.generate_drop_constraint_for_existing_table("products", &constraint);
+
+        assert_eq!(
+            sql,
+            r#"ALTER TABLE "products" DROP CONSTRAINT IF EXISTS "ck_products_price""#
+        );
+    }
+
+    #[test]
+    fn test_generate_drop_constraint_for_existing_table_primary_key_returns_empty() {
         let generator = PostgresSqlGenerator::new();
         let constraint = Constraint::PRIMARY_KEY {
             columns: vec!["id".to_string()],

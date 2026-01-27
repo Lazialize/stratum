@@ -20,31 +20,21 @@ pub(crate) use crate::adapters::sql_quote::{
 /// PostgreSQL/MySQLの識別子最大長
 const MAX_IDENTIFIER_LENGTH: usize = 63;
 
-/// 外部キー制約名を生成
+/// 制約名を生成する共通ヘルパー
 ///
-/// `fk_{table_name}_{columns}_{referenced_table}`形式で名前を生成します。
-/// 63文字を超える場合は、末尾にハッシュを付けて切り詰めます。
+/// `{prefix}_{body}`形式で名前を組み立て、63文字（`MAX_IDENTIFIER_LENGTH`）を超える場合は
+/// SHA-256ハッシュ付きで切り詰めます。
 ///
 /// # Arguments
 ///
-/// * `table_name` - 制約を持つテーブル名
-/// * `columns` - 制約対象のカラム名のスライス
-/// * `referenced_table` - 参照先テーブル名
+/// * `prefix` - 制約名のプレフィックス（例: "fk", "uq", "ck"）
+/// * `body` - プレフィックス以降の本体部分（テーブル名、カラム名等を結合済み）
 ///
 /// # Returns
 ///
 /// 63文字以内の制約名
-pub(crate) fn generate_fk_constraint_name(
-    table_name: &str,
-    columns: &[String],
-    referenced_table: &str,
-) -> String {
-    let base_name = format!(
-        "fk_{}_{}_{}",
-        table_name,
-        columns.join("_"),
-        referenced_table
-    );
+fn generate_constraint_name(prefix: &str, body: &str) -> String {
+    let base_name = format!("{}_{}", prefix, body);
 
     if base_name.len() <= MAX_IDENTIFIER_LENGTH {
         return base_name;
@@ -60,16 +50,51 @@ pub(crate) fn generate_fk_constraint_name(
         &hash[..4].iter().fold(0u32, |acc, &b| acc << 8 | b as u32)
     );
 
-    // fk_ + hash_suffix(_xxxxxxxx) の長さを引いた残りを使用
-    // hash_suffix は "_" + 8文字 = 9文字
-    let available_length = MAX_IDENTIFIER_LENGTH - 3 - hash_suffix.len(); // "fk_" = 3文字
-    let truncated_base = &base_name[3..]; // "fk_"を除いた部分
+    let prefix_with_sep = format!("{}_", prefix);
+    let available_length = MAX_IDENTIFIER_LENGTH - prefix_with_sep.len() - hash_suffix.len();
 
-    if truncated_base.len() <= available_length {
-        format!("fk_{}{}", truncated_base, hash_suffix)
+    if body.len() <= available_length {
+        format!("{}{}{}", prefix_with_sep, body, hash_suffix)
     } else {
-        format!("fk_{}{}", &truncated_base[..available_length], hash_suffix)
+        format!(
+            "{}{}{}",
+            prefix_with_sep,
+            &body[..available_length],
+            hash_suffix
+        )
     }
+}
+
+/// 外部キー制約名を生成
+///
+/// `fk_{table_name}_{columns}_{referenced_table}`形式で名前を生成します。
+/// 63文字を超える場合は、末尾にハッシュを付けて切り詰めます。
+pub(crate) fn generate_fk_constraint_name(
+    table_name: &str,
+    columns: &[String],
+    referenced_table: &str,
+) -> String {
+    let body = format!("{}_{}", table_name, columns.join("_"));
+    let body_with_ref = format!("{}_{}", body, referenced_table);
+    generate_constraint_name("fk", &body_with_ref)
+}
+
+/// UNIQUE制約名を生成
+///
+/// `uq_{table_name}_{columns}`形式で名前を生成します。
+/// 63文字を超える場合は、末尾にハッシュを付けて切り詰めます。
+pub(crate) fn generate_uq_constraint_name(table_name: &str, columns: &[String]) -> String {
+    let body = format!("{}_{}", table_name, columns.join("_"));
+    generate_constraint_name("uq", &body)
+}
+
+/// CHECK制約名を生成
+///
+/// `ck_{table_name}_{columns}`形式で名前を生成します。
+/// 63文字を超える場合は、末尾にハッシュを付けて切り詰めます。
+pub(crate) fn generate_ck_constraint_name(table_name: &str, columns: &[String]) -> String {
+    let body = format!("{}_{}", table_name, columns.join("_"));
+    generate_constraint_name("ck", &body)
 }
 
 /// カラム定義の共通組み立てヘルパー
@@ -530,6 +555,136 @@ mod tests {
             "another_very_long_table_name_here",
         );
         assert_eq!(name1, name2);
+    }
+
+    // ==========================================
+    // generate_uq_constraint_name のテスト
+    // ==========================================
+
+    #[test]
+    fn test_generate_uq_constraint_name_short() {
+        // 63文字以下の場合はそのまま返す
+        let name = generate_uq_constraint_name("users", &vec!["email".to_string()]);
+        assert_eq!(name, "uq_users_email");
+        assert!(name.len() <= 63);
+    }
+
+    #[test]
+    fn test_generate_uq_constraint_name_composite() {
+        // 複合カラムの場合
+        let name = generate_uq_constraint_name(
+            "order_items",
+            &vec!["order_id".to_string(), "product_id".to_string()],
+        );
+        assert_eq!(name, "uq_order_items_order_id_product_id");
+        assert!(name.len() <= 63);
+    }
+
+    #[test]
+    fn test_generate_uq_constraint_name_truncated() {
+        // 63文字を超える場合はハッシュ付きで切り詰め
+        let name = generate_uq_constraint_name(
+            "very_long_table_name_with_many_characters",
+            &vec![
+                "organization_id".to_string(),
+                "department_id".to_string(),
+                "another_long_column".to_string(),
+            ],
+        );
+
+        assert!(
+            name.len() <= 63,
+            "Constraint name '{}' exceeds 63 characters (len={})",
+            name,
+            name.len()
+        );
+        assert!(name.starts_with("uq_"));
+    }
+
+    #[test]
+    fn test_generate_uq_constraint_name_deterministic() {
+        // 同じ入力には同じ出力を保証
+        let name1 = generate_uq_constraint_name(
+            "very_long_table_name_with_many_characters",
+            &vec!["organization_id".to_string()],
+        );
+        let name2 = generate_uq_constraint_name(
+            "very_long_table_name_with_many_characters",
+            &vec!["organization_id".to_string()],
+        );
+        assert_eq!(name1, name2);
+    }
+
+    // ==========================================
+    // generate_ck_constraint_name のテスト
+    // ==========================================
+
+    #[test]
+    fn test_generate_ck_constraint_name_short() {
+        // 63文字以下の場合はそのまま返す
+        let name = generate_ck_constraint_name("users", &vec!["age".to_string()]);
+        assert_eq!(name, "ck_users_age");
+        assert!(name.len() <= 63);
+    }
+
+    #[test]
+    fn test_generate_ck_constraint_name_composite() {
+        // 複合カラムの場合
+        let name = generate_ck_constraint_name(
+            "products",
+            &vec!["price".to_string(), "discount".to_string()],
+        );
+        assert_eq!(name, "ck_products_price_discount");
+        assert!(name.len() <= 63);
+    }
+
+    #[test]
+    fn test_generate_ck_constraint_name_truncated() {
+        // 63文字を超える場合はハッシュ付きで切り詰め
+        let name = generate_ck_constraint_name(
+            "very_long_table_name_with_many_characters",
+            &vec![
+                "organization_id".to_string(),
+                "department_id".to_string(),
+                "another_long_column".to_string(),
+            ],
+        );
+
+        assert!(
+            name.len() <= 63,
+            "Constraint name '{}' exceeds 63 characters (len={})",
+            name,
+            name.len()
+        );
+        assert!(name.starts_with("ck_"));
+    }
+
+    #[test]
+    fn test_generate_ck_constraint_name_deterministic() {
+        // 同じ入力には同じ出力を保証
+        let name1 = generate_ck_constraint_name(
+            "very_long_table_name_with_many_characters",
+            &vec!["organization_id".to_string()],
+        );
+        let name2 = generate_ck_constraint_name(
+            "very_long_table_name_with_many_characters",
+            &vec!["organization_id".to_string()],
+        );
+        assert_eq!(name1, name2);
+    }
+
+    // ==========================================
+    // generate_constraint_name 共通ヘルパーのテスト
+    // ==========================================
+
+    #[test]
+    fn test_different_prefixes_produce_different_names() {
+        // uq_ と ck_ は同じ入力でも異なる名前を生成する
+        let uq_name = generate_uq_constraint_name("users", &vec!["email".to_string()]);
+        let ck_name = generate_ck_constraint_name("users", &vec!["email".to_string()]);
+        assert_ne!(uq_name, ck_name);
+        assert!(uq_name.starts_with("uq_"));
+        assert!(ck_name.starts_with("ck_"));
     }
 
     #[test]

@@ -244,14 +244,62 @@ impl<'a> MigrationPipeline<'a> {
                 statements.push(generator.generate_drop_index(&table_diff.table_name, index));
             }
 
-            // 追加された制約を削除（Down方向で逆操作）
-            for constraint in &table_diff.added_constraints {
-                let sql = generator.generate_drop_constraint_for_existing_table(
-                    &table_diff.table_name,
-                    constraint,
-                );
-                if !sql.is_empty() {
-                    statements.push(sql);
+            // 制約の逆操作（Down方向）
+            if matches!(self.dialect, Dialect::SQLite) {
+                // SQLite: 制約変更がある場合はテーブル再作成
+                let has_constraint_changes = !table_diff.added_constraints.is_empty()
+                    || !table_diff.removed_constraints.is_empty();
+
+                if has_constraint_changes {
+                    let has_type_change = table_diff
+                        .modified_columns
+                        .iter()
+                        .any(|cd| self.has_type_change(cd));
+                    let has_renamed_type_change = table_diff
+                        .renamed_columns
+                        .iter()
+                        .any(|rc| self.has_type_change_in_renamed(rc));
+
+                    if !has_type_change && !has_renamed_type_change {
+                        // DOWN: old_schemaのテーブル定義をnew_table、new_schemaのテーブル定義をold_tableとして再作成
+                        if let Some(old_schema) = self.old_schema {
+                            if let Some(old_table) = old_schema.tables.get(&table_diff.table_name) {
+                                let new_table_as_old = self
+                                    .new_schema
+                                    .and_then(|s| s.tables.get(&table_diff.table_name));
+                                let recreator = crate::adapters::sql_generator::sqlite_table_recreator::SqliteTableRecreator::new();
+                                let recreation_stmts = recreator
+                                    .generate_table_recreation_with_old_table(
+                                        old_table,
+                                        new_table_as_old,
+                                    );
+                                statements.extend(recreation_stmts);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // PostgreSQL・MySQL: ALTER TABLE で処理
+                // 追加された制約を削除
+                for constraint in &table_diff.added_constraints {
+                    let sql = generator.generate_drop_constraint_for_existing_table(
+                        &table_diff.table_name,
+                        constraint,
+                    );
+                    if !sql.is_empty() {
+                        statements.push(sql);
+                    }
+                }
+
+                // 削除された制約を復元
+                for constraint in &table_diff.removed_constraints {
+                    let sql = generator.generate_add_constraint_for_existing_table(
+                        &table_diff.table_name,
+                        constraint,
+                    );
+                    if !sql.is_empty() {
+                        statements.push(sql);
+                    }
                 }
             }
         }
