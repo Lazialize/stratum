@@ -3,25 +3,11 @@
 // 方言に依存しない共通インターフェースで ColumnType ↔ SQL型文字列 の
 // 双方向変換を一元管理します。
 
+use crate::adapters::sql_generator::{quote_identifier_mysql, quote_identifier_postgres};
 use crate::core::config::Dialect;
 use crate::core::schema::ColumnType;
 use anyhow::Result;
 use std::collections::HashSet;
-
-/// PostgreSQL用の識別子クォート（ダブルクォート）
-fn quote_identifier_postgres(name: &str) -> String {
-    format!("\"{}\"", name.replace('"', "\"\""))
-}
-
-/// MySQL用の識別子クォート（バッククォート）
-fn quote_identifier_mysql(name: &str) -> String {
-    format!("`{}`", name.replace('`', "``"))
-}
-
-/// SQLite用の識別子クォート（ダブルクォート）
-fn quote_identifier_sqlite(name: &str) -> String {
-    format!("\"{}\"", name.replace('"', "\"\""))
-}
 
 /// 型メタデータ
 ///
@@ -442,7 +428,8 @@ impl TypeMapper for SqliteTypeMapper {
             ColumnType::TIME { .. } => "TEXT".to_string(),
             ColumnType::BLOB => "BLOB".to_string(),
             ColumnType::UUID => "TEXT".to_string(),
-            ColumnType::Enum { name } => quote_identifier_sqlite(name),
+            // SQLiteはENUM型をサポートしないため、TEXTにフォールバック
+            ColumnType::Enum { .. } => "TEXT".to_string(),
             ColumnType::DialectSpecific { kind, params } => {
                 self.format_dialect_specific(kind, params)
             }
