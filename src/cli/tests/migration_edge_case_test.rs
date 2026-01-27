@@ -11,7 +11,7 @@ mod migration_edge_case_tests {
 
     use strata::core::config::Dialect;
     use strata::services::migration_pipeline::MigrationPipeline;
-    use strata::services::schema_diff_detector::SchemaDiffDetector;
+    use strata::services::schema_diff_detector::SchemaDiffDetectorService;
     use strata::services::schema_io::schema_parser::SchemaParserService;
 
     /// YAMLスキーマから差分を検出し、パイプラインでSQL生成するヘルパー
@@ -31,7 +31,7 @@ mod migration_edge_case_tests {
         let old_schema = parser.parse_schema_file(&old_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
         let pipeline =
@@ -1532,7 +1532,7 @@ tables:
         use std::fs;
         use tempfile::TempDir;
 
-        use strata::services::schema_diff_detector::SchemaDiffDetector;
+        use strata::services::schema_diff_detector::SchemaDiffDetectorService;
         use strata::services::schema_io::schema_parser::SchemaParserService;
 
         /// ENUM型カラムにインデックスを追加
@@ -1820,7 +1820,7 @@ tables:
             let old_schema = parser.parse_schema_file(&old_path).unwrap();
             let new_schema = parser.parse_schema_file(&new_path).unwrap();
 
-            let detector = SchemaDiffDetector::new();
+            let detector = SchemaDiffDetectorService::new();
             let diff = detector.detect_diff(&old_schema, &new_schema);
 
             // UNIQUE制約が差分として検出される
@@ -2497,7 +2497,7 @@ tables:
         use std::fs;
         use tempfile::TempDir;
 
-        use strata::services::schema_diff_detector::SchemaDiffDetector;
+        use strata::services::schema_diff_detector::SchemaDiffDetectorService;
         use strata::services::schema_io::schema_parser::SchemaParserService;
 
         /// CHECK制約付きカラムの型変更
@@ -2667,7 +2667,7 @@ tables:
             let old_schema = parser.parse_schema_file(&old_path).unwrap();
             let new_schema = parser.parse_schema_file(&new_path).unwrap();
 
-            let detector = SchemaDiffDetector::new();
+            let detector = SchemaDiffDetectorService::new();
             let diff = detector.detect_diff(&old_schema, &new_schema);
 
             // CHECK制約が差分として検出される
@@ -2943,7 +2943,7 @@ tables:
         use tempfile::TempDir;
 
         use strata::services::migration_pipeline::MigrationPipeline;
-        use strata::services::schema_diff_detector::SchemaDiffDetector;
+        use strata::services::schema_diff_detector::SchemaDiffDetectorService;
         use strata::services::schema_io::schema_parser::SchemaParserService;
 
         /// 自己参照FK付きテーブルの作成は循環参照エラーになる
@@ -2995,7 +2995,7 @@ tables:
             let old_schema = parser.parse_schema_file(&old_path).unwrap();
             let new_schema = parser.parse_schema_file(&new_path).unwrap();
 
-            let detector = SchemaDiffDetector::new();
+            let detector = SchemaDiffDetectorService::new();
             let diff = detector.detect_diff(&old_schema, &new_schema);
 
             let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)

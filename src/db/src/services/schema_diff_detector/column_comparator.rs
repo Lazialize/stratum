@@ -5,9 +5,9 @@ use crate::core::schema::Column;
 use crate::core::schema_diff::{ColumnChange, ColumnDiff, RenamedColumn, TableDiff};
 use std::collections::{HashMap, HashSet};
 
-use super::SchemaDiffDetector;
+use super::SchemaDiffDetectorService;
 
-impl SchemaDiffDetector {
+impl SchemaDiffDetectorService {
     /// カラム差分を検出
     pub(crate) fn detect_column_diff(
         &self,
@@ -242,11 +242,11 @@ impl SchemaDiffDetector {
 #[cfg(test)]
 mod tests {
     use crate::core::schema::{Column, ColumnType, Schema, Table};
-    use crate::services::schema_diff_detector::SchemaDiffDetector;
+    use crate::services::schema_diff_detector::SchemaDiffDetectorService;
 
     #[test]
     fn test_detect_column_added() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn test_detect_column_rename_simple() {
         // 単純なリネーム検出
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn test_detect_column_rename_with_type_change() {
         // リネーム+型変更の同時検出
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn test_detect_column_rename_with_nullable_change() {
         // リネーム+NULL制約変更の同時検出
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -402,7 +402,7 @@ mod tests {
     #[test]
     fn test_detect_multiple_column_renames() {
         // 複数カラムのリネーム検出
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn test_detect_column_rename_old_column_not_exists() {
         // 旧カラム不存在時は通常のaddedとして処理
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -500,7 +500,7 @@ mod tests {
     #[test]
     fn test_detect_column_rename_preserves_old_column() {
         // RenamedColumn.old_columnが正しく設定される
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn test_detect_diff_with_warnings_no_warnings() {
         // 警告がない場合
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -574,7 +574,7 @@ mod tests {
         // 旧カラムが存在しない場合の警告
         use crate::core::error::WarningKind;
 
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -619,7 +619,7 @@ mod tests {
         // 複数の警告がある場合
         use crate::core::error::WarningKind;
 
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());

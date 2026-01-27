@@ -3,9 +3,9 @@
 use crate::core::schema_diff::TableDiff;
 use std::collections::HashSet;
 
-use super::SchemaDiffDetector;
+use super::SchemaDiffDetectorService;
 
-impl SchemaDiffDetector {
+impl SchemaDiffDetectorService {
     /// インデックス差分を検出
     pub(crate) fn detect_index_diff(
         &self,

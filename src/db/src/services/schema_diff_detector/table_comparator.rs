@@ -3,9 +3,9 @@
 use crate::core::error::ValidationWarning;
 use crate::core::schema_diff::TableDiff;
 
-use super::SchemaDiffDetector;
+use super::SchemaDiffDetectorService;
 
-impl SchemaDiffDetector {
+impl SchemaDiffDetectorService {
     /// テーブル差分を検出
     pub(crate) fn detect_table_diff(
         &self,

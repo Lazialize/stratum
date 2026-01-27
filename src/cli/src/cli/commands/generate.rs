@@ -8,17 +8,17 @@
 
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::destructive_change_formatter::DestructiveChangeFormatter;
+use crate::cli::commands::dry_run_formatter::DryRunFormatter;
 use crate::core::config::Config;
 use crate::core::schema::Schema;
 use crate::services::destructive_change_detector::DestructiveChangeDetector;
-use crate::services::migration_generator::MigrationGenerator;
+use crate::services::migration_generator::MigrationGeneratorService;
 use crate::services::schema_checksum::SchemaChecksumService;
-use crate::services::schema_diff_detector::SchemaDiffDetector;
+use crate::services::schema_diff_detector::SchemaDiffDetectorService;
 use crate::services::schema_io::schema_parser::SchemaParserService;
 use crate::services::schema_io::schema_serializer::SchemaSerializerService;
 use crate::services::schema_validator::SchemaValidatorService;
 use anyhow::{anyhow, Context, Result};
-use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -33,23 +33,6 @@ pub struct GenerateCommand {
     pub dry_run: bool,
     /// 破壊的変更を許可
     pub allow_destructive: bool,
-}
-
-/// 型変更情報
-#[derive(Debug)]
-struct TypeChangeInfo {
-    table: String,
-    column: String,
-    old_type: String,
-    new_type: String,
-}
-
-/// リネーム情報
-#[derive(Debug)]
-struct RenameInfo {
-    table: String,
-    old_name: String,
-    new_name: String,
 }
 
 /// 差分検出・バリデーション結果
@@ -164,7 +147,7 @@ impl GenerateCommandHandler {
         current_schema: &Schema,
         previous_schema: &Schema,
     ) -> Result<DiffValidationResult> {
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let (diff, diff_warnings) =
             detector.detect_diff_with_warnings(previous_schema, current_schema);
 
@@ -186,7 +169,7 @@ impl GenerateCommandHandler {
         let renamed_from_warnings = self.generate_renamed_from_remove_warnings(current_schema);
 
         // マイグレーション名の生成
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let timestamp = generator.generate_timestamp();
         let description = command
             .description
@@ -241,7 +224,7 @@ impl GenerateCommandHandler {
         current_schema: &Schema,
         previous_schema: &Schema,
     ) -> Result<GeneratedSql> {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let allow_destructive_for_sql = command.allow_destructive || command.dry_run;
 
         let sql_result = generator.generate_up_sql_with_schemas_and_options(
@@ -325,7 +308,7 @@ impl GenerateCommandHandler {
         let checksum_calculator = SchemaChecksumService::new();
         let checksum = checksum_calculator.calculate_checksum(current_schema);
 
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let metadata = generator
             .generate_migration_metadata(
                 &dvr.timestamp,
@@ -355,212 +338,14 @@ impl GenerateCommandHandler {
         validation_result: &crate::core::error::ValidationResult,
         destructive_report: &crate::core::destructive_change_report::DestructiveChangeReport,
     ) -> Result<String> {
-        use std::fmt::Write;
-
-        let mut output = String::new();
-
-        // ヘッダー（太字）
-        writeln!(
-            &mut output,
-            "{}",
-            "=== Dry Run: Migration Preview ===".bold()
-        )
-        .unwrap();
-        writeln!(&mut output, "Migration: {}", migration_name.cyan()).unwrap();
-        writeln!(&mut output).unwrap();
-
-        // リネームのプレビュー
-        let rename_changes = self.collect_rename_changes(diff);
-        if !rename_changes.is_empty() {
-            writeln!(&mut output, "{}", "--- Column Renames ---".bold()).unwrap();
-            for rename in &rename_changes {
-                let table = rename.table.cyan();
-                let arrow = "→".bold();
-                writeln!(
-                    &mut output,
-                    "  {}: {} {} {}",
-                    table, rename.old_name, arrow, rename.new_name
-                )
-                .unwrap();
-            }
-            writeln!(&mut output).unwrap();
-        }
-
-        // 型変更のプレビュー
-        let type_changes = self.collect_type_changes(diff);
-        if !type_changes.is_empty() {
-            writeln!(&mut output, "{}", "--- Type Changes ---".bold()).unwrap();
-            for change in &type_changes {
-                let location = format!("{}.{}", change.table, change.column).cyan();
-                let arrow = "→".bold();
-                writeln!(
-                    &mut output,
-                    "  {}: {} {} {}",
-                    location, change.old_type, arrow, change.new_type
-                )
-                .unwrap();
-            }
-            writeln!(&mut output).unwrap();
-        }
-
-        // 破壊的変更のプレビュー
-        if destructive_report.has_destructive_changes() {
-            self.append_destructive_preview(&mut output, destructive_report)?;
-        }
-
-        // 警告の表示（黄色）
-        if validation_result.warning_count() > 0 {
-            writeln!(
-                &mut output,
-                "{}",
-                format!("--- Warnings ({}) ---", validation_result.warning_count())
-                    .yellow()
-                    .bold()
-            )
-            .unwrap();
-            for warning in &validation_result.warnings {
-                let location = warning
-                    .location
-                    .as_ref()
-                    .map(|loc| {
-                        let table = loc.table.as_deref().unwrap_or("");
-                        let column = loc
-                            .column
-                            .as_ref()
-                            .map(|c| format!(".{}", c))
-                            .unwrap_or_default();
-                        format!("[{}{}]", table, column).cyan().to_string()
-                    })
-                    .unwrap_or_default();
-                writeln!(
-                    &mut output,
-                    "  {} {} {}",
-                    "⚠".yellow(),
-                    location,
-                    warning.message.yellow()
-                )
-                .unwrap();
-            }
-            writeln!(&mut output).unwrap();
-        }
-
-        // UP SQL
-        writeln!(&mut output, "{}", "--- UP SQL ---".bold()).unwrap();
-        writeln!(&mut output, "{}", up_sql).unwrap();
-        writeln!(&mut output).unwrap();
-
-        // DOWN SQL
-        writeln!(&mut output, "{}", "--- DOWN SQL ---".bold()).unwrap();
-        writeln!(&mut output, "{}", down_sql).unwrap();
-        writeln!(&mut output).unwrap();
-
-        // サマリー（太字）
-        writeln!(&mut output, "{}", "=== Summary ===".bold()).unwrap();
-        let warning_count = validation_result.warning_count();
-        let warning_text = if warning_count > 0 {
-            format!("Warnings: {}", warning_count)
-                .yellow()
-                .bold()
-                .to_string()
-        } else {
-            format!("Warnings: {}", warning_count).green().to_string()
-        };
-        writeln!(&mut output, "{}", warning_text).unwrap();
-        writeln!(
-            &mut output,
-            "Files would be created: 3 (up.sql, down.sql, .meta.yaml)"
-        )
-        .unwrap();
-        writeln!(
-            &mut output,
-            "\n{}",
-            "No files were created (dry-run mode).".dimmed()
-        )
-        .unwrap();
-
-        Ok(output)
-    }
-
-    fn append_destructive_preview(
-        &self,
-        output: &mut String,
-        destructive_report: &crate::core::destructive_change_report::DestructiveChangeReport,
-    ) -> Result<()> {
-        use std::fmt::Write;
-
-        writeln!(output, "{}", "⚠ Destructive Changes Detected".red().bold()).unwrap();
-
-        for table in &destructive_report.tables_dropped {
-            writeln!(output, "  {}", format!("DROP TABLE: {}", table).red()).unwrap();
-        }
-
-        for entry in &destructive_report.columns_dropped {
-            for column in &entry.columns {
-                writeln!(
-                    output,
-                    "  {}",
-                    format!("DROP COLUMN: {}.{}", entry.table, column).red()
-                )
-                .unwrap();
-            }
-        }
-
-        for entry in &destructive_report.columns_renamed {
-            writeln!(
-                output,
-                "  {}",
-                format!(
-                    "RENAME COLUMN: {}.{} -> {}",
-                    entry.table, entry.old_name, entry.new_name
-                )
-                .red()
-            )
-            .unwrap();
-        }
-
-        for enum_name in &destructive_report.enums_dropped {
-            writeln!(output, "  {}", format!("DROP ENUM: {}", enum_name).red()).unwrap();
-        }
-
-        for enum_name in &destructive_report.enums_recreated {
-            writeln!(
-                output,
-                "  {}",
-                format!("RECREATE ENUM: {}", enum_name).red()
-            )
-            .unwrap();
-        }
-
-        let dropped_column_count: usize = destructive_report
-            .columns_dropped
-            .iter()
-            .map(|entry| entry.columns.len())
-            .sum();
-
-        writeln!(
-            output,
-            "  {}",
-            format!(
-                "Impact summary: tables dropped={}, columns dropped={}, columns renamed={}, enums dropped={}, enums recreated={}",
-                destructive_report.tables_dropped.len(),
-                dropped_column_count,
-                destructive_report.columns_renamed.len(),
-                destructive_report.enums_dropped.len(),
-                destructive_report.enums_recreated.len()
-            )
-            .red()
-        )
-        .unwrap();
-
-        writeln!(
-            output,
-            "\n{}",
-            "To proceed, run with --allow-destructive flag".red()
-        )
-        .unwrap();
-        writeln!(output).unwrap();
-
-        Ok(())
+        Ok(DryRunFormatter::format(
+            migration_name,
+            up_sql,
+            down_sql,
+            diff,
+            validation_result,
+            destructive_report,
+        ))
     }
 
     /// dry-runモードでのエラー表示
@@ -570,148 +355,10 @@ impl GenerateCommandHandler {
         error: &str,
         diff: &crate::core::schema_diff::SchemaDiff,
     ) -> Result<String> {
-        use std::fmt::Write;
-
-        let mut output = String::new();
-
-        // ヘッダー（太字）
-        writeln!(
-            &mut output,
+        Err(anyhow::anyhow!(
             "{}",
-            "=== Dry Run: Migration Preview ===".bold()
-        )
-        .unwrap();
-        writeln!(&mut output, "Migration: {}", migration_name.cyan()).unwrap();
-        writeln!(&mut output).unwrap();
-
-        // 型変更のプレビュー
-        let type_changes = self.collect_type_changes(diff);
-        if !type_changes.is_empty() {
-            writeln!(&mut output, "{}", "--- Type Changes ---".bold()).unwrap();
-            for change in &type_changes {
-                let location = format!("{}.{}", change.table, change.column).cyan();
-                let arrow = "→".bold();
-                writeln!(
-                    &mut output,
-                    "  {}: {} {} {}",
-                    location, change.old_type, arrow, change.new_type
-                )
-                .unwrap();
-            }
-            writeln!(&mut output).unwrap();
-        }
-
-        // エラーの表示（赤色）
-        writeln!(&mut output, "{}", "--- Errors ---".red().bold()).unwrap();
-
-        // エラーメッセージをパースして表示
-        for line in error.lines() {
-            if line.starts_with("Type change validation failed:") {
-                writeln!(&mut output, "{}", line.red()).unwrap();
-            } else if line.contains("Type conversion error:") {
-                // エラーから位置情報を抽出して色付け
-                writeln!(&mut output, "  {} {}", "✗".red(), line.red()).unwrap();
-            } else if !line.is_empty() {
-                writeln!(&mut output, "  {} {}", "✗".red(), line.red()).unwrap();
-            }
-        }
-        writeln!(&mut output).unwrap();
-
-        // 修正提案（緑色）
-        writeln!(&mut output, "{}", "--- Suggestion ---".green().bold()).unwrap();
-        writeln!(
-            &mut output,
-            "  {}",
-            "Use TEXT as an intermediate type or reconsider the type change".green()
-        )
-        .unwrap();
-        writeln!(&mut output).unwrap();
-
-        // サマリー（太字）
-        writeln!(&mut output, "{}", "=== Summary ===".bold()).unwrap();
-        writeln!(
-            &mut output,
-            "{}",
-            "Errors: 1 (migration cannot be generated)".red().bold()
-        )
-        .unwrap();
-        writeln!(
-            &mut output,
-            "\n{}",
-            "Migration generation aborted due to type conversion errors.".red()
-        )
-        .unwrap();
-
-        // エラー終了
-        Err(anyhow::anyhow!("{}", output))
-    }
-
-    /// 型変更情報を収集
-    fn collect_type_changes(
-        &self,
-        diff: &crate::core::schema_diff::SchemaDiff,
-    ) -> Vec<TypeChangeInfo> {
-        let mut changes = Vec::new();
-
-        for table_diff in &diff.modified_tables {
-            // 通常のカラム変更から型変更を収集
-            for column_diff in &table_diff.modified_columns {
-                for change in &column_diff.changes {
-                    if let crate::core::schema_diff::ColumnChange::TypeChanged {
-                        old_type,
-                        new_type,
-                    } = change
-                    {
-                        changes.push(TypeChangeInfo {
-                            table: table_diff.table_name.clone(),
-                            column: column_diff.column_name.clone(),
-                            old_type: old_type.clone(),
-                            new_type: new_type.clone(),
-                        });
-                    }
-                }
-            }
-
-            // リネームカラムからも型変更を収集
-            for renamed in &table_diff.renamed_columns {
-                for change in &renamed.changes {
-                    if let crate::core::schema_diff::ColumnChange::TypeChanged {
-                        old_type,
-                        new_type,
-                    } = change
-                    {
-                        changes.push(TypeChangeInfo {
-                            table: table_diff.table_name.clone(),
-                            column: renamed.new_column.name.clone(),
-                            old_type: old_type.clone(),
-                            new_type: new_type.clone(),
-                        });
-                    }
-                }
-            }
-        }
-
-        changes
-    }
-
-    /// リネーム情報を収集
-    fn collect_rename_changes(
-        &self,
-        diff: &crate::core::schema_diff::SchemaDiff,
-    ) -> Vec<RenameInfo> {
-        let mut renames = Vec::new();
-
-        for table_diff in &diff.modified_tables {
-            for renamed in &table_diff.renamed_columns {
-                renames.push(RenameInfo {
-                    table: table_diff.table_name.clone(),
-                    old_name: renamed.old_name.clone(),
-                    new_name: renamed.new_column.name.clone(),
-                });
-            }
-        }
-
-        renames
+            DryRunFormatter::format_error(migration_name, error, diff)
+        ))
     }
 
     /// renamed_from属性削除推奨警告を生成
@@ -879,10 +526,9 @@ mod tests {
 
     #[test]
     fn test_collect_type_changes() {
+        use crate::cli::commands::dry_run_formatter::DryRunFormatter;
         use crate::core::schema::{Column, ColumnType};
         use crate::core::schema_diff::{ColumnDiff, SchemaDiff, TableDiff};
-
-        let handler = GenerateCommandHandler::new();
 
         let mut diff = SchemaDiff::new();
         let old_column = Column::new(
@@ -897,7 +543,7 @@ mod tests {
         table_diff.modified_columns.push(column_diff);
         diff.modified_tables.push(table_diff);
 
-        let changes = handler.collect_type_changes(&diff);
+        let changes = DryRunFormatter::collect_type_changes(&diff);
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].table, "users");
         assert_eq!(changes[0].column, "age");
@@ -1041,10 +687,9 @@ mod tests {
     #[test]
     fn test_collect_rename_type_changes() {
         // リネームカラムからも型変更情報を収集できることを確認
+        use crate::cli::commands::dry_run_formatter::DryRunFormatter;
         use crate::core::schema::{Column, ColumnType};
         use crate::core::schema_diff::{ColumnChange, RenamedColumn, SchemaDiff, TableDiff};
-
-        let handler = GenerateCommandHandler::new();
 
         let mut diff = SchemaDiff::new();
         let old_column = Column::new(
@@ -1071,7 +716,7 @@ mod tests {
         table_diff.renamed_columns.push(renamed);
         diff.modified_tables.push(table_diff);
 
-        let changes = handler.collect_type_changes(&diff);
+        let changes = DryRunFormatter::collect_type_changes(&diff);
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].table, "users");
         assert_eq!(changes[0].column, "user_name");
@@ -1082,10 +727,9 @@ mod tests {
     #[test]
     fn test_collect_rename_changes_only() {
         // リネームのみ（型変更なし）の場合はTypeChangesに含まれない
+        use crate::cli::commands::dry_run_formatter::DryRunFormatter;
         use crate::core::schema::{Column, ColumnType};
         use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
-
-        let handler = GenerateCommandHandler::new();
 
         let mut diff = SchemaDiff::new();
         let old_column = Column::new(
@@ -1109,17 +753,16 @@ mod tests {
         table_diff.renamed_columns.push(renamed);
         diff.modified_tables.push(table_diff);
 
-        let changes = handler.collect_type_changes(&diff);
+        let changes = DryRunFormatter::collect_type_changes(&diff);
         assert_eq!(changes.len(), 0);
     }
 
     #[test]
     fn test_collect_rename_info() {
         // リネーム情報を収集できることを確認
+        use crate::cli::commands::dry_run_formatter::DryRunFormatter;
         use crate::core::schema::{Column, ColumnType};
         use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
-
-        let handler = GenerateCommandHandler::new();
 
         let mut diff = SchemaDiff::new();
         let old_column = Column::new(
@@ -1143,7 +786,7 @@ mod tests {
         table_diff.renamed_columns.push(renamed);
         diff.modified_tables.push(table_diff);
 
-        let renames = handler.collect_rename_changes(&diff);
+        let renames = DryRunFormatter::collect_rename_changes(&diff);
         assert_eq!(renames.len(), 1);
         assert_eq!(renames[0].table, "users");
         assert_eq!(renames[0].old_name, "name");

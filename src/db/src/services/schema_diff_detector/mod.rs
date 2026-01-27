@@ -16,10 +16,10 @@ use std::collections::HashSet;
 
 /// スキーマ差分検出サービス
 #[derive(Debug, Clone)]
-pub struct SchemaDiffDetector {}
+pub struct SchemaDiffDetectorService {}
 
-impl SchemaDiffDetector {
-    /// 新しいSchemaDiffDetectorを作成
+impl SchemaDiffDetectorService {
+    /// 新しいSchemaDiffDetectorServiceを作成
     pub fn new() -> Self {
         Self {}
     }
@@ -128,7 +128,7 @@ impl SchemaDiffDetector {
     }
 }
 
-impl Default for SchemaDiffDetector {
+impl Default for SchemaDiffDetectorService {
     fn default() -> Self {
         Self::new()
     }
@@ -141,13 +141,13 @@ mod tests {
 
     #[test]
     fn test_new_service() {
-        let service = SchemaDiffDetector::new();
-        assert!(format!("{:?}", service).contains("SchemaDiffDetector"));
+        let service = SchemaDiffDetectorService::new();
+        assert!(format!("{:?}", service).contains("SchemaDiffDetectorService"));
     }
 
     #[test]
     fn test_detect_diff_empty_schemas() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
         let schema1 = Schema::new("1.0".to_string());
         let schema2 = Schema::new("1.0".to_string());
 
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_detect_table_added() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
         let schema1 = Schema::new("1.0".to_string());
 
         let mut schema2 = Schema::new("1.0".to_string());
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_detect_table_removed() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table = Table::new("users".to_string());

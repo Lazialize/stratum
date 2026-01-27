@@ -3,9 +3,9 @@
 use crate::core::schema_diff::TableDiff;
 use std::collections::HashSet;
 
-use super::SchemaDiffDetector;
+use super::SchemaDiffDetectorService;
 
-impl SchemaDiffDetector {
+impl SchemaDiffDetectorService {
     /// 制約差分を検出
     pub(crate) fn detect_constraint_diff(
         &self,

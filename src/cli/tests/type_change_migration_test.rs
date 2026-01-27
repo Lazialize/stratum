@@ -11,7 +11,7 @@ mod type_change_migration_tests {
     use strata::core::config::Dialect;
     use strata::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
     use strata::core::schema_diff::{ColumnDiff, SchemaDiff, TableDiff};
-    use strata::services::migration_generator::MigrationGenerator;
+    use strata::services::migration_generator::MigrationGeneratorService;
     use strata::services::type_change_validator::TypeChangeValidator;
 
     // ==========================================
@@ -166,10 +166,10 @@ mod type_change_migration_tests {
             assert!(down_sql[0].contains("USING"));
         }
 
-        /// MigrationGeneratorでのPostgreSQL型変更SQL生成統合テスト
+        /// MigrationGeneratorServiceでのPostgreSQL型変更SQL生成統合テスト
         #[test]
         fn test_postgres_migration_generator_type_change() {
-            let generator = MigrationGenerator::new();
+            let generator = MigrationGeneratorService::new();
 
             // スキーマ作成
             let mut old_schema = Schema::new("1.0".to_string());
@@ -412,10 +412,10 @@ mod type_change_migration_tests {
             assert!(down_sql[0].contains("INT"));
         }
 
-        /// MigrationGeneratorでのMySQL型変更SQL生成統合テスト
+        /// MigrationGeneratorServiceでのMySQL型変更SQL生成統合テスト
         #[test]
         fn test_mysql_migration_generator_type_change() {
-            let generator = MigrationGenerator::new();
+            let generator = MigrationGeneratorService::new();
 
             // スキーマ作成
             let mut old_schema = Schema::new("1.0".to_string());
@@ -722,10 +722,10 @@ mod type_change_migration_tests {
             assert!(down_combined.contains("INTEGER"));
         }
 
-        /// MigrationGeneratorでのSQLite型変更SQL生成統合テスト
+        /// MigrationGeneratorServiceでのSQLite型変更SQL生成統合テスト
         #[test]
         fn test_sqlite_migration_generator_type_change() {
-            let generator = MigrationGenerator::new();
+            let generator = MigrationGeneratorService::new();
 
             // スキーマ作成
             let mut old_schema = Schema::new("1.0".to_string());
@@ -787,11 +787,11 @@ mod type_change_migration_tests {
             assert!(sql.contains(r#"CREATE TABLE "new_users""#));
         }
 
-        /// MigrationGeneratorでのSQLite型変更SQL生成（カラム追加あり）
+        /// MigrationGeneratorServiceでのSQLite型変更SQL生成（カラム追加あり）
         /// 旧/新スキーマの列交差が動作することを確認
         #[test]
         fn test_sqlite_migration_generator_type_change_with_column_addition() {
-            let generator = MigrationGenerator::new();
+            let generator = MigrationGeneratorService::new();
 
             // 旧スキーマ: id, age
             let mut old_schema = Schema::new("1.0".to_string());
@@ -1201,10 +1201,10 @@ mod type_change_migration_tests {
             assert_eq!(result.warning_count(), 1);
         }
 
-        /// MigrationGeneratorでの検証エラーによる生成中止
+        /// MigrationGeneratorServiceでの検証エラーによる生成中止
         #[test]
         fn test_migration_generator_aborts_on_validation_error() {
-            let generator = MigrationGenerator::new();
+            let generator = MigrationGeneratorService::new();
 
             // 互換性のない型変更を含むスキーマ
             let mut old_schema = Schema::new("1.0".to_string());

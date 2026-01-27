@@ -4,9 +4,9 @@ use crate::core::schema::{EnumDefinition, Schema};
 use crate::core::schema_diff::{EnumChangeKind, EnumColumnRef, EnumDiff, SchemaDiff};
 use std::collections::HashSet;
 
-use super::SchemaDiffDetector;
+use super::SchemaDiffDetectorService;
 
-impl SchemaDiffDetector {
+impl SchemaDiffDetectorService {
     pub(crate) fn detect_enum_diff(
         &self,
         old_schema: &Schema,
@@ -108,11 +108,11 @@ impl SchemaDiffDetector {
 #[cfg(test)]
 mod tests {
     use crate::core::schema::{EnumDefinition, Schema};
-    use crate::services::schema_diff_detector::SchemaDiffDetector;
+    use crate::services::schema_diff_detector::SchemaDiffDetectorService;
 
     #[test]
     fn test_detect_enum_added() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
         let schema1 = Schema::new("1.0".to_string());
 
         let mut schema2 = Schema::new("1.0".to_string());
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_detect_enum_removed() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
         let mut schema1 = Schema::new("1.0".to_string());
         schema1.add_enum(EnumDefinition {
             name: "status".to_string(),
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_detect_enum_add_only_change() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
         let mut schema1 = Schema::new("1.0".to_string());
         schema1.add_enum(EnumDefinition {
             name: "status".to_string(),
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_detect_enum_recreate_change() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
         let mut schema1 = Schema::new("1.0".to_string());
         schema1.add_enum(EnumDefinition {
             name: "status".to_string(),
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_detect_enum_recreate_opt_in_flag() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
         let schema1 = Schema::new("1.0".to_string());
 
         let mut schema2 = Schema::new("1.0".to_string());

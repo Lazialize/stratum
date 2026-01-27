@@ -12,7 +12,7 @@ mod column_rename_integration_tests {
     use super::*;
     use strata::core::config::Dialect;
     use strata::services::migration_pipeline::MigrationPipeline;
-    use strata::services::schema_diff_detector::SchemaDiffDetector;
+    use strata::services::schema_diff_detector::SchemaDiffDetectorService;
     use strata::services::schema_io::schema_parser::SchemaParserService;
     use strata::services::schema_validator::SchemaValidatorService;
 
@@ -202,7 +202,7 @@ tables:
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
         // スキーマ差分検出
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let (diff, warnings) = detector.detect_diff_with_warnings(&old_schema, &new_schema);
 
         // リネームが検出されていることを確認
@@ -243,7 +243,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let (diff, _) = detector.detect_diff_with_warnings(&old_schema, &new_schema);
 
         // 2つのリネームが検出されていることを確認
@@ -273,7 +273,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let (diff, _) = detector.detect_diff_with_warnings(&old_schema, &new_schema);
 
         let table_diff = &diff.modified_tables[0];
@@ -306,7 +306,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let (diff, warnings) = detector.detect_diff_with_warnings(&old_schema, &new_schema);
 
         // 警告が生成されることを確認
@@ -344,7 +344,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
         // MigrationPipelineでSQL生成
@@ -387,7 +387,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
         let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)
@@ -440,7 +440,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
         let pipeline =
@@ -477,7 +477,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
         let pipeline =
@@ -512,7 +512,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
         let pipeline =
@@ -549,7 +549,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
         let pipeline =
@@ -583,7 +583,7 @@ tables:
         let old_schema = parser.parse_schema_file(&old_schema_path).unwrap();
         let new_schema = parser.parse_schema_file(&new_schema_path).unwrap();
 
-        let detector = SchemaDiffDetector::new();
+        let detector = SchemaDiffDetectorService::new();
         let diff = detector.detect_diff(&old_schema, &new_schema);
 
         // PostgreSQLとSQLiteはRENAME COLUMN構文（クォート付き）

@@ -6,20 +6,20 @@ mod migration_generator_tests {
     use strata::core::config::Dialect;
     use strata::core::schema::{Column, ColumnType, Schema, Table};
     use strata::core::schema_diff::SchemaDiff;
-    use strata::services::migration_generator::MigrationGenerator;
-    use strata::services::schema_diff_detector::SchemaDiffDetector;
+    use strata::services::migration_generator::MigrationGeneratorService;
+    use strata::services::schema_diff_detector::SchemaDiffDetectorService;
 
     /// サービスの作成テスト
     #[test]
     fn test_new_service() {
-        let generator = MigrationGenerator::new();
-        assert!(format!("{:?}", generator).contains("MigrationGenerator"));
+        let generator = MigrationGeneratorService::new();
+        assert!(format!("{:?}", generator).contains("MigrationGeneratorService"));
     }
 
     /// タイムスタンプ生成のテスト
     #[test]
     fn test_generate_timestamp() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let timestamp = generator.generate_timestamp();
 
         // YYYYMMDDHHmmss形式（14桁の数字）
@@ -30,7 +30,7 @@ mod migration_generator_tests {
     /// ファイル名生成のテスト
     #[test]
     fn test_generate_migration_filename() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let timestamp = "20260122120000";
         let description = "create_users_table";
 
@@ -42,7 +42,7 @@ mod migration_generator_tests {
     /// 説明文のサニタイズテスト
     #[test]
     fn test_sanitize_description() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
 
         assert_eq!(
             generator.sanitize_description("Create Users Table"),
@@ -61,7 +61,7 @@ mod migration_generator_tests {
     /// 空の差分からのSQL生成テスト
     #[test]
     fn test_generate_up_sql_empty_diff() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let diff = SchemaDiff::new();
 
         let up_sql = generator
@@ -74,7 +74,7 @@ mod migration_generator_tests {
     /// テーブル追加のUP SQL生成テスト
     #[test]
     fn test_generate_up_sql_table_added() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
 
         let mut diff = SchemaDiff::new();
         let mut table = Table::new("users".to_string());
@@ -95,7 +95,7 @@ mod migration_generator_tests {
     /// テーブル削除のDOWN SQL生成テスト
     #[test]
     fn test_generate_down_sql_table_removed() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
 
         let mut diff = SchemaDiff::new();
         diff.removed_tables.push("users".to_string());
@@ -112,8 +112,8 @@ mod migration_generator_tests {
     /// 複数の変更を含むUP SQL生成テスト
     #[test]
     fn test_generate_up_sql_multiple_changes() {
-        let generator = MigrationGenerator::new();
-        let detector = SchemaDiffDetector::new();
+        let generator = MigrationGeneratorService::new();
+        let detector = SchemaDiffDetectorService::new();
 
         let schema1 = Schema::new("1.0".to_string());
 
@@ -137,7 +137,7 @@ mod migration_generator_tests {
     /// マイグレーションメタデータ生成のテスト
     #[test]
     fn test_generate_migration_metadata() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let version = "20260122120000";
         let description = "create_users_table";
         let checksum = "abc123def456";
@@ -165,8 +165,8 @@ mod migration_generator_tests {
     /// マイグレーション生成の統合テスト
     #[test]
     fn test_generate_migration_integrated() {
-        let generator = MigrationGenerator::new();
-        let detector = SchemaDiffDetector::new();
+        let generator = MigrationGeneratorService::new();
+        let detector = SchemaDiffDetectorService::new();
 
         // Schema 1: 空
         let schema1 = Schema::new("1.0".to_string());
@@ -209,7 +209,7 @@ mod migration_generator_tests {
     fn test_enum_recreate_requires_allow_destructive() {
         use strata::core::schema_diff::{EnumChangeKind, EnumColumnRef, EnumDiff};
 
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let mut diff = SchemaDiff::new();
         diff.modified_enums.push(EnumDiff {
             enum_name: "status".to_string(),

@@ -17,10 +17,10 @@ use chrono::Utc;
 /// スキーマ差分からマイグレーションファイルを生成するサービス。
 /// SQL生成は内部で MigrationPipeline に委譲する。
 #[derive(Debug, Clone)]
-pub struct MigrationGenerator {}
+pub struct MigrationGeneratorService {}
 
-impl MigrationGenerator {
-    /// 新しいMigrationGeneratorを作成
+impl MigrationGeneratorService {
+    /// 新しいMigrationGeneratorServiceを作成
     pub fn new() -> Self {
         Self {}
     }
@@ -255,7 +255,7 @@ impl MigrationGenerator {
     }
 }
 
-impl Default for MigrationGenerator {
+impl Default for MigrationGeneratorService {
     fn default() -> Self {
         Self::new()
     }
@@ -269,13 +269,13 @@ mod tests {
 
     #[test]
     fn test_new_service() {
-        let generator = MigrationGenerator::new();
-        assert!(format!("{:?}", generator).contains("MigrationGenerator"));
+        let generator = MigrationGeneratorService::new();
+        assert!(format!("{:?}", generator).contains("MigrationGeneratorService"));
     }
 
     #[test]
     fn test_generate_timestamp() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let timestamp = generator.generate_timestamp();
 
         assert_eq!(timestamp.len(), 14);
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_generate_migration_filename() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let filename = generator.generate_migration_filename("20260122120000", "create_users");
 
         assert_eq!(filename, "20260122120000_create_users");
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn test_sanitize_description() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
 
         assert_eq!(
             generator.sanitize_description("Create Users Table"),
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_generate_migration_metadata() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let metadata = generator
             .generate_migration_metadata(
                 "20260122120000",
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_enum_create() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let mut diff = SchemaDiff::new();
         diff.added_enums.push(EnumDefinition {
             name: "status".to_string(),
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_enum_add_value() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let mut diff = SchemaDiff::new();
         diff.modified_enums.push(EnumDiff {
             enum_name: "status".to_string(),
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_enum_recreate_requires_opt_in() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let mut diff = SchemaDiff::new();
         diff.modified_enums.push(EnumDiff {
             enum_name: "status".to_string(),
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_enum_recreate_with_opt_in() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let mut diff = SchemaDiff::new();
         diff.modified_enums.push(EnumDiff {
             enum_name: "status".to_string(),
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_enum_drop_requires_opt_in() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let mut diff = SchemaDiff::new();
         diff.removed_enums.push("status".to_string());
 
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_with_schemas_type_change_postgresql() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_type_change();
         let diff = create_diff_with_type_change();
 
@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_with_schemas_type_change_mysql() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_type_change();
         let diff = create_diff_with_type_change();
 
@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_with_schemas_type_change_sqlite() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_type_change();
         let diff = create_diff_with_type_change();
 
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn test_generate_down_sql_with_schemas_type_change_postgresql() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_type_change();
         let diff = create_diff_with_type_change();
 
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_with_schemas_validation_warning() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
 
         // 逆方向の型変更（VARCHAR → INTEGER）で警告が出るケース
         let mut old_schema = Schema::new("1.0".to_string());
@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_with_schemas_validation_error() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
 
         // 互換性のない型変更（JSONB → INTEGER）でエラーが出るケース
         let mut old_schema = Schema::new("1.0".to_string());
@@ -725,7 +725,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_with_schemas_rename_column_postgresql() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_rename();
         let diff = create_diff_with_rename();
 
@@ -747,7 +747,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_with_schemas_rename_column_mysql() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_rename();
         let diff = create_diff_with_rename();
 
@@ -766,7 +766,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_with_schemas_rename_column_sqlite() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_rename();
         let diff = create_diff_with_rename();
 
@@ -788,7 +788,7 @@ mod tests {
 
     #[test]
     fn test_generate_down_sql_with_schemas_rename_column_postgresql() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_rename();
         let diff = create_diff_with_rename();
 
@@ -885,7 +885,7 @@ mod tests {
 
     #[test]
     fn test_generate_up_sql_with_schemas_rename_and_type_change_postgresql() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_rename_and_type_change();
         let diff = create_diff_with_rename_and_type_change();
 
@@ -923,7 +923,7 @@ mod tests {
 
     #[test]
     fn test_generate_down_sql_with_schemas_rename_and_type_change_postgresql() {
-        let generator = MigrationGenerator::new();
+        let generator = MigrationGeneratorService::new();
         let (old_schema, new_schema) = create_test_schemas_for_rename_and_type_change();
         let diff = create_diff_with_rename_and_type_change();
 

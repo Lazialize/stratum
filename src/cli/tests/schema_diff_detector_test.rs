@@ -4,19 +4,19 @@
 #[cfg(test)]
 mod schema_diff_detector_tests {
     use strata::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
-    use strata::services::schema_diff_detector::SchemaDiffDetector;
+    use strata::services::schema_diff_detector::SchemaDiffDetectorService;
 
     /// サービスの作成テスト
     #[test]
     fn test_new_service() {
-        let service = SchemaDiffDetector::new();
-        assert!(format!("{:?}", service).contains("SchemaDiffDetector"));
+        let service = SchemaDiffDetectorService::new();
+        assert!(format!("{:?}", service).contains("SchemaDiffDetectorService"));
     }
 
     /// 同じスキーマの比較（差分なし）
     #[test]
     fn test_detect_diff_no_changes() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table = Table::new("users".to_string());
@@ -38,7 +38,7 @@ mod schema_diff_detector_tests {
     /// テーブル追加の検出
     #[test]
     fn test_detect_table_added() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let schema1 = Schema::new("1.0".to_string());
 
@@ -62,7 +62,7 @@ mod schema_diff_detector_tests {
     /// テーブル削除の検出
     #[test]
     fn test_detect_table_removed() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table = Table::new("users".to_string());
@@ -86,7 +86,7 @@ mod schema_diff_detector_tests {
     /// 複数テーブルの追加と削除
     #[test]
     fn test_detect_multiple_table_changes() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut old_table = Table::new("old_table".to_string());
@@ -117,7 +117,7 @@ mod schema_diff_detector_tests {
     /// カラム追加の検出
     #[test]
     fn test_detect_column_added() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -154,7 +154,7 @@ mod schema_diff_detector_tests {
     /// カラム削除の検出
     #[test]
     fn test_detect_column_removed() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -190,7 +190,7 @@ mod schema_diff_detector_tests {
     /// カラム変更の検出
     #[test]
     fn test_detect_column_modified() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -221,7 +221,7 @@ mod schema_diff_detector_tests {
     /// インデックス追加の検出
     #[test]
     fn test_detect_index_added() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -257,7 +257,7 @@ mod schema_diff_detector_tests {
     /// インデックス削除の検出
     #[test]
     fn test_detect_index_removed() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -293,7 +293,7 @@ mod schema_diff_detector_tests {
     /// 制約追加の検出
     #[test]
     fn test_detect_constraint_added() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -326,7 +326,7 @@ mod schema_diff_detector_tests {
     /// 制約削除の検出
     #[test]
     fn test_detect_constraint_removed() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         let mut schema1 = Schema::new("1.0".to_string());
         let mut table1 = Table::new("users".to_string());
@@ -359,7 +359,7 @@ mod schema_diff_detector_tests {
     /// 複雑なスキーマ変更の検出
     #[test]
     fn test_detect_complex_changes() {
-        let service = SchemaDiffDetector::new();
+        let service = SchemaDiffDetectorService::new();
 
         // Schema 1: users, posts tables
         let mut schema1 = Schema::new("1.0".to_string());

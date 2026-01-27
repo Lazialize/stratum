@@ -6,6 +6,8 @@
 use crate::adapters::sql_generator::{
     quote_columns_sqlite, quote_identifier_sqlite, MigrationDirection,
 };
+use crate::adapters::type_mapping::TypeMappingService;
+use crate::core::config::Dialect;
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
 use crate::core::schema_diff::ColumnDiff;
 
@@ -161,24 +163,11 @@ impl SqliteTableRecreator {
     }
 
     /// ColumnTypeをSQLiteの型文字列にマッピング
+    ///
+    /// TypeMappingServiceに委譲して型変換を行います。
     fn map_column_type(&self, column_type: &ColumnType) -> String {
-        match column_type {
-            ColumnType::INTEGER { .. } => "INTEGER".to_string(),
-            ColumnType::VARCHAR { .. } => "TEXT".to_string(),
-            ColumnType::TEXT => "TEXT".to_string(),
-            ColumnType::BOOLEAN => "INTEGER".to_string(),
-            ColumnType::TIMESTAMP { .. } => "TEXT".to_string(),
-            ColumnType::JSON | ColumnType::JSONB => "TEXT".to_string(),
-            ColumnType::DECIMAL { .. } => "TEXT".to_string(),
-            ColumnType::FLOAT | ColumnType::DOUBLE => "REAL".to_string(),
-            ColumnType::CHAR { .. } => "TEXT".to_string(),
-            ColumnType::DATE => "TEXT".to_string(),
-            ColumnType::TIME { .. } => "TEXT".to_string(),
-            ColumnType::BLOB => "BLOB".to_string(),
-            ColumnType::UUID => "TEXT".to_string(),
-            ColumnType::Enum { name } => name.clone(),
-            ColumnType::DialectSpecific { kind, .. } => kind.to_string(),
-        }
+        let service = TypeMappingService::new(Dialect::SQLite);
+        service.to_sql_type(column_type)
     }
 
     /// 制約定義のSQL文字列を生成
