@@ -494,7 +494,10 @@ mod tests {
         let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], "ALTER TABLE `users` MODIFY COLUMN `id` BIGINT NOT NULL");
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE `users` MODIFY COLUMN `id` BIGINT NOT NULL"
+        );
     }
 
     #[test]
@@ -517,7 +520,10 @@ mod tests {
 
         assert_eq!(sql.len(), 1);
         // NULLableなのでNOT NULLが含まれない
-        assert_eq!(sql[0], "ALTER TABLE `users` MODIFY COLUMN `bio` VARCHAR(500)");
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE `users` MODIFY COLUMN `bio` VARCHAR(500)"
+        );
     }
 
     #[test]
@@ -619,7 +625,10 @@ mod tests {
 
         assert_eq!(sql.len(), 1);
         // Down方向なので old_type (INT) に戻す
-        assert_eq!(sql[0], "ALTER TABLE `users` MODIFY COLUMN `id` INT NOT NULL");
+        assert_eq!(
+            sql[0],
+            "ALTER TABLE `users` MODIFY COLUMN `id` INT NOT NULL"
+        );
     }
 
     #[test]

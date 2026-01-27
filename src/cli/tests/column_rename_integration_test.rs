@@ -410,7 +410,9 @@ tables:
         );
 
         // Up方向: リネームが型変更より先に実行されることを確認
-        let rename_pos = up_sql.find(r#"RENAME COLUMN "name" TO "user_name""#).unwrap();
+        let rename_pos = up_sql
+            .find(r#"RENAME COLUMN "name" TO "user_name""#)
+            .unwrap();
         let type_change_pos = up_sql
             .find(r#"ALTER TABLE "users" ALTER COLUMN "user_name" TYPE"#)
             .unwrap();

@@ -42,7 +42,9 @@ mod type_change_migration_tests {
                 generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
 
             assert_eq!(up_sql.len(), 1);
-            assert!(up_sql[0].contains(r#"ALTER TABLE "users" ALTER COLUMN "age" TYPE VARCHAR(50)"#));
+            assert!(
+                up_sql[0].contains(r#"ALTER TABLE "users" ALTER COLUMN "age" TYPE VARCHAR(50)"#)
+            );
             // Numeric → String は USING句不要
             assert!(!up_sql[0].contains("USING"));
         }
@@ -71,7 +73,9 @@ mod type_change_migration_tests {
                 generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
 
             assert_eq!(up_sql.len(), 1);
-            assert!(up_sql[0].contains(r#"ALTER TABLE "products" ALTER COLUMN "price" TYPE INTEGER"#));
+            assert!(
+                up_sql[0].contains(r#"ALTER TABLE "products" ALTER COLUMN "price" TYPE INTEGER"#)
+            );
             // String → Numeric は USING句必要
             assert!(up_sql[0].contains("USING"));
         }
@@ -121,9 +125,8 @@ mod type_change_migration_tests {
                 generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
 
             assert_eq!(up_sql.len(), 1);
-            assert!(
-                up_sql[0].contains(r#"ALTER TABLE "events" ALTER COLUMN "created_at" TYPE VARCHAR(100)"#)
-            );
+            assert!(up_sql[0]
+                .contains(r#"ALTER TABLE "events" ALTER COLUMN "created_at" TYPE VARCHAR(100)"#));
             // DateTime → String は USING句不要
             assert!(!up_sql[0].contains("USING"));
         }

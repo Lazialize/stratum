@@ -204,7 +204,10 @@ impl SqlGenerator for PostgresSqlGenerator {
     }
 
     fn generate_drop_enum_type(&self, enum_name: &str) -> Vec<String> {
-        vec![format!("DROP TYPE {}", quote_identifier_postgres(enum_name))]
+        vec![format!(
+            "DROP TYPE {}",
+            quote_identifier_postgres(enum_name)
+        )]
     }
 
     fn generate_alter_column_type(
@@ -276,10 +279,7 @@ impl SqlGenerator for PostgresSqlGenerator {
         if !source_is_auto && target_is_auto {
             let sequence_name = format!("{}_{}_seq", table.name, column_name);
             let quoted_sequence = quote_identifier_postgres(&sequence_name);
-            statements.push(format!(
-                "CREATE SEQUENCE IF NOT EXISTS {}",
-                quoted_sequence
-            ));
+            statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", quoted_sequence));
             // 既存データがある場合に備えてシーケンスを最大値に初期化
             // COALESCE(..., 0) により空テーブルでは nextval() が 1 を返す
             // 第3引数 true により次の nextval() は max+1 を返す
@@ -641,7 +641,10 @@ mod tests {
         let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE BIGINT"#);
+        assert_eq!(
+            sql[0],
+            r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE BIGINT"#
+        );
     }
 
     #[test]
@@ -751,7 +754,10 @@ mod tests {
 
         assert_eq!(sql.len(), 1);
         // Down方向なので old_type (INTEGER) に戻す
-        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE INTEGER"#);
+        assert_eq!(
+            sql[0],
+            r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE INTEGER"#
+        );
     }
 
     #[test]
@@ -773,7 +779,10 @@ mod tests {
         let sql = generator.generate_alter_column_type(&table, &diff, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "name" TYPE TEXT"#);
+        assert_eq!(
+            sql[0],
+            r#"ALTER TABLE "users" ALTER COLUMN "name" TYPE TEXT"#
+        );
     }
 
     #[test]
@@ -833,7 +842,10 @@ mod tests {
         let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#);
+        assert_eq!(
+            sql[0],
+            r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#
+        );
     }
 
     #[test]
@@ -862,7 +874,10 @@ mod tests {
         let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Down);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#);
+        assert_eq!(
+            sql[0],
+            r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#
+        );
     }
 
     // ==========================================
@@ -935,7 +950,10 @@ mod tests {
         assert_eq!(sql.len(), 5);
 
         // 最初は型変更SQL（BIGINT、SERIALではない）
-        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE BIGINT"#);
+        assert_eq!(
+            sql[0],
+            r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE BIGINT"#
+        );
 
         // シーケンス関連SQL
         assert!(sql[1].contains("CREATE SEQUENCE"));
@@ -1010,7 +1028,10 @@ mod tests {
 
         // 型変更SQL(1) + DEFAULTドロップ(1) + シーケンス削除(1) = 3
         assert_eq!(sql.len(), 3);
-        assert_eq!(sql[0], r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE INTEGER"#);
+        assert_eq!(
+            sql[0],
+            r#"ALTER TABLE "users" ALTER COLUMN "id" TYPE INTEGER"#
+        );
         assert!(sql[1].contains("DROP DEFAULT"));
         assert!(sql[2].contains("DROP SEQUENCE IF EXISTS"));
     }

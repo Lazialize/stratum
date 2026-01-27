@@ -599,7 +599,10 @@ mod tests {
         let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Up);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#);
+        assert_eq!(
+            sql[0],
+            r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#
+        );
     }
 
     #[test]
@@ -628,6 +631,9 @@ mod tests {
         let sql = generator.generate_rename_column(&table, &renamed, MigrationDirection::Down);
 
         assert_eq!(sql.len(), 1);
-        assert_eq!(sql[0], r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#);
+        assert_eq!(
+            sql[0],
+            r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#
+        );
     }
 }

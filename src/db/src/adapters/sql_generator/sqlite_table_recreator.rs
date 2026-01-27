@@ -369,7 +369,10 @@ mod tests {
         assert!(statements[2].starts_with(r#"CREATE TABLE "new_users""#));
         assert!(statements[3].starts_with(r#"INSERT INTO "new_users""#));
         assert_eq!(statements[4], r#"DROP TABLE "users""#);
-        assert_eq!(statements[5], r#"ALTER TABLE "new_users" RENAME TO "users""#);
+        assert_eq!(
+            statements[5],
+            r#"ALTER TABLE "new_users" RENAME TO "users""#
+        );
         // インデックスがない場合、次はCOMMIT
         assert!(statements.contains(&"COMMIT".to_string()));
         assert!(statements.contains(&"PRAGMA foreign_keys=on".to_string()));
