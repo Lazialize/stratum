@@ -141,7 +141,8 @@ tables:
           - id
 "#;
 
-            let (up_sql, down_sql) = generate_migration_sql(old_yaml, new_yaml, Dialect::PostgreSQL);
+            let (up_sql, down_sql) =
+                generate_migration_sql(old_yaml, new_yaml, Dialect::PostgreSQL);
 
             // 両方のテーブルで型変更が生成される
             assert!(
