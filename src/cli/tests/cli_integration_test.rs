@@ -323,11 +323,25 @@ tables:
 
         /// generateコマンドを実行
         fn generate(&self, description: &str) -> Result<String, String> {
+            self.generate_with_allow(description, false)
+        }
+
+        /// generateコマンドを実行（破壊的変更許可）
+        fn generate_allow_destructive(&self, description: &str) -> Result<String, String> {
+            self.generate_with_allow(description, true)
+        }
+
+        fn generate_with_allow(
+            &self,
+            description: &str,
+            allow_destructive: bool,
+        ) -> Result<String, String> {
             let handler = GenerateCommandHandler::new();
             let command = GenerateCommand {
                 project_path: self.project_path.clone(),
                 description: Some(description.to_string()),
                 dry_run: false,
+                allow_destructive,
             };
 
             handler.execute(&command).map_err(|e| e.to_string())
@@ -335,12 +349,22 @@ tables:
 
         /// applyコマンドを実行
         async fn apply(&self) -> Result<String, String> {
+            self.apply_with_allow(false).await
+        }
+
+        /// applyコマンドを実行（破壊的変更許可）
+        async fn apply_allow_destructive(&self) -> Result<String, String> {
+            self.apply_with_allow(true).await
+        }
+
+        async fn apply_with_allow(&self, allow_destructive: bool) -> Result<String, String> {
             let handler = ApplyCommandHandler::new();
             let command = ApplyCommand {
                 project_path: self.project_path.clone(),
                 dry_run: false,
                 env: "development".to_string(),
                 timeout: None,
+                allow_destructive,
             };
 
             handler.execute(&command).await.map_err(|e| e.to_string())
@@ -354,6 +378,7 @@ tables:
                 dry_run: true,
                 env: "development".to_string(),
                 timeout: None,
+                allow_destructive: false,
             };
 
             handler.execute(&command).await.map_err(|e| e.to_string())
@@ -903,8 +928,10 @@ tables:
             "name",
             "display_name",
         );
-        project.generate("rename_name_to_display_name").unwrap();
-        project.apply().await.unwrap();
+        project
+            .generate_allow_destructive("rename_name_to_display_name")
+            .unwrap();
+        project.apply_allow_destructive().await.unwrap();
 
         // 3つのマイグレーションが生成されている
         assert_eq!(project.migration_count(), 3);

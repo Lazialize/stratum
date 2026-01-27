@@ -17,6 +17,7 @@ See `ROADMAP.md` for planned features and TODOs.
 - **🔍 Migration Status Tracking**: Track applied and pending migrations
 - **⬆️ Apply & Rollback**: Apply migrations or rollback with confidence
 - **📤 Schema Export**: Export existing database schemas to code
+- **🛡️ Destructive Change Guard**: Prevent accidental data loss with explicit confirmation
 - **🗄️ Multi-Database Support**: PostgreSQL, MySQL, and SQLite
 
 ## Installation
@@ -179,10 +180,18 @@ strata generate --description "add user email column"
 
 # Auto-generate description
 strata generate
+
+# Dry run to preview SQL and destructive changes
+strata generate --dry-run
+
+# Allow destructive changes (DROP, RENAME, etc.)
+strata generate --allow-destructive
 ```
 
 **Options:**
 - `-d, --description <DESCRIPTION>` - Description for the migration
+- `--dry-run` - Show SQL without creating files
+- `--allow-destructive` - Allow destructive changes (DROP TABLE, DROP COLUMN, RENAME, ENUM removal)
 
 ### `apply` - Apply Migrations
 
@@ -197,12 +206,16 @@ strata apply --dry-run
 
 # Apply to production with timeout
 strata apply --env production --timeout 30
+
+# Allow destructive changes
+strata apply --allow-destructive
 ```
 
 **Options:**
 - `--dry-run` - Show SQL without executing
 - `-e, --env <ENV>` - Target environment (default: development)
 - `--timeout <SECONDS>` - Timeout for database operations
+- `--allow-destructive` - Allow destructive changes (DROP TABLE, DROP COLUMN, RENAME, ENUM removal)
 
 ### `rollback` - Rollback Migrations
 
@@ -701,6 +714,108 @@ The checksum ensures migration integrity - any modification to the migration aft
 - **Commit migration files** to version control
 - **Don't commit** `.strata.yaml` if it contains sensitive data
 - Use **`.gitignore`** for database files and credentials
+
+## Destructive Change Safety Guard
+
+Strata includes a safety mechanism to prevent accidental data loss from destructive schema changes.
+
+### What Are Destructive Changes?
+
+Destructive changes are schema modifications that can cause data loss or application compatibility issues:
+
+| Change Type | Example | Risk |
+|-------------|---------|------|
+| **Table Drop** | `DROP TABLE users` | All data in the table is lost |
+| **Column Drop** | `ALTER TABLE users DROP COLUMN email` | Column data is lost |
+| **Column Rename** | `ALTER TABLE users RENAME COLUMN name TO full_name` | Application code may break |
+| **ENUM Drop** | `DROP TYPE status_enum` | References become invalid |
+| **ENUM Recreate** | Removing values from an ENUM | Existing data may become invalid |
+
+### Default Behavior (Deny by Default)
+
+By default, Strata **refuses** to generate or apply migrations containing destructive changes:
+
+```bash
+$ strata generate
+Error: Destructive changes detected
+
+Tables to be dropped: users, posts
+Columns to be dropped:
+  - products: legacy_field, unused_column
+
+To proceed, choose one of the following:
+  1. Review changes: strata generate --dry-run
+  2. Allow destructive changes: strata generate --allow-destructive
+  3. Reconsider your schema changes
+```
+
+### Allowing Destructive Changes
+
+To proceed with destructive changes, use the `--allow-destructive` flag:
+
+```bash
+# Generate migration with destructive changes
+strata generate --allow-destructive
+
+# Apply migration with destructive changes
+strata apply --allow-destructive
+```
+
+### Recommended Workflow
+
+1. **Preview first**: Use `--dry-run` to see what will happen
+   ```bash
+   strata generate --dry-run
+   ```
+
+2. **Review the changes**: Ensure you understand the impact
+
+3. **Generate with explicit permission**:
+   ```bash
+   strata generate --allow-destructive --description "drop legacy tables"
+   ```
+
+4. **Apply with explicit permission**:
+   ```bash
+   strata apply --allow-destructive
+   ```
+
+### Migration Metadata
+
+When you generate a migration with destructive changes, the metadata is recorded in `.meta.yaml`:
+
+```yaml
+version: "20260125120000"
+description: "drop legacy tables"
+dialect: postgresql
+checksum: "abc123..."
+destructive_changes:
+  tables_dropped:
+    - legacy_users
+  columns_dropped:
+    - table: products
+      columns:
+        - old_field
+```
+
+This metadata is used by `strata apply` to enforce the safety guard, even if the migration was generated on another machine.
+
+### Legacy Migrations
+
+Migrations created before the destructive change guard feature (without `destructive_changes` field) are treated as potentially destructive and require `--allow-destructive` to apply:
+
+```bash
+$ strata apply
+Error: Destructive migration detected
+
+Migration: 20250101120000
+⚠ Legacy migration format detected
+
+To proceed, choose one of the following:
+  1. Review SQL: strata apply --dry-run
+  2. Allow destructive changes: strata apply --allow-destructive
+  3. Regenerate migration with current version of strata
+```
 
 ## Troubleshooting
 

@@ -2,6 +2,7 @@
 // 各CLIコマンドの実装
 
 pub mod apply;
+pub mod destructive_change_formatter;
 pub mod export;
 pub mod generate;
 pub mod init;

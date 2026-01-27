@@ -146,6 +146,40 @@ mod cli_tests {
         }
     }
 
+    /// generate コマンドの --allow-destructive オプションがパース可能であることを確認
+    #[test]
+    fn test_generate_allow_destructive_option() {
+        use strata::cli::Cli;
+
+        let cli = Cli::try_parse_from(["strata", "generate", "--allow-destructive"]).unwrap();
+
+        match cli.command {
+            strata::cli::Commands::Generate {
+                allow_destructive, ..
+            } => {
+                assert!(allow_destructive);
+            }
+            _ => panic!("Expected Generate command"),
+        }
+    }
+
+    /// apply コマンドの --allow-destructive オプションがパース可能であることを確認
+    #[test]
+    fn test_apply_allow_destructive_option() {
+        use strata::cli::Cli;
+
+        let cli = Cli::try_parse_from(["strata", "apply", "--allow-destructive"]).unwrap();
+
+        match cli.command {
+            strata::cli::Commands::Apply {
+                allow_destructive, ..
+            } => {
+                assert!(allow_destructive);
+            }
+            _ => panic!("Expected Apply command"),
+        }
+    }
+
     /// rollback コマンドの --steps オプションがパース可能であることを確認
     #[test]
     fn test_rollback_steps_option() {

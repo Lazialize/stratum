@@ -46,6 +46,7 @@ pub struct MigrationPipeline<'a> {
     old_schema: Option<&'a Schema>,
     new_schema: Option<&'a Schema>,
     dialect: Dialect,
+    allow_destructive: bool,
 }
 
 impl<'a> MigrationPipeline<'a> {
@@ -61,6 +62,7 @@ impl<'a> MigrationPipeline<'a> {
             old_schema: None,
             new_schema: None,
             dialect,
+            allow_destructive: false,
         }
     }
 
@@ -73,6 +75,12 @@ impl<'a> MigrationPipeline<'a> {
     pub fn with_schemas(mut self, old_schema: &'a Schema, new_schema: &'a Schema) -> Self {
         self.old_schema = Some(old_schema);
         self.new_schema = Some(new_schema);
+        self
+    }
+
+    /// 破壊的変更を許可するか設定
+    pub fn with_allow_destructive(mut self, allow_destructive: bool) -> Self {
+        self.allow_destructive = allow_destructive;
         self
     }
 
@@ -299,11 +307,13 @@ impl<'a> MigrationPipeline<'a> {
                 .modified_enums
                 .iter()
                 .any(|e| matches!(e.change_kind, EnumChangeKind::Recreate)))
-            && !self.diff.enum_recreate_allowed
+            && !self.allow_destructive
         {
             return Err(PipelineStageError {
                 stage: "enum_statements".to_string(),
-                message: "Enum recreation is required but not allowed. Enable enum_recreate_allowed to proceed.".to_string(),
+                message:
+                    "Enum recreation is required but not allowed. Use --allow-destructive to proceed."
+                        .to_string(),
             });
         }
 
@@ -648,7 +658,6 @@ mod tests {
     #[test]
     fn test_pipeline_enum_recreate_with_opt_in() {
         let mut diff = SchemaDiff::new();
-        diff.enum_recreate_allowed = true;
         diff.modified_enums.push(EnumDiff {
             enum_name: "status".to_string(),
             old_values: vec!["active".to_string(), "inactive".to_string()],
@@ -662,7 +671,8 @@ mod tests {
             }],
         });
 
-        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let pipeline =
+            MigrationPipeline::new(&diff, Dialect::PostgreSQL).with_allow_destructive(true);
         let result = pipeline.generate_up();
 
         assert!(result.is_ok());
@@ -704,7 +714,6 @@ mod tests {
     fn test_pipeline_drop_table() {
         let mut diff = SchemaDiff::new();
         diff.removed_tables.push("users".to_string());
-        diff.enum_recreate_allowed = true; // 削除を許可
 
         let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
         let result = pipeline.generate_up();

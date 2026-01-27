@@ -105,6 +105,10 @@ pub enum Commands {
         /// Dry run - show SQL without creating files
         #[arg(long)]
         dry_run: bool,
+
+        /// Allow destructive changes (DROP, RENAME, ENUM removal)
+        #[arg(long)]
+        allow_destructive: bool,
     },
 
     /// Apply pending migrations to the database
@@ -133,6 +137,10 @@ pub enum Commands {
         /// Timeout for database operations (in seconds)
         #[arg(long, value_name = "SECONDS")]
         timeout: Option<u64>,
+
+        /// Allow destructive changes (DROP, RENAME, ENUM removal)
+        #[arg(long)]
+        allow_destructive: bool,
     },
 
     /// Rollback applied migrations

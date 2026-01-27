@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::core::config::Dialect;
+use crate::core::destructive_change_report::DestructiveChangeReport;
 
 /// マイグレーションファイル
 ///
@@ -35,6 +36,55 @@ pub struct MigrationFile {
 
     /// マイグレーションファイルのチェックサム（SHA-256）
     pub checksum: String,
+}
+
+/// マイグレーションメタデータ
+///
+/// .meta.yaml に保存される情報を表現します。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MigrationMetadata {
+    /// マイグレーションバージョン
+    pub version: String,
+
+    /// マイグレーションの説明
+    pub description: String,
+
+    /// 対象データベース方言
+    pub dialect: Dialect,
+
+    /// マイグレーションファイルのチェックサム
+    pub checksum: String,
+
+    /// 破壊的変更の検出結果
+    #[serde(default)]
+    pub destructive_changes: Option<DestructiveChangeReport>,
+}
+
+/// 破壊的変更の判定結果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DestructiveChangeStatus {
+    /// 破壊的変更なし
+    None,
+    /// 破壊的変更あり
+    Present,
+    /// 旧メタデータ（判定不能のため破壊的扱い）
+    Legacy,
+}
+
+impl MigrationMetadata {
+    /// 破壊的変更の有無を判定
+    pub fn destructive_change_status(&self) -> DestructiveChangeStatus {
+        match &self.destructive_changes {
+            None => DestructiveChangeStatus::Legacy,
+            Some(report) => {
+                if report.has_destructive_changes() {
+                    DestructiveChangeStatus::Present
+                } else {
+                    DestructiveChangeStatus::None
+                }
+            }
+        }
+    }
 }
 
 impl MigrationFile {
@@ -283,6 +333,7 @@ impl Default for MigrationHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::destructive_change_report::DestructiveChangeReport;
 
     #[test]
     fn test_migration_file_new() {
@@ -357,5 +408,70 @@ mod tests {
         assert_eq!(history.get_latest_version(), Some("20260121120000"));
         assert!(history.is_applied("20260121120000"));
         assert!(!history.is_applied("20260121120001"));
+    }
+
+    #[test]
+    fn test_metadata_missing_destructive_changes_is_legacy() {
+        let yaml = r#"version: "20260125120000"
+description: "legacy"
+dialect: postgresql
+checksum: "abc123"
+"#;
+
+        let metadata: MigrationMetadata =
+            serde_saphyr::from_str(yaml).expect("Failed to deserialize metadata");
+
+        assert_eq!(metadata.destructive_changes, None);
+        assert_eq!(
+            metadata.destructive_change_status(),
+            DestructiveChangeStatus::Legacy
+        );
+    }
+
+    #[test]
+    fn test_metadata_empty_destructive_changes_is_none() {
+        let yaml = r#"version: "20260125120000"
+description: "safe"
+dialect: postgresql
+checksum: "abc123"
+destructive_changes: {}
+"#;
+
+        let metadata: MigrationMetadata =
+            serde_saphyr::from_str(yaml).expect("Failed to deserialize metadata");
+
+        assert_eq!(
+            metadata.destructive_changes,
+            Some(DestructiveChangeReport::new())
+        );
+        assert_eq!(
+            metadata.destructive_change_status(),
+            DestructiveChangeStatus::None
+        );
+    }
+
+    #[test]
+    fn test_metadata_destructive_changes_present() {
+        let yaml = r#"version: "20260125120000"
+description: "drop"
+dialect: postgresql
+checksum: "abc123"
+destructive_changes:
+  tables_dropped:
+    - "users"
+"#;
+
+        let metadata: MigrationMetadata =
+            serde_saphyr::from_str(yaml).expect("Failed to deserialize metadata");
+
+        assert!(metadata
+            .destructive_changes
+            .as_ref()
+            .expect("report should exist")
+            .has_destructive_changes());
+        assert_eq!(
+            metadata.destructive_change_status(),
+            DestructiveChangeStatus::Present
+        );
     }
 }

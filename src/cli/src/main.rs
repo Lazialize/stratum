@@ -62,12 +62,14 @@ async fn run_command(cli: Cli) -> Result<String> {
         Commands::Generate {
             description,
             dry_run,
+            allow_destructive,
         } => {
             let handler = GenerateCommandHandler::new();
             let command = GenerateCommand {
                 project_path,
                 description,
                 dry_run,
+                allow_destructive,
             };
             handler.execute(&command)
         }
@@ -76,6 +78,7 @@ async fn run_command(cli: Cli) -> Result<String> {
             dry_run,
             env,
             timeout,
+            allow_destructive,
         } => {
             let handler = ApplyCommandHandler::new();
             let command = ApplyCommand {
@@ -83,6 +86,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 dry_run,
                 env,
                 timeout,
+                allow_destructive,
             };
             handler.execute(&command).await
         }

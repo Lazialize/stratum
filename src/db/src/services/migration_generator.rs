@@ -4,7 +4,9 @@
 // 内部では MigrationPipeline を使用してSQL生成を行う。
 
 use crate::core::config::Dialect;
+use crate::core::destructive_change_report::DestructiveChangeReport;
 use crate::core::error::ValidationResult;
+use crate::core::migration::MigrationMetadata;
 use crate::core::schema::Schema;
 use crate::core::schema_diff::SchemaDiff;
 use crate::services::migration_pipeline::MigrationPipeline;
@@ -89,11 +91,7 @@ impl MigrationGenerator {
     ///
     /// UP SQL文字列（エラーの場合はエラーメッセージ）
     pub fn generate_up_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> Result<String, String> {
-        let pipeline = MigrationPipeline::new(diff, dialect);
-        pipeline
-            .generate_up()
-            .map(|(sql, _)| sql)
-            .map_err(|e| e.message)
+        self.generate_up_sql_with_options(diff, dialect, false)
     }
 
     /// DOWN SQLを生成
@@ -109,7 +107,33 @@ impl MigrationGenerator {
     ///
     /// DOWN SQL文字列（エラーの場合はエラーメッセージ）
     pub fn generate_down_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> Result<String, String> {
-        let pipeline = MigrationPipeline::new(diff, dialect);
+        self.generate_down_sql_with_options(diff, dialect, false)
+    }
+
+    /// UP SQL文字列（破壊的変更許可付き）
+    pub fn generate_up_sql_with_options(
+        &self,
+        diff: &SchemaDiff,
+        dialect: Dialect,
+        allow_destructive: bool,
+    ) -> Result<String, String> {
+        let pipeline =
+            MigrationPipeline::new(diff, dialect).with_allow_destructive(allow_destructive);
+        pipeline
+            .generate_up()
+            .map(|(sql, _)| sql)
+            .map_err(|e| e.message)
+    }
+
+    /// DOWN SQL文字列（破壊的変更許可付き）
+    pub fn generate_down_sql_with_options(
+        &self,
+        diff: &SchemaDiff,
+        dialect: Dialect,
+        allow_destructive: bool,
+    ) -> Result<String, String> {
+        let pipeline =
+            MigrationPipeline::new(diff, dialect).with_allow_destructive(allow_destructive);
         pipeline
             .generate_down()
             .map(|(sql, _)| sql)
@@ -134,11 +158,22 @@ impl MigrationGenerator {
         description: &str,
         dialect: Dialect,
         checksum: &str,
+        destructive_changes: Option<DestructiveChangeReport>,
     ) -> String {
-        format!(
-            "version: {}\ndescription: {}\ndialect: {:?}\nchecksum: {}\n",
-            version, description, dialect, checksum
-        )
+        let metadata = MigrationMetadata {
+            version: version.to_string(),
+            description: description.to_string(),
+            dialect,
+            checksum: checksum.to_string(),
+            destructive_changes,
+        };
+
+        serde_saphyr::to_string(&metadata).unwrap_or_else(|_| {
+            format!(
+                "version: {}\ndescription: {}\ndialect: {}\nchecksum: {}\n",
+                version, description, dialect, checksum
+            )
+        })
     }
 
     /// UP SQLを生成（スキーマ付き、型変更対応）
@@ -163,8 +198,7 @@ impl MigrationGenerator {
         new_schema: &Schema,
         dialect: Dialect,
     ) -> Result<(String, ValidationResult), String> {
-        let pipeline = MigrationPipeline::new(diff, dialect).with_schemas(old_schema, new_schema);
-        pipeline.generate_up().map_err(|e| e.to_string())
+        self.generate_up_sql_with_schemas_and_options(diff, old_schema, new_schema, dialect, false)
     }
 
     /// DOWN SQLを生成（スキーマ付き、型変更対応）
@@ -189,7 +223,38 @@ impl MigrationGenerator {
         new_schema: &Schema,
         dialect: Dialect,
     ) -> Result<(String, ValidationResult), String> {
-        let pipeline = MigrationPipeline::new(diff, dialect).with_schemas(old_schema, new_schema);
+        self.generate_down_sql_with_schemas_and_options(
+            diff, old_schema, new_schema, dialect, false,
+        )
+    }
+
+    /// UP SQLを生成（スキーマ付き、破壊的変更許可付き）
+    pub fn generate_up_sql_with_schemas_and_options(
+        &self,
+        diff: &SchemaDiff,
+        old_schema: &Schema,
+        new_schema: &Schema,
+        dialect: Dialect,
+        allow_destructive: bool,
+    ) -> Result<(String, ValidationResult), String> {
+        let pipeline = MigrationPipeline::new(diff, dialect)
+            .with_schemas(old_schema, new_schema)
+            .with_allow_destructive(allow_destructive);
+        pipeline.generate_up().map_err(|e| e.to_string())
+    }
+
+    /// DOWN SQLを生成（スキーマ付き、破壊的変更許可付き）
+    pub fn generate_down_sql_with_schemas_and_options(
+        &self,
+        diff: &SchemaDiff,
+        old_schema: &Schema,
+        new_schema: &Schema,
+        dialect: Dialect,
+        allow_destructive: bool,
+    ) -> Result<(String, ValidationResult), String> {
+        let pipeline = MigrationPipeline::new(diff, dialect)
+            .with_schemas(old_schema, new_schema)
+            .with_allow_destructive(allow_destructive);
         pipeline.generate_down().map_err(|e| e.to_string())
     }
 }
@@ -247,10 +312,15 @@ mod tests {
             "create_users",
             Dialect::PostgreSQL,
             "abc123",
+            Some(DestructiveChangeReport::new()),
         );
 
-        assert!(metadata.contains("version: 20260122120000"));
+        assert!(
+            metadata.contains("version: 20260122120000")
+                || metadata.contains("version: \"20260122120000\"")
+        );
         assert!(metadata.contains("description: create_users"));
+        assert!(metadata.contains("destructive_changes"));
     }
 
     #[test]
@@ -313,7 +383,6 @@ mod tests {
     fn test_generate_up_sql_enum_recreate_with_opt_in() {
         let generator = MigrationGenerator::new();
         let mut diff = SchemaDiff::new();
-        diff.enum_recreate_allowed = true;
         diff.modified_enums.push(EnumDiff {
             enum_name: "status".to_string(),
             old_values: vec!["active".to_string(), "inactive".to_string()],
@@ -328,7 +397,7 @@ mod tests {
         });
 
         let sql = generator
-            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .generate_up_sql_with_options(&diff, Dialect::PostgreSQL, true)
             .unwrap();
 
         assert!(sql.contains(r#"ALTER TYPE "status" RENAME TO "status_old""#));

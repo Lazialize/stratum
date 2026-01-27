@@ -147,6 +147,7 @@ mod migration_generator_tests {
             description,
             Dialect::PostgreSQL,
             checksum,
+            Some(strata::core::destructive_change_report::DestructiveChangeReport::new()),
         );
 
         assert!(metadata.contains("version:"));
@@ -156,6 +157,7 @@ mod migration_generator_tests {
         assert!(metadata.contains("dialect:"));
         assert!(metadata.contains("checksum:"));
         assert!(metadata.contains("abc123def456"));
+        assert!(metadata.contains("destructive_changes"));
     }
 
     /// マイグレーション生成の統合テスト
@@ -199,5 +201,32 @@ mod migration_generator_tests {
         // usersテーブルが追加されたので、DOWNではDROP TABLE users
         // ただし、added_tablesからDOWN SQLを生成する場合
         assert!(down_sql.contains("DROP TABLE") || down_sql.is_empty());
+    }
+
+    #[test]
+    fn test_enum_recreate_requires_allow_destructive() {
+        use strata::core::schema_diff::{EnumChangeKind, EnumColumnRef, EnumDiff};
+
+        let generator = MigrationGenerator::new();
+        let mut diff = SchemaDiff::new();
+        diff.modified_enums.push(EnumDiff {
+            enum_name: "status".to_string(),
+            old_values: vec!["active".to_string(), "inactive".to_string()],
+            new_values: vec!["inactive".to_string(), "active".to_string()],
+            added_values: Vec::new(),
+            removed_values: Vec::new(),
+            change_kind: EnumChangeKind::Recreate,
+            columns: vec![EnumColumnRef {
+                table_name: "users".to_string(),
+                column_name: "status".to_string(),
+            }],
+        });
+
+        let without_allow =
+            generator.generate_up_sql_with_options(&diff, Dialect::PostgreSQL, false);
+        assert!(without_allow.is_err());
+
+        let with_allow = generator.generate_up_sql_with_options(&diff, Dialect::PostgreSQL, true);
+        assert!(with_allow.is_ok());
     }
 }

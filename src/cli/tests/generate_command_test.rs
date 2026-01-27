@@ -26,6 +26,7 @@ mod generate_command_tests {
             project_path: project_path.to_path_buf(),
             description: Some("test migration".to_string()),
             dry_run: false,
+            allow_destructive: false,
         };
 
         let result = handler.execute(&command);
@@ -50,6 +51,7 @@ mod generate_command_tests {
             project_path: project_path.to_path_buf(),
             description: Some("test migration".to_string()),
             dry_run: false,
+            allow_destructive: false,
         };
 
         let result = handler.execute(&command);
@@ -72,6 +74,7 @@ mod generate_command_tests {
             project_path: project_path.to_path_buf(),
             description: Some("initial migration".to_string()),
             dry_run: false,
+            allow_destructive: false,
         };
 
         let result = handler.execute(&command);
@@ -97,6 +100,7 @@ mod generate_command_tests {
             project_path: project_path.to_path_buf(),
             description: Some("create users table".to_string()),
             dry_run: false,
+            allow_destructive: false,
         };
 
         let result = handler.execute(&command);
@@ -134,6 +138,7 @@ mod generate_command_tests {
             project_path: project_path.to_path_buf(),
             description: None, // descriptionなし
             dry_run: false,
+            allow_destructive: false,
         };
 
         let result = handler.execute(&command);
@@ -157,6 +162,7 @@ mod generate_command_tests {
             project_path: project_path.to_path_buf(),
             description: Some("create orders table".to_string()),
             dry_run: false,
+            allow_destructive: false,
         };
 
         handler.execute(&command).unwrap();
@@ -211,6 +217,7 @@ mod generate_command_tests {
             project_path: project_path.to_path_buf(),
             description: Some("initial schema".to_string()),
             dry_run: false,
+            allow_destructive: false,
         };
 
         let result = handler.execute(&command);
@@ -245,6 +252,7 @@ mod generate_command_tests {
             project_path: project_path.to_path_buf(),
             description: Some("create customers".to_string()),
             dry_run: false,
+            allow_destructive: false,
         };
 
         let result = handler.execute(&command);
