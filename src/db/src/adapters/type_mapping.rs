@@ -3,7 +3,7 @@
 // 方言に依存しない共通インターフェースで ColumnType ↔ SQL型文字列 の
 // 双方向変換を一元管理します。
 
-use crate::adapters::sql_quote::{quote_identifier_mysql, quote_identifier_postgres};
+use crate::adapters::sql_quote::quote_identifier_postgres;
 use crate::core::config::Dialect;
 use crate::core::schema::ColumnType;
 use anyhow::Result;
@@ -343,7 +343,9 @@ impl TypeMapper for MySqlTypeMapper {
             ColumnType::TIME { .. } => "TIME".to_string(),
             ColumnType::BLOB => "BLOB".to_string(),
             ColumnType::UUID => "CHAR(36)".to_string(),
-            ColumnType::Enum { name } => quote_identifier_mysql(name),
+            // MySQLは名前付きENUM型をサポートしないため、TEXTにフォールバック
+            // MySQL固有のインラインENUMはDialectSpecific { kind: "ENUM", ... } を使用
+            ColumnType::Enum { .. } => "TEXT".to_string(),
             ColumnType::DialectSpecific { kind, params } => {
                 self.format_dialect_specific(kind, params)
             }

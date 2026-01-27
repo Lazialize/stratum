@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 // sql_quoteモジュールから識別子クォート関数を再エクスポート
 pub(crate) use crate::adapters::sql_quote::{
     quote_columns_mysql, quote_columns_postgres, quote_columns_sqlite, quote_identifier_mysql,
-    quote_identifier_postgres, quote_identifier_sqlite,
+    quote_identifier_postgres, quote_identifier_sqlite, quote_regclass_postgres,
 };
 
 /// PostgreSQL/MySQLの識別子最大長

@@ -4,7 +4,7 @@
 
 use crate::adapters::sql_generator::{
     build_column_definition, generate_fk_constraint_name, quote_columns_postgres,
-    quote_identifier_postgres, MigrationDirection, SqlGenerator,
+    quote_identifier_postgres, quote_regclass_postgres, MigrationDirection, SqlGenerator,
 };
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
@@ -279,17 +279,18 @@ impl SqlGenerator for PostgresSqlGenerator {
         if !source_is_auto && target_is_auto {
             let sequence_name = format!("{}_{}_seq", table.name, column_name);
             let quoted_sequence = quote_identifier_postgres(&sequence_name);
+            let regclass_literal = quote_regclass_postgres(&sequence_name);
             statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", quoted_sequence));
             // 既存データがある場合に備えてシーケンスを最大値に初期化
             // COALESCE(..., 0) により空テーブルでは nextval() が 1 を返す
             // 第3引数 true により次の nextval() は max+1 を返す
             statements.push(format!(
-                "SELECT setval('{}', COALESCE((SELECT MAX({}) FROM {}), 0), true)",
-                quoted_sequence, quoted_column, quoted_table
+                "SELECT setval({}, COALESCE((SELECT MAX({}) FROM {}), 0), true)",
+                regclass_literal, quoted_column, quoted_table
             ));
             statements.push(format!(
-                "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval('{}')",
-                quoted_table, quoted_column, quoted_sequence
+                "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval({})",
+                quoted_table, quoted_column, regclass_literal
             ));
             statements.push(format!(
                 "ALTER SEQUENCE {} OWNED BY {}.{}",

@@ -72,6 +72,27 @@ pub fn quote_columns_sqlite(columns: &[String]) -> String {
         .join(", ")
 }
 
+/// PostgreSQL regclass用文字列リテラル生成
+///
+/// シーケンス名などをsetval()/nextval()のregclass引数として安全に埋め込むための
+/// 文字列リテラルを生成します。識別子をダブルクォートで囲み、さらにシングルクォートの
+/// 文字列リテラルとしてエスケープします。
+///
+/// # Examples
+/// ```
+/// use strata_db::adapters::sql_quote::quote_regclass_postgres;
+/// assert_eq!(quote_regclass_postgres("users_id_seq"), r#"'"users_id_seq"'"#);
+/// assert_eq!(quote_regclass_postgres("table'name_seq"), r#"'"table''name_seq"'"#);
+/// ```
+pub fn quote_regclass_postgres(name: &str) -> String {
+    // 1. ダブルクォートをエスケープ（識別子内）
+    let escaped_dq = name.replace('"', "\"\"");
+    // 2. シングルクォートをエスケープ（文字列リテラル内）
+    let escaped_sq = escaped_dq.replace('\'', "''");
+    // 3. ダブルクォート付き識別子をシングルクォートの文字列リテラルとして返す
+    format!("'\"{}\"'", escaped_sq)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +297,49 @@ mod tests {
     fn test_quote_columns_sqlite_empty() {
         let columns: Vec<String> = vec![];
         assert_eq!(quote_columns_sqlite(&columns), "");
+    }
+
+    // =========================================================================
+    // PostgreSQL regclass literal tests
+    // =========================================================================
+
+    #[test]
+    fn test_quote_regclass_postgres_simple() {
+        assert_eq!(
+            quote_regclass_postgres("users_id_seq"),
+            r#"'"users_id_seq"'"#
+        );
+    }
+
+    #[test]
+    fn test_quote_regclass_postgres_with_single_quote() {
+        // シングルクォートは文字列リテラル内で '' にエスケープ
+        assert_eq!(
+            quote_regclass_postgres("table'name_seq"),
+            r#"'"table''name_seq"'"#
+        );
+    }
+
+    #[test]
+    fn test_quote_regclass_postgres_with_double_quote() {
+        // ダブルクォートは識別子内で "" にエスケープ
+        assert_eq!(
+            quote_regclass_postgres(r#"table"name_seq"#),
+            r#"'"table""name_seq"'"#
+        );
+    }
+
+    #[test]
+    fn test_quote_regclass_postgres_with_both_quotes() {
+        // ダブルクォートとシングルクォートの両方を含む場合
+        assert_eq!(
+            quote_regclass_postgres(r#"tab"le'name"#),
+            r#"'"tab""le''name"'"#
+        );
+    }
+
+    #[test]
+    fn test_quote_regclass_postgres_reserved_word() {
+        assert_eq!(quote_regclass_postgres("select_seq"), r#"'"select_seq"'"#);
     }
 }
