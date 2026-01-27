@@ -3,7 +3,7 @@
 // 方言に依存しない共通インターフェースで ColumnType ↔ SQL型文字列 の
 // 双方向変換を一元管理します。
 
-use crate::adapters::sql_generator::{quote_identifier_mysql, quote_identifier_postgres};
+use crate::adapters::sql_quote::{quote_identifier_mysql, quote_identifier_postgres};
 use crate::core::config::Dialect;
 use crate::core::schema::ColumnType;
 use anyhow::Result;

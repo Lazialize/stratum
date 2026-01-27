@@ -11,56 +11,14 @@ use crate::core::schema::{Column, ColumnType, EnumDefinition, Index, Table};
 use crate::core::schema_diff::{ColumnDiff, EnumDiff, RenamedColumn};
 use sha2::{Digest, Sha256};
 
+// sql_quoteモジュールから識別子クォート関数を再エクスポート
+pub(crate) use crate::adapters::sql_quote::{
+    quote_columns_mysql, quote_columns_postgres, quote_columns_sqlite, quote_identifier_mysql,
+    quote_identifier_postgres, quote_identifier_sqlite,
+};
+
 /// PostgreSQL/MySQLの識別子最大長
 const MAX_IDENTIFIER_LENGTH: usize = 63;
-
-/// PostgreSQL用識別子クォート（ダブルクォート）
-///
-/// 識別子内のダブルクォートは二重にエスケープします。
-pub(crate) fn quote_identifier_postgres(name: &str) -> String {
-    format!("\"{}\"", name.replace('"', "\"\""))
-}
-
-/// MySQL用識別子クォート（バッククォート）
-///
-/// 識別子内のバッククォートは二重にエスケープします。
-pub(crate) fn quote_identifier_mysql(name: &str) -> String {
-    format!("`{}`", name.replace('`', "``"))
-}
-
-/// SQLite用識別子クォート（ダブルクォート）
-///
-/// 識別子内のダブルクォートは二重にエスケープします。
-pub(crate) fn quote_identifier_sqlite(name: &str) -> String {
-    format!("\"{}\"", name.replace('"', "\"\""))
-}
-
-/// カラム名リストをクォートしてカンマ区切りで結合（PostgreSQL用）
-pub(crate) fn quote_columns_postgres(columns: &[String]) -> String {
-    columns
-        .iter()
-        .map(|c| quote_identifier_postgres(c))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// カラム名リストをクォートしてカンマ区切りで結合（MySQL用）
-pub(crate) fn quote_columns_mysql(columns: &[String]) -> String {
-    columns
-        .iter()
-        .map(|c| quote_identifier_mysql(c))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// カラム名リストをクォートしてカンマ区切りで結合（SQLite用）
-pub(crate) fn quote_columns_sqlite(columns: &[String]) -> String {
-    columns
-        .iter()
-        .map(|c| quote_identifier_sqlite(c))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
 
 /// 外部キー制約名を生成
 ///

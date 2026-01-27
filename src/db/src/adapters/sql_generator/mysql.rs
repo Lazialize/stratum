@@ -85,10 +85,8 @@ impl MysqlSqlGenerator {
         } else {
             ""
         };
-        let mut column = target_column.clone();
-        column.name = column_name.to_string();
         let quoted_name = quote_identifier_mysql(column_name);
-        build_column_definition(&quoted_name, &column, type_str, &[auto_increment])
+        build_column_definition(&quoted_name, target_column, type_str, &[auto_increment])
     }
 }
 
