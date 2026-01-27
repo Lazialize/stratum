@@ -172,8 +172,7 @@ mod cli_tests {
 
         match cli.command {
             strata::cli::Commands::Apply {
-                allow_destructive,
-                ..
+                allow_destructive, ..
             } => {
                 assert!(allow_destructive);
             }

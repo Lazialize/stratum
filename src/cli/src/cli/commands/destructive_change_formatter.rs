@@ -11,9 +11,7 @@ impl DestructiveChangeFormatter {
     pub fn format_error(&self, report: &DestructiveChangeReport, command: &str) -> String {
         let mut output = String::new();
 
-        output.push_str(
-            format!("{}\n\n", "Destructive changes detected".red().bold()).as_str(),
-        );
+        output.push_str(format!("{}\n\n", "Destructive changes detected".red().bold()).as_str());
 
         for line in format_change_lines(report) {
             output.push_str(line.red().to_string().as_str());
@@ -35,9 +33,7 @@ impl DestructiveChangeFormatter {
     pub fn format_legacy_error(&self, version: &str, command: &str) -> String {
         let mut output = String::new();
 
-        output.push_str(
-            format!("{}\n\n", "Destructive migration detected".red().bold()).as_str(),
-        );
+        output.push_str(format!("{}\n\n", "Destructive migration detected".red().bold()).as_str());
         output.push_str(&format!("Migration: {}\n", version));
         output.push_str(&format!(
             "{}\n\n",
@@ -58,7 +54,11 @@ impl DestructiveChangeFormatter {
         let mut output = String::new();
 
         output.push_str(
-            format!("{}\n", "Warning: Destructive changes allowed".yellow().bold()).as_str(),
+            format!(
+                "{}\n",
+                "Warning: Destructive changes allowed".yellow().bold()
+            )
+            .as_str(),
         );
 
         let summary_lines = format_change_lines(report);
@@ -157,9 +157,7 @@ mod tests {
         assert!(output.contains("Enums to be dropped: old_status"));
         assert!(output.contains("Enums to be recreated: priority"));
         assert!(output.contains("Review changes: strata generate --dry-run"));
-        assert!(output.contains(
-            "Allow destructive changes: strata generate --allow-destructive"
-        ));
+        assert!(output.contains("Allow destructive changes: strata generate --allow-destructive"));
     }
 
     #[test]

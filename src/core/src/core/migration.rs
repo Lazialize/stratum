@@ -440,7 +440,10 @@ destructive_changes: {}
         let metadata: MigrationMetadata =
             serde_saphyr::from_str(yaml).expect("Failed to deserialize metadata");
 
-        assert_eq!(metadata.destructive_changes, Some(DestructiveChangeReport::new()));
+        assert_eq!(
+            metadata.destructive_changes,
+            Some(DestructiveChangeReport::new())
+        );
         assert_eq!(
             metadata.destructive_change_status(),
             DestructiveChangeStatus::None

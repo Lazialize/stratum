@@ -640,8 +640,8 @@ mod tests {
             }],
         });
 
-        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)
-            .with_allow_destructive(true);
+        let pipeline =
+            MigrationPipeline::new(&diff, Dialect::PostgreSQL).with_allow_destructive(true);
         let result = pipeline.generate_up();
 
         assert!(result.is_ok());

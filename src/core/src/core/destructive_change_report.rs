@@ -180,8 +180,7 @@ mod tests {
         }
 
         let yaml = r#"version: "20260125120000""#;
-        let parsed: MetadataWrapper =
-            serde_saphyr::from_str(yaml).expect("deserialize metadata");
+        let parsed: MetadataWrapper = serde_saphyr::from_str(yaml).expect("deserialize metadata");
 
         assert_eq!(
             parsed,

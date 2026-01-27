@@ -55,7 +55,7 @@ mod tests {
     };
     use crate::core::schema::{Column, ColumnType};
     use crate::core::schema_diff::{
-        EnumChangeKind, EnumDiff, EnumColumnRef, RenamedColumn, SchemaDiff, TableDiff,
+        EnumChangeKind, EnumColumnRef, EnumDiff, RenamedColumn, SchemaDiff, TableDiff,
     };
 
     fn integer_column(name: &str) -> Column {

@@ -36,7 +36,11 @@ tables:
 "#,
         table_name
     );
-    fs::write(schema_dir.join(format!("{}.yaml", table_name)), schema_content).unwrap();
+    fs::write(
+        schema_dir.join(format!("{}.yaml", table_name)),
+        schema_content,
+    )
+    .unwrap();
 }
 
 fn write_schema_snapshot(project_path: &Path, table_name: &str) {
@@ -56,7 +60,11 @@ tables:
 "#,
         table_name
     );
-    fs::write(migrations_dir.join(".schema_snapshot.yaml"), snapshot_content).unwrap();
+    fs::write(
+        migrations_dir.join(".schema_snapshot.yaml"),
+        snapshot_content,
+    )
+    .unwrap();
 }
 
 fn create_migration(

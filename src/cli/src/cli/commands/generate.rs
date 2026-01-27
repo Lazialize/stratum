@@ -143,10 +143,9 @@ impl GenerateCommandHandler {
         if destructive_report.has_destructive_changes() && !command.allow_destructive {
             if !command.dry_run {
                 let formatter = DestructiveChangeFormatter::new();
-                return Err(anyhow!(formatter.format_error(
-                    &destructive_report,
-                    "strata generate"
-                )));
+                return Err(anyhow!(
+                    formatter.format_error(&destructive_report, "strata generate")
+                ));
             }
         }
 
@@ -198,9 +197,7 @@ impl GenerateCommandHandler {
             && command.allow_destructive
             && !command.dry_run
         {
-            Some(
-                DestructiveChangeFormatter::new().format_warning(&destructive_report),
-            )
+            Some(DestructiveChangeFormatter::new().format_warning(&destructive_report))
         } else {
             None
         };
@@ -403,12 +400,7 @@ impl GenerateCommandHandler {
     ) -> Result<()> {
         use std::fmt::Write;
 
-        writeln!(
-            output,
-            "{}",
-            "⚠ Destructive Changes Detected".red().bold()
-        )
-        .unwrap();
+        writeln!(output, "{}", "⚠ Destructive Changes Detected".red().bold()).unwrap();
 
         for table in &destructive_report.tables_dropped {
             writeln!(output, "  {}", format!("DROP TABLE: {}", table).red()).unwrap();
@@ -439,12 +431,7 @@ impl GenerateCommandHandler {
         }
 
         for enum_name in &destructive_report.enums_dropped {
-            writeln!(
-                output,
-                "  {}",
-                format!("DROP ENUM: {}", enum_name).red()
-            )
-            .unwrap();
+            writeln!(output, "  {}", format!("DROP ENUM: {}", enum_name).red()).unwrap();
         }
 
         for enum_name in &destructive_report.enums_recreated {
@@ -1078,8 +1065,8 @@ mod tests {
 
     #[test]
     fn test_execute_dry_run_with_renames() {
-        use crate::core::error::ValidationResult;
         use crate::core::destructive_change_report::DestructiveChangeReport;
+        use crate::core::error::ValidationResult;
         use crate::core::schema::{Column, ColumnType};
         use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
 
@@ -1144,8 +1131,8 @@ mod tests {
     #[test]
     fn test_dry_run_displays_rename_sql_preview() {
         // Task 6.2: dry-runモードでリネームSQLがプレビュー表示されることを確認
-        use crate::core::error::ValidationResult;
         use crate::core::destructive_change_report::DestructiveChangeReport;
+        use crate::core::error::ValidationResult;
         use crate::core::schema::{Column, ColumnType};
         use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
 
