@@ -24,12 +24,7 @@ impl<'a> MigrationPipeline<'a> {
                 .any(|e| matches!(e.change_kind, EnumChangeKind::Recreate)))
             && !self.allow_destructive
         {
-            return Err(PipelineStageError {
-                stage: "enum_statements".to_string(),
-                message:
-                    "Enum recreation is required but not allowed. Use --allow-destructive to proceed."
-                        .to_string(),
-            });
+            return Err(PipelineStageError::EnumRecreationNotAllowed);
         }
 
         // 新規ENUM作成
@@ -129,7 +124,7 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert_eq!(err.stage, "enum_statements");
+        assert_eq!(err.stage(), "enum_statements");
     }
 
     #[test]

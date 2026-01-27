@@ -122,7 +122,7 @@ impl MigrationGenerator {
         pipeline
             .generate_up()
             .map(|(sql, _)| sql)
-            .map_err(|e| e.message)
+            .map_err(|e| e.to_string())
     }
 
     /// DOWN SQL文字列（破壊的変更許可付き）
@@ -137,7 +137,7 @@ impl MigrationGenerator {
         pipeline
             .generate_down()
             .map(|(sql, _)| sql)
-            .map_err(|e| e.message)
+            .map_err(|e| e.to_string())
     }
 
     /// マイグレーションメタデータを生成

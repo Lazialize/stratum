@@ -15,23 +15,40 @@ use crate::core::config::Dialect;
 use crate::core::error::ValidationResult;
 use crate::core::schema::Schema;
 use crate::core::schema_diff::{ColumnChange, SchemaDiff};
+use thiserror::Error;
 
 /// パイプラインステージでのエラー
-#[derive(Debug, Clone)]
-pub struct PipelineStageError {
-    /// エラーが発生したステージ名
-    pub stage: String,
-    /// エラーメッセージ
-    pub message: String,
+#[derive(Debug, Clone, Error)]
+pub enum PipelineStageError {
+    /// 事前検証（型変更バリデーション）の失敗
+    #[error("[prepare] Type change validation failed:\n{message}")]
+    Prepare {
+        /// バリデーションエラーメッセージ
+        message: String,
+    },
+
+    /// テーブル依存関係の循環参照
+    #[error("[table_statements] {message}")]
+    CircularDependency {
+        /// エラーメッセージ
+        message: String,
+    },
+
+    /// ENUM再作成が許可されていない
+    #[error("[enum_statements] Enum recreation is required but not allowed. Use --allow-destructive to proceed.")]
+    EnumRecreationNotAllowed,
 }
 
-impl std::fmt::Display for PipelineStageError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {}", self.stage, self.message)
+impl PipelineStageError {
+    /// エラーが発生したステージ名を取得
+    pub fn stage(&self) -> &str {
+        match self {
+            PipelineStageError::Prepare { .. } => "prepare",
+            PipelineStageError::CircularDependency { .. } => "table_statements",
+            PipelineStageError::EnumRecreationNotAllowed => "enum_statements",
+        }
     }
 }
-
-impl std::error::Error for PipelineStageError {}
 
 /// マイグレーション生成パイプライン
 ///
@@ -98,17 +115,13 @@ impl<'a> MigrationPipeline<'a> {
         // ステージ1: prepare - 事前検証
         let validation_result = self.stage_prepare()?;
         if !validation_result.is_valid() {
-            return Err(PipelineStageError {
-                stage: "prepare".to_string(),
-                message: format!(
-                    "Type change validation failed:\n{}",
-                    validation_result
-                        .errors
-                        .iter()
-                        .map(|e| e.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                ),
+            return Err(PipelineStageError::Prepare {
+                message: validation_result
+                    .errors
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
             });
         }
 
@@ -161,13 +174,10 @@ impl<'a> MigrationPipeline<'a> {
         let mut statements = Vec::new();
 
         // 追加されたテーブルを削除（依存関係の逆順）
-        let sorted_tables =
-            self.diff
-                .sort_added_tables_by_dependency()
-                .map_err(|e| PipelineStageError {
-                    stage: "table_statements".to_string(),
-                    message: e,
-                })?;
+        let sorted_tables = self
+            .diff
+            .sort_added_tables_by_dependency()
+            .map_err(|message| PipelineStageError::CircularDependency { message })?;
 
         for table in sorted_tables.iter().rev() {
             statements.push(generator.generate_drop_table(&table.name));
@@ -404,15 +414,10 @@ mod tests {
 
     #[test]
     fn test_pipeline_stage_error_display() {
-        let error = PipelineStageError {
-            stage: "enum_statements".to_string(),
-            message: "Enum recreation not allowed".to_string(),
-        };
+        let error = PipelineStageError::EnumRecreationNotAllowed;
 
-        assert_eq!(
-            error.to_string(),
-            "[enum_statements] Enum recreation not allowed"
-        );
+        assert_eq!(error.stage(), "enum_statements");
+        assert!(error.to_string().contains("enum_statements"));
     }
 
     #[test]
@@ -444,8 +449,8 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert_eq!(err.stage, "table_statements");
-        assert!(err.message.contains("Circular reference"));
+        assert_eq!(err.stage(), "table_statements");
+        assert!(err.to_string().contains("Circular reference"));
     }
 
     // ==========================================

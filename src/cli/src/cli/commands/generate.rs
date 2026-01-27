@@ -52,6 +52,25 @@ struct RenameInfo {
     new_name: String,
 }
 
+/// 差分検出・バリデーション結果
+struct DiffValidationResult {
+    diff: crate::core::schema_diff::SchemaDiff,
+    diff_warnings: Vec<crate::core::error::ValidationWarning>,
+    destructive_report: crate::core::destructive_change_report::DestructiveChangeReport,
+    rename_validation: crate::core::error::ValidationResult,
+    renamed_from_warnings: Vec<crate::core::error::ValidationWarning>,
+    migration_name: String,
+    timestamp: String,
+    sanitized_description: String,
+}
+
+/// SQL生成結果
+struct GeneratedSql {
+    up_sql: String,
+    down_sql: String,
+    validation_result: crate::core::error::ValidationResult,
+}
+
 /// generateコマンドハンドラー
 #[derive(Debug, Clone)]
 pub struct GenerateCommandHandler {}
@@ -72,28 +91,83 @@ impl GenerateCommandHandler {
     ///
     /// 成功時は生成されたマイグレーションディレクトリのパス、失敗時はエラーメッセージ
     pub fn execute(&self, command: &GenerateCommand) -> Result<String> {
-        // 設定ファイルを読み込む
         let context = CommandContext::load(command.project_path.clone())?;
         let config = &context.config;
 
-        // スキーマディレクトリのパスを解決
-        let schema_dir = context.require_schema_dir()?;
+        // スキーマの読み込み
+        let (current_schema, previous_schema) =
+            self.load_schemas(&context, &command.project_path, config)?;
 
-        // 現在のスキーマを読み込む
+        // 差分検出・バリデーション
+        let dvr = self.detect_and_validate_diff(command, &current_schema, &previous_schema)?;
+
+        // SQL生成
+        let generated =
+            self.generate_migration_sql(command, config, &dvr, &current_schema, &previous_schema)?;
+
+        // dry-runモードの場合はSQLを表示して終了
+        if command.dry_run {
+            return self.execute_dry_run(
+                &dvr.migration_name,
+                &generated.up_sql,
+                &generated.down_sql,
+                &dvr.diff,
+                &generated.validation_result,
+                &dvr.destructive_report,
+            );
+        }
+
+        // ファイル書き出し
+        let migration_name = self.write_migration_files(
+            &context,
+            config,
+            &dvr,
+            &generated,
+            &current_schema,
+            command,
+        )?;
+
+        let destructive_warning =
+            if dvr.destructive_report.has_destructive_changes() && command.allow_destructive {
+                Some(DestructiveChangeFormatter::new().format_warning(&dvr.destructive_report))
+            } else {
+                None
+            };
+
+        if let Some(warning) = destructive_warning {
+            Ok(format!("{}\n{}", warning, migration_name))
+        } else {
+            Ok(migration_name)
+        }
+    }
+
+    /// スキーマの読み込み
+    fn load_schemas(
+        &self,
+        context: &CommandContext,
+        project_path: &Path,
+        config: &Config,
+    ) -> Result<(Schema, Schema)> {
+        let schema_dir = context.require_schema_dir()?;
         let parser = SchemaParserService::new();
         let current_schema = parser
             .parse_schema_directory(&schema_dir)
             .with_context(|| "Failed to read schema")?;
+        let previous_schema = self.load_previous_schema(project_path, config)?;
+        Ok((current_schema, previous_schema))
+    }
 
-        // 前回のスキーマ状態を読み込む（存在しない場合は空のスキーマ）
-        let previous_schema = self.load_previous_schema(&command.project_path, config)?;
-
-        // 差分を検出（警告付き）
+    /// 差分検出・バリデーション
+    fn detect_and_validate_diff(
+        &self,
+        command: &GenerateCommand,
+        current_schema: &Schema,
+        previous_schema: &Schema,
+    ) -> Result<DiffValidationResult> {
         let detector = SchemaDiffDetector::new();
         let (diff, diff_warnings) =
-            detector.detect_diff_with_warnings(&previous_schema, &current_schema);
+            detector.detect_diff_with_warnings(previous_schema, current_schema);
 
-        // 差分がない場合はエラー
         if diff.is_empty() {
             return Err(anyhow!(
                 "No schema changes found. No migration files were generated."
@@ -104,24 +178,20 @@ impl GenerateCommandHandler {
         let destructive_detector = DestructiveChangeDetector::new();
         let destructive_report = destructive_detector.detect(&diff);
 
-        // リネーム検証を実行（旧スキーマ照合あり）
+        // リネーム検証
         let validator = SchemaValidatorService::new();
         let rename_validation =
-            validator.validate_renames_with_old_schema(&previous_schema, &current_schema);
+            validator.validate_renames_with_old_schema(previous_schema, current_schema);
 
-        // renamed_from属性削除推奨警告を収集
-        let renamed_from_warnings = self.generate_renamed_from_remove_warnings(&current_schema);
+        let renamed_from_warnings = self.generate_renamed_from_remove_warnings(current_schema);
 
-        // マイグレーションを生成
+        // マイグレーション名の生成
         let generator = MigrationGenerator::new();
         let timestamp = generator.generate_timestamp();
-
-        // descriptionを決定（指定されていない場合は自動生成）
         let description = command
             .description
             .clone()
             .unwrap_or_else(|| self.generate_auto_description(&diff));
-
         let sanitized_description = generator.sanitize_description(&description);
         let migration_name =
             generator.generate_migration_filename(&timestamp, &sanitized_description);
@@ -150,13 +220,34 @@ impl GenerateCommandHandler {
             ));
         }
 
-        // スキーマ付きでSQLを生成（型変更検証を含む）
-        // dry-run 時は破壊的変更を許可してSQL生成を完了させ、プレビュー表示する
+        Ok(DiffValidationResult {
+            diff,
+            diff_warnings,
+            destructive_report,
+            rename_validation,
+            renamed_from_warnings,
+            migration_name,
+            timestamp,
+            sanitized_description,
+        })
+    }
+
+    /// SQL生成と警告統合
+    fn generate_migration_sql(
+        &self,
+        command: &GenerateCommand,
+        config: &Config,
+        dvr: &DiffValidationResult,
+        current_schema: &Schema,
+        previous_schema: &Schema,
+    ) -> Result<GeneratedSql> {
+        let generator = MigrationGenerator::new();
         let allow_destructive_for_sql = command.allow_destructive || command.dry_run;
+
         let sql_result = generator.generate_up_sql_with_schemas_and_options(
-            &diff,
-            &previous_schema,
-            &current_schema,
+            &dvr.diff,
+            previous_schema,
+            current_schema,
             config.dialect,
             allow_destructive_for_sql,
         );
@@ -164,8 +255,9 @@ impl GenerateCommandHandler {
         // 型変更検証エラーの処理
         if let Err(e) = &sql_result {
             if command.dry_run {
-                // dry-runモードではエラーを色付きで表示
-                return self.execute_dry_run_with_error(&migration_name, e, &diff);
+                return Err(self
+                    .execute_dry_run_with_error(&dvr.migration_name, e, &dvr.diff)
+                    .unwrap_err());
             }
             return Err(anyhow::anyhow!("{}", e));
         }
@@ -173,93 +265,84 @@ impl GenerateCommandHandler {
         let (up_sql, mut validation_result) = sql_result.unwrap();
 
         // 全警告を統合
-        for warning in diff_warnings {
-            validation_result.add_warning(warning);
-        }
-        for warning in &rename_validation.warnings {
+        for warning in &dvr.diff_warnings {
             validation_result.add_warning(warning.clone());
         }
-        for warning in renamed_from_warnings {
-            validation_result.add_warning(warning);
+        for warning in &dvr.rename_validation.warnings {
+            validation_result.add_warning(warning.clone());
         }
-        if let Some(warning) = self.generate_enum_recreate_deprecation_warning(&current_schema) {
+        for warning in &dvr.renamed_from_warnings {
+            validation_result.add_warning(warning.clone());
+        }
+        if let Some(warning) = self.generate_enum_recreate_deprecation_warning(current_schema) {
             validation_result.add_warning(warning);
         }
 
         let (down_sql, _) = generator
             .generate_down_sql_with_schemas_and_options(
-                &diff,
-                &previous_schema,
-                &current_schema,
+                &dvr.diff,
+                previous_schema,
+                current_schema,
                 config.dialect,
                 allow_destructive_for_sql,
             )
             .map_err(|e| anyhow::anyhow!("Failed to generate DOWN SQL: {}", e))?;
 
-        let destructive_warning = if destructive_report.has_destructive_changes()
-            && command.allow_destructive
-            && !command.dry_run
-        {
-            Some(DestructiveChangeFormatter::new().format_warning(&destructive_report))
-        } else {
-            None
-        };
+        Ok(GeneratedSql {
+            up_sql,
+            down_sql,
+            validation_result,
+        })
+    }
 
-        // dry-runモードの場合はSQLを表示して終了
-        if command.dry_run {
-            return self.execute_dry_run(
-                &migration_name,
-                &up_sql,
-                &down_sql,
-                &diff,
-                &validation_result,
-                &destructive_report,
-            );
-        }
-
-        // Create migration directory
+    /// マイグレーションファイルの書き出し
+    fn write_migration_files(
+        &self,
+        context: &CommandContext,
+        config: &Config,
+        dvr: &DiffValidationResult,
+        generated: &GeneratedSql,
+        current_schema: &Schema,
+        command: &GenerateCommand,
+    ) -> Result<String> {
         let migrations_dir = context.migrations_dir();
-        let migration_dir = migrations_dir.join(&migration_name);
+        let migration_dir = migrations_dir.join(&dvr.migration_name);
         fs::create_dir_all(&migration_dir).with_context(|| {
             format!("Failed to create migration directory: {:?}", migration_dir)
         })?;
 
-        // UP SQLを書き込み
+        // UP SQL
         let up_sql_path = migration_dir.join("up.sql");
-        fs::write(&up_sql_path, &up_sql)
+        fs::write(&up_sql_path, &generated.up_sql)
             .with_context(|| format!("Failed to write up.sql: {:?}", up_sql_path))?;
 
-        // DOWN SQLを書き込み
+        // DOWN SQL
         let down_sql_path = migration_dir.join("down.sql");
-        fs::write(&down_sql_path, &down_sql)
+        fs::write(&down_sql_path, &generated.down_sql)
             .with_context(|| format!("Failed to write down.sql: {:?}", down_sql_path))?;
 
-        // チェックサムを計算
+        // チェックサム・メタデータ
         let checksum_calculator = SchemaChecksumService::new();
-        let checksum = checksum_calculator.calculate_checksum(&current_schema);
+        let checksum = checksum_calculator.calculate_checksum(current_schema);
 
-        // メタデータを生成
+        let generator = MigrationGenerator::new();
         let metadata = generator
             .generate_migration_metadata(
-                &timestamp,
-                &sanitized_description,
+                &dvr.timestamp,
+                &dvr.sanitized_description,
                 config.dialect,
                 &checksum,
-                destructive_report.clone(),
+                dvr.destructive_report.clone(),
             )
             .map_err(|e| anyhow::anyhow!(e))?;
         let meta_path = migration_dir.join(".meta.yaml");
         fs::write(&meta_path, metadata)
             .with_context(|| format!("Failed to write metadata: {:?}", meta_path))?;
 
-        // 現在のスキーマを保存（次回の差分検出用）
-        self.save_current_schema(&command.project_path, config, &current_schema)?;
+        // スキーマスナップショット保存
+        self.save_current_schema(&command.project_path, config, current_schema)?;
 
-        if let Some(warning) = destructive_warning {
-            Ok(format!("{}\n{}", warning, migration_name))
-        } else {
-            Ok(migration_name)
-        }
+        Ok(dvr.migration_name.clone())
     }
 
     /// dry-runモードの実行

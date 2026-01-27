@@ -555,6 +555,43 @@ impl DatabaseError {
     }
 }
 
+/// 設定エラー
+///
+/// 設定ファイルの読み込み・検証時に発生するエラーを表現します。
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    /// バージョン未指定
+    #[error("Config file version is not specified")]
+    MissingVersion,
+
+    /// 環境設定なし
+    #[error("At least one environment configuration is required")]
+    NoEnvironments,
+
+    /// 環境が見つからない
+    #[error("Environment '{name}' not found. Available environments: {available:?}")]
+    EnvironmentNotFound {
+        /// 指定された環境名
+        name: String,
+        /// 利用可能な環境名リスト
+        available: Vec<String>,
+    },
+
+    /// データベース名未指定
+    #[error("Database name is not specified")]
+    MissingDatabaseName,
+
+    /// 環境別設定の検証エラー
+    #[error("Invalid config for environment '{environment}': {source}")]
+    InvalidEnvironment {
+        /// 環境名
+        environment: String,
+        /// 原因
+        #[source]
+        source: Box<ConfigError>,
+    },
+}
+
 /// I/Oエラー
 ///
 /// ファイル操作時に発生するエラーを表現します。

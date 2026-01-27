@@ -38,13 +38,10 @@ impl<'a> MigrationPipeline<'a> {
     ) -> Result<Vec<String>, PipelineStageError> {
         let mut statements = Vec::new();
         // 外部キー依存関係を考慮してテーブルをソート
-        let sorted_tables =
-            self.diff
-                .sort_added_tables_by_dependency()
-                .map_err(|e| PipelineStageError {
-                    stage: "table_statements".to_string(),
-                    message: e,
-                })?;
+        let sorted_tables = self
+            .diff
+            .sort_added_tables_by_dependency()
+            .map_err(|message| PipelineStageError::CircularDependency { message })?;
 
         // 追加されたテーブルのCREATE TABLE文を生成
         for table in &sorted_tables {
@@ -334,7 +331,7 @@ mod tests {
         // エラーがある場合はErrが返される
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert_eq!(err.stage, "prepare");
+        assert_eq!(err.stage(), "prepare");
     }
 
     // ==========================================

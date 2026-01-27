@@ -3,7 +3,7 @@
 // プロジェクトの設定ファイル（YAML形式）の読み込み、検証、
 // 環境別のデータベース接続設定の管理を行います。
 
-use anyhow::{anyhow, Context, Result};
+use crate::core::error::ConfigError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -64,35 +64,35 @@ impl Config {
     pub const DEFAULT_CONFIG_PATH: &'static str = crate::core::naming::CONFIG_FILE;
 
     /// 指定された環境のデータベース設定を取得
-    pub fn get_database_config(&self, environment: &str) -> Result<DatabaseConfig> {
+    pub fn get_database_config(&self, environment: &str) -> Result<DatabaseConfig, ConfigError> {
         self.environments.get(environment).cloned().ok_or_else(|| {
-            anyhow!(
-                "Environment '{}' not found. Available environments: {:?}",
-                environment,
-                self.environments.keys().collect::<Vec<_>>()
-            )
+            ConfigError::EnvironmentNotFound {
+                name: environment.to_string(),
+                available: self.environments.keys().cloned().collect(),
+            }
         })
     }
 
     /// 設定の妥当性を検証
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<(), ConfigError> {
         // バージョンチェック
         if self.version.is_empty() {
-            return Err(anyhow!("Config file version is not specified"));
+            return Err(ConfigError::MissingVersion);
         }
 
         // 環境設定チェック
         if self.environments.is_empty() {
-            return Err(anyhow!(
-                "At least one environment configuration is required"
-            ));
+            return Err(ConfigError::NoEnvironments);
         }
 
         // 各環境のデータベース設定を検証
         for (env_name, db_config) in &self.environments {
             db_config
                 .validate()
-                .with_context(|| format!("Invalid config for environment '{}'", env_name))?;
+                .map_err(|source| ConfigError::InvalidEnvironment {
+                    environment: env_name.clone(),
+                    source: Box::new(source),
+                })?;
         }
 
         Ok(())
@@ -133,9 +133,9 @@ fn default_port() -> u16 {
 
 impl DatabaseConfig {
     /// Validate database configuration
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<(), ConfigError> {
         if self.database.is_empty() {
-            return Err(anyhow!("Database name is not specified"));
+            return Err(ConfigError::MissingDatabaseName);
         }
 
         Ok(())
