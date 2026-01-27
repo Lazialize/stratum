@@ -33,9 +33,9 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("id INTEGER NOT NULL"));
-        assert!(sql.contains("name VARCHAR(100) NOT NULL"));
+        assert!(sql.contains(r#"CREATE TABLE "users""#));
+        assert!(sql.contains(r#""id" INTEGER NOT NULL"#));
+        assert!(sql.contains(r#""name" VARCHAR(100) NOT NULL"#));
     }
 
     /// PRIMARY KEY制約を含むCREATE TABLE文の生成テスト
@@ -55,8 +55,8 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("PRIMARY KEY (id)"));
+        assert!(sql.contains(r#"CREATE TABLE "users""#));
+        assert!(sql.contains(r#"PRIMARY KEY ("id")"#));
     }
 
     /// 複合PRIMARY KEY制約のテスト
@@ -81,7 +81,7 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("PRIMARY KEY (user_id, role_id)"));
+        assert!(sql.contains(r#"PRIMARY KEY ("user_id", "role_id")"#));
     }
 
     /// NULL許可カラムのテスト
@@ -98,8 +98,8 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("bio TEXT"));
-        assert!(!sql.contains("bio TEXT NOT NULL"));
+        assert!(sql.contains(r#""bio" TEXT"#));
+        assert!(!sql.contains(r#""bio" TEXT NOT NULL"#));
     }
 
     /// デフォルト値を持つカラムのテスト
@@ -118,7 +118,7 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("status VARCHAR(20) NOT NULL DEFAULT 'active'"));
+        assert!(sql.contains(r#""status" VARCHAR(20) NOT NULL DEFAULT 'active'"#));
     }
 
     /// UNIQUE制約を含むCREATE TABLE文の生成テスト
@@ -138,7 +138,7 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("UNIQUE (email)"));
+        assert!(sql.contains(r#"UNIQUE ("email")"#));
     }
 
     /// FOREIGN KEY制約のALTER TABLE文生成テスト
@@ -160,10 +160,10 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_alter_table_add_constraint(&table, 0);
 
-        assert!(sql.contains("ALTER TABLE posts"));
+        assert!(sql.contains(r#"ALTER TABLE "posts""#));
         assert!(sql.contains("ADD CONSTRAINT"));
-        assert!(sql.contains("FOREIGN KEY (user_id)"));
-        assert!(sql.contains("REFERENCES users (id)"));
+        assert!(sql.contains(r#"FOREIGN KEY ("user_id")"#));
+        assert!(sql.contains(r#"REFERENCES "users" ("id")"#));
     }
 
     /// CHECK制約のテスト
@@ -197,9 +197,9 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_index(&table, &index);
 
-        assert!(sql.contains("CREATE INDEX idx_email"));
-        assert!(sql.contains("ON users"));
-        assert!(sql.contains("(email)"));
+        assert!(sql.contains(r#"CREATE INDEX "idx_email""#));
+        assert!(sql.contains(r#"ON "users""#));
+        assert!(sql.contains(r#"("email")"#));
     }
 
     /// CREATE UNIQUE INDEX文の生成テスト
@@ -216,9 +216,9 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_index(&table, &index);
 
-        assert!(sql.contains("CREATE UNIQUE INDEX idx_username"));
-        assert!(sql.contains("ON users"));
-        assert!(sql.contains("(username)"));
+        assert!(sql.contains(r#"CREATE UNIQUE INDEX "idx_username""#));
+        assert!(sql.contains(r#"ON "users""#));
+        assert!(sql.contains(r#"("username")"#));
     }
 
     /// 複合インデックスの生成テスト
@@ -235,9 +235,9 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_index(&table, &index);
 
-        assert!(sql.contains("CREATE INDEX idx_user_created"));
-        assert!(sql.contains("ON posts"));
-        assert!(sql.contains("(user_id, created_at)"));
+        assert!(sql.contains(r#"CREATE INDEX "idx_user_created""#));
+        assert!(sql.contains(r#"ON "posts""#));
+        assert!(sql.contains(r#"("user_id", "created_at")"#));
     }
 
     /// 様々なPostgreSQL型のマッピングテスト
@@ -292,13 +292,13 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("col_int INTEGER NOT NULL"));
-        assert!(sql.contains("col_bigint BIGINT NOT NULL"));
-        assert!(sql.contains("col_varchar VARCHAR(255) NOT NULL"));
-        assert!(sql.contains("col_text TEXT NOT NULL"));
-        assert!(sql.contains("col_bool BOOLEAN NOT NULL"));
-        assert!(sql.contains("col_timestamp TIMESTAMP WITH TIME ZONE NOT NULL"));
-        assert!(sql.contains("col_json JSON NOT NULL"));
+        assert!(sql.contains(r#""col_int" INTEGER NOT NULL"#));
+        assert!(sql.contains(r#""col_bigint" BIGINT NOT NULL"#));
+        assert!(sql.contains(r#""col_varchar" VARCHAR(255) NOT NULL"#));
+        assert!(sql.contains(r#""col_text" TEXT NOT NULL"#));
+        assert!(sql.contains(r#""col_bool" BOOLEAN NOT NULL"#));
+        assert!(sql.contains(r#""col_timestamp" TIMESTAMP WITH TIME ZONE NOT NULL"#));
+        assert!(sql.contains(r#""col_json" JSON NOT NULL"#));
     }
 
     /// AUTO_INCREMENT（SERIAL）のテスト
@@ -317,7 +317,7 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("id SERIAL NOT NULL"));
+        assert!(sql.contains(r#""id" SERIAL NOT NULL"#));
     }
 
     /// BIGSERIAL（BIGINT AUTO_INCREMENT）のテスト
@@ -336,7 +336,7 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("id BIGSERIAL NOT NULL"));
+        assert!(sql.contains(r#""id" BIGSERIAL NOT NULL"#));
     }
 
     /// 複数の制約を含むテーブルのテスト
@@ -383,12 +383,12 @@ mod postgres_sql_generator_tests {
 
         let sql = generator.generate_create_table(&table);
 
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("id SERIAL NOT NULL"));
-        assert!(sql.contains("email VARCHAR(255) NOT NULL"));
-        assert!(sql.contains("status VARCHAR(20) NOT NULL DEFAULT 'active'"));
-        assert!(sql.contains("PRIMARY KEY (id)"));
-        assert!(sql.contains("UNIQUE (email)"));
+        assert!(sql.contains(r#"CREATE TABLE "users""#));
+        assert!(sql.contains(r#""id" SERIAL NOT NULL"#));
+        assert!(sql.contains(r#""email" VARCHAR(255) NOT NULL"#));
+        assert!(sql.contains(r#""status" VARCHAR(20) NOT NULL DEFAULT 'active'"#));
+        assert!(sql.contains(r#"PRIMARY KEY ("id")"#));
+        assert!(sql.contains(r#"UNIQUE ("email")"#));
         assert!(sql.contains("CHECK (status IN ('active', 'inactive'))"));
     }
 
@@ -408,7 +408,7 @@ mod postgres_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("price NUMERIC(10, 2) NOT NULL"));
+        assert!(sql.contains(r#""price" NUMERIC(10, 2) NOT NULL"#));
     }
 
     #[test]
@@ -418,7 +418,7 @@ mod postgres_sql_generator_tests {
         table.add_column(Column::new("value".to_string(), ColumnType::FLOAT, false));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("value REAL NOT NULL"));
+        assert!(sql.contains(r#""value" REAL NOT NULL"#));
     }
 
     #[test]
@@ -432,7 +432,7 @@ mod postgres_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("latitude DOUBLE PRECISION NOT NULL"));
+        assert!(sql.contains(r#""latitude" DOUBLE PRECISION NOT NULL"#));
     }
 
     #[test]
@@ -446,7 +446,7 @@ mod postgres_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("code CHAR(10) NOT NULL"));
+        assert!(sql.contains(r#""code" CHAR(10) NOT NULL"#));
     }
 
     #[test]
@@ -460,7 +460,7 @@ mod postgres_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("event_date DATE NOT NULL"));
+        assert!(sql.contains(r#""event_date" DATE NOT NULL"#));
     }
 
     #[test]
@@ -487,8 +487,8 @@ mod postgres_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("start_time TIME NOT NULL"));
-        assert!(sql.contains("end_time TIME WITH TIME ZONE NOT NULL"));
+        assert!(sql.contains(r#""start_time" TIME NOT NULL"#));
+        assert!(sql.contains(r#""end_time" TIME WITH TIME ZONE NOT NULL"#));
     }
 
     #[test]
@@ -498,7 +498,7 @@ mod postgres_sql_generator_tests {
         table.add_column(Column::new("content".to_string(), ColumnType::BLOB, false));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("content BYTEA NOT NULL"));
+        assert!(sql.contains(r#""content" BYTEA NOT NULL"#));
     }
 
     #[test]
@@ -508,7 +508,7 @@ mod postgres_sql_generator_tests {
         table.add_column(Column::new("user_id".to_string(), ColumnType::UUID, false));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("user_id UUID NOT NULL"));
+        assert!(sql.contains(r#""user_id" UUID NOT NULL"#));
     }
 
     #[test]
@@ -518,6 +518,6 @@ mod postgres_sql_generator_tests {
         table.add_column(Column::new("config".to_string(), ColumnType::JSONB, false));
 
         let sql = generator.generate_create_table(&table);
-        assert!(sql.contains("config JSONB NOT NULL"));
+        assert!(sql.contains(r#""config" JSONB NOT NULL"#));
     }
 }

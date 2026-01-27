@@ -42,7 +42,9 @@ mod type_change_migration_tests {
                 generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
 
             assert_eq!(up_sql.len(), 1);
-            assert!(up_sql[0].contains("ALTER TABLE users ALTER COLUMN age TYPE VARCHAR(50)"));
+            assert!(
+                up_sql[0].contains(r#"ALTER TABLE "users" ALTER COLUMN "age" TYPE VARCHAR(50)"#)
+            );
             // Numeric → String は USING句不要
             assert!(!up_sql[0].contains("USING"));
         }
@@ -71,7 +73,9 @@ mod type_change_migration_tests {
                 generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
 
             assert_eq!(up_sql.len(), 1);
-            assert!(up_sql[0].contains("ALTER TABLE products ALTER COLUMN price TYPE INTEGER"));
+            assert!(
+                up_sql[0].contains(r#"ALTER TABLE "products" ALTER COLUMN "price" TYPE INTEGER"#)
+            );
             // String → Numeric は USING句必要
             assert!(up_sql[0].contains("USING"));
         }
@@ -91,7 +95,7 @@ mod type_change_migration_tests {
                 generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
 
             assert_eq!(up_sql.len(), 1);
-            assert!(up_sql[0].contains("ALTER TABLE users ALTER COLUMN is_active TYPE TEXT"));
+            assert!(up_sql[0].contains(r#"ALTER TABLE "users" ALTER COLUMN "is_active" TYPE TEXT"#));
             // Boolean → String は USING句不要
             assert!(!up_sql[0].contains("USING"));
         }
@@ -121,9 +125,8 @@ mod type_change_migration_tests {
                 generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
 
             assert_eq!(up_sql.len(), 1);
-            assert!(
-                up_sql[0].contains("ALTER TABLE events ALTER COLUMN created_at TYPE VARCHAR(100)")
-            );
+            assert!(up_sql[0]
+                .contains(r#"ALTER TABLE "events" ALTER COLUMN "created_at" TYPE VARCHAR(100)"#));
             // DateTime → String は USING句不要
             assert!(!up_sql[0].contains("USING"));
         }
@@ -228,7 +231,7 @@ mod type_change_migration_tests {
 
             assert!(result.is_ok());
             let (sql, validation_result) = result.unwrap();
-            assert!(sql.contains("ALTER TABLE users ALTER COLUMN age TYPE"));
+            assert!(sql.contains(r#"ALTER TABLE "users" ALTER COLUMN "age" TYPE"#));
             // Numeric → String は安全なので警告なし
             assert!(validation_result.is_valid());
         }
@@ -299,7 +302,7 @@ mod type_change_migration_tests {
                 generator.generate_alter_column_type(&table, &column_diff, MigrationDirection::Up);
 
             assert_eq!(up_sql.len(), 1);
-            assert!(up_sql[0].contains("ALTER TABLE users MODIFY COLUMN age"));
+            assert!(up_sql[0].contains("ALTER TABLE `users` MODIFY COLUMN `age`"));
             assert!(up_sql[0].contains("VARCHAR(50)"));
         }
 
@@ -396,7 +399,7 @@ mod type_change_migration_tests {
                 &column_diff,
                 MigrationDirection::Up,
             );
-            assert!(up_sql[0].contains("MODIFY COLUMN score"));
+            assert!(up_sql[0].contains("MODIFY COLUMN `score`"));
             assert!(up_sql[0].contains("VARCHAR(20)"));
 
             // Down: VARCHAR → INTEGER
@@ -405,7 +408,7 @@ mod type_change_migration_tests {
                 &column_diff,
                 MigrationDirection::Down,
             );
-            assert!(down_sql[0].contains("MODIFY COLUMN score"));
+            assert!(down_sql[0].contains("MODIFY COLUMN `score`"));
             assert!(down_sql[0].contains("INT"));
         }
 
@@ -470,7 +473,7 @@ mod type_change_migration_tests {
 
             assert!(result.is_ok());
             let (sql, _) = result.unwrap();
-            assert!(sql.contains("MODIFY COLUMN name"));
+            assert!(sql.contains("MODIFY COLUMN `name`"));
         }
     }
 
@@ -521,17 +524,17 @@ mod type_change_migration_tests {
             assert!(combined_sql.contains("BEGIN TRANSACTION"));
 
             // 新テーブル作成
-            assert!(combined_sql.contains("CREATE TABLE new_users"));
+            assert!(combined_sql.contains(r#"CREATE TABLE "new_users""#));
 
             // データコピー
-            assert!(combined_sql.contains("INSERT INTO new_users"));
+            assert!(combined_sql.contains(r#"INSERT INTO "new_users""#));
             assert!(combined_sql.contains("SELECT"));
 
             // 旧テーブル削除
-            assert!(combined_sql.contains("DROP TABLE users"));
+            assert!(combined_sql.contains(r#"DROP TABLE "users""#));
 
             // リネーム
-            assert!(combined_sql.contains("ALTER TABLE new_users RENAME TO users"));
+            assert!(combined_sql.contains(r#"ALTER TABLE "new_users" RENAME TO "users""#));
 
             // 外部キー制約の有効化
             assert!(combined_sql.contains("PRAGMA foreign_keys=on"));
@@ -623,7 +626,7 @@ mod type_change_migration_tests {
             let combined_sql = up_sql.join("\n");
 
             // インデックスの再作成
-            assert!(combined_sql.contains("CREATE UNIQUE INDEX idx_email"));
+            assert!(combined_sql.contains(r#"CREATE UNIQUE INDEX "idx_email""#));
         }
 
         /// 外部キー整合性チェック
@@ -705,7 +708,7 @@ mod type_change_migration_tests {
                 MigrationDirection::Up,
             );
             let up_combined = up_sql.join("\n");
-            assert!(up_combined.contains("CREATE TABLE new_results"));
+            assert!(up_combined.contains(r#"CREATE TABLE "new_results""#));
             assert!(up_combined.contains("TEXT"));
 
             // Down: TEXT → INTEGER
@@ -715,7 +718,7 @@ mod type_change_migration_tests {
                 MigrationDirection::Down,
             );
             let down_combined = down_sql.join("\n");
-            assert!(down_combined.contains("CREATE TABLE new_results"));
+            assert!(down_combined.contains(r#"CREATE TABLE "new_results""#));
             assert!(down_combined.contains("INTEGER"));
         }
 
@@ -781,7 +784,7 @@ mod type_change_migration_tests {
             assert!(result.is_ok());
             let (sql, _) = result.unwrap();
             assert!(sql.contains("PRAGMA foreign_keys=off"));
-            assert!(sql.contains("CREATE TABLE new_users"));
+            assert!(sql.contains(r#"CREATE TABLE "new_users""#));
         }
 
         /// MigrationGeneratorでのSQLite型変更SQL生成（カラム追加あり）
@@ -854,7 +857,7 @@ mod type_change_migration_tests {
             // 列交差ロジックの検証
             // id, age は共通カラムとしてコピーされる
             // bio は新規追加カラムなのでNULLが入る
-            assert!(sql.contains("INSERT INTO new_users"));
+            assert!(sql.contains(r#"INSERT INTO "new_users""#));
             assert!(sql.contains("SELECT"));
             // id, ageが含まれる
             assert!(sql.contains("id"));

@@ -600,7 +600,7 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
-        assert!(sql.contains("CREATE TYPE status AS ENUM ('active', 'inactive')"));
+        assert!(sql.contains(r#"CREATE TYPE "status" AS ENUM ('active', 'inactive')"#));
     }
 
     #[test]
@@ -621,7 +621,7 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
-        assert!(sql.contains("ALTER TYPE status ADD VALUE 'inactive'"));
+        assert!(sql.contains(r#"ALTER TYPE "status" ADD VALUE 'inactive'"#));
     }
 
     #[test]
@@ -667,9 +667,9 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
-        assert!(sql.contains("ALTER TYPE status RENAME TO status_old"));
-        assert!(sql.contains("CREATE TYPE status AS ENUM ('inactive', 'active')"));
-        assert!(sql.contains("DROP TYPE status_old"));
+        assert!(sql.contains(r#"ALTER TYPE "status" RENAME TO "status_old""#));
+        assert!(sql.contains(r#"CREATE TYPE "status" AS ENUM ('inactive', 'active')"#));
+        assert!(sql.contains(r#"DROP TYPE "status_old""#));
     }
 
     // ==========================================
@@ -697,7 +697,7 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
-        assert!(sql.contains("CREATE TABLE users"));
+        assert!(sql.contains(r#"CREATE TABLE "users""#));
     }
 
     #[test]
@@ -711,7 +711,7 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
-        assert!(sql.contains("DROP TABLE users"));
+        assert!(sql.contains(r#"DROP TABLE "users""#));
     }
 
     // ==========================================
@@ -785,7 +785,7 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, validation_result) = result.unwrap();
-        assert!(sql.contains("ALTER TABLE users ALTER COLUMN age TYPE"));
+        assert!(sql.contains(r#"ALTER TABLE "users" ALTER COLUMN "age" TYPE"#));
         assert!(validation_result.is_valid());
     }
 
@@ -800,7 +800,7 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
-        assert!(sql.contains("ALTER TABLE users MODIFY COLUMN age"));
+        assert!(sql.contains("ALTER TABLE `users` MODIFY COLUMN `age`"));
     }
 
     #[test]
@@ -817,7 +817,7 @@ mod tests {
         // SQLiteはテーブル再作成パターンを使用
         assert!(sql.contains("PRAGMA foreign_keys=off"));
         assert!(sql.contains("BEGIN TRANSACTION"));
-        assert!(sql.contains("CREATE TABLE new_users"));
+        assert!(sql.contains(r#"CREATE TABLE "new_users""#));
     }
 
     #[test]
@@ -876,8 +876,8 @@ mod tests {
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
-        assert!(sql.contains("DROP TABLE users"));
-        assert!(sql.contains("DROP TABLE posts"));
+        assert!(sql.contains(r#"DROP TABLE "users""#));
+        assert!(sql.contains(r#"DROP TABLE "posts""#));
     }
 
     #[test]
@@ -892,7 +892,7 @@ mod tests {
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
         // Down方向では元の型(INTEGER)に戻す
-        assert!(sql.contains("ALTER TABLE users ALTER COLUMN age TYPE INTEGER"));
+        assert!(sql.contains(r#"ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER"#));
     }
 
     // ==========================================
@@ -1028,7 +1028,7 @@ mod tests {
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
         assert!(
-            sql.contains("ALTER TABLE users RENAME COLUMN name TO user_name"),
+            sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#),
             "Expected rename SQL in: {}",
             sql
         );
@@ -1078,7 +1078,7 @@ mod tests {
         let (sql, _) = result.unwrap();
         // MySQLではCHANGE COLUMN構文を使用（完全なカラム定義が必要）
         assert!(
-            sql.contains("ALTER TABLE users CHANGE COLUMN name user_name"),
+            sql.contains("ALTER TABLE `users` CHANGE COLUMN `name` `user_name`"),
             "Expected CHANGE COLUMN SQL in: {}",
             sql
         );
@@ -1127,7 +1127,7 @@ mod tests {
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
         assert!(
-            sql.contains("ALTER TABLE users RENAME COLUMN name TO user_name"),
+            sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "name" TO "user_name""#),
             "Expected rename SQL in: {}",
             sql
         );
@@ -1176,7 +1176,7 @@ mod tests {
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
         assert!(
-            sql.contains("ALTER TABLE users RENAME COLUMN user_name TO name"),
+            sql.contains(r#"ALTER TABLE "users" RENAME COLUMN "user_name" TO "name""#),
             "Expected reverse rename SQL in: {}",
             sql
         );
@@ -1245,20 +1245,20 @@ mod tests {
 
         // リネームSQLと型変更SQLの両方が含まれる
         assert!(
-            sql.contains("RENAME COLUMN name TO user_name"),
+            sql.contains(r#"RENAME COLUMN "name" TO "user_name""#),
             "Expected rename SQL in: {}",
             sql
         );
         assert!(
-            sql.contains("ALTER TABLE users ALTER COLUMN user_name TYPE"),
+            sql.contains(r#"ALTER TABLE "users" ALTER COLUMN "user_name" TYPE"#),
             "Expected type change SQL in: {}",
             sql
         );
 
         // リネームが型変更より先に出現すること
-        let rename_pos = sql.find("RENAME COLUMN name TO user_name").unwrap();
+        let rename_pos = sql.find(r#"RENAME COLUMN "name" TO "user_name""#).unwrap();
         let type_change_pos = sql
-            .find("ALTER TABLE users ALTER COLUMN user_name TYPE")
+            .find(r#"ALTER TABLE "users" ALTER COLUMN "user_name" TYPE"#)
             .unwrap();
         assert!(
             rename_pos < type_change_pos,
@@ -1329,19 +1329,19 @@ mod tests {
 
         // 型変更の逆と逆リネームの両方が含まれる
         assert!(
-            sql.contains("ALTER TABLE users ALTER COLUMN"),
+            sql.contains(r#"ALTER TABLE "users" ALTER COLUMN"#),
             "Expected type change reversal SQL in: {}",
             sql
         );
         assert!(
-            sql.contains("RENAME COLUMN user_name TO name"),
+            sql.contains(r#"RENAME COLUMN "user_name" TO "name""#),
             "Expected reverse rename SQL in: {}",
             sql
         );
 
         // 型変更がリネームより先に出現すること（Down方向では逆順）
-        let type_change_pos = sql.find("ALTER TABLE users ALTER COLUMN").unwrap();
-        let rename_pos = sql.find("RENAME COLUMN user_name TO name").unwrap();
+        let type_change_pos = sql.find(r#"ALTER TABLE "users" ALTER COLUMN"#).unwrap();
+        let rename_pos = sql.find(r#"RENAME COLUMN "user_name" TO "name""#).unwrap();
         assert!(
             type_change_pos < rename_pos,
             "Type change should come before rename in down direction. SQL: {}",
@@ -1372,17 +1372,17 @@ mod tests {
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
         assert!(
-            sql.contains("ALTER TABLE posts ADD CONSTRAINT"),
+            sql.contains(r#"ALTER TABLE "posts" ADD CONSTRAINT"#),
             "Expected ALTER TABLE ADD CONSTRAINT in: {}",
             sql
         );
         assert!(
-            sql.contains("FOREIGN KEY (user_id)"),
+            sql.contains(r#"FOREIGN KEY ("user_id")"#),
             "Expected FOREIGN KEY in: {}",
             sql
         );
         assert!(
-            sql.contains("REFERENCES users (id)"),
+            sql.contains(r#"REFERENCES "users" ("id")"#),
             "Expected REFERENCES in: {}",
             sql
         );
@@ -1407,7 +1407,7 @@ mod tests {
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
         assert!(
-            sql.contains("ALTER TABLE posts ADD CONSTRAINT"),
+            sql.contains("ALTER TABLE `posts` ADD CONSTRAINT"),
             "Expected ALTER TABLE ADD CONSTRAINT in: {}",
             sql
         );
@@ -1660,7 +1660,7 @@ mod tests {
         );
         // 型変更（INTEGER→BIGINT）も含まれること
         assert!(
-            sql.contains("ALTER COLUMN id TYPE BIGINT"),
+            sql.contains(r#"ALTER COLUMN "id" TYPE BIGINT"#),
             "Expected ALTER COLUMN TYPE BIGINT in: {}",
             sql
         );

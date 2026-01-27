@@ -3,7 +3,9 @@
 // SQLiteはALTER COLUMN TYPEをサポートしていないため、
 // テーブル再作成パターンで型変更を実現します。
 
-use crate::adapters::sql_generator::MigrationDirection;
+use crate::adapters::sql_generator::{
+    quote_columns_sqlite, quote_identifier_sqlite, MigrationDirection,
+};
 use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
 use crate::core::schema_diff::ColumnDiff;
 
@@ -65,6 +67,8 @@ impl SqliteTableRecreator {
         let mut statements = Vec::new();
         let table_name = &new_table.name;
         let new_table_name = format!("new_{}", table_name);
+        let quoted_table = quote_identifier_sqlite(table_name);
+        let quoted_new_table = quote_identifier_sqlite(&new_table_name);
 
         // 1. 外部キー制約を一時的に無効化
         statements.push("PRAGMA foreign_keys=off".to_string());
@@ -81,12 +85,12 @@ impl SqliteTableRecreator {
         statements.push(insert_sql);
 
         // 5. 旧テーブル削除
-        statements.push(format!("DROP TABLE {}", table_name));
+        statements.push(format!("DROP TABLE {}", quoted_table));
 
         // 6. テーブルリネーム
         statements.push(format!(
             "ALTER TABLE {} RENAME TO {}",
-            new_table_name, table_name
+            quoted_new_table, quoted_table
         ));
 
         // 7. インデックス再作成
@@ -102,7 +106,7 @@ impl SqliteTableRecreator {
         statements.push("PRAGMA foreign_keys=on".to_string());
 
         // 10. 外部キー整合性チェック
-        statements.push(format!("PRAGMA foreign_key_check({})", table_name));
+        statements.push(format!("PRAGMA foreign_key_check({})", quoted_table));
 
         statements
     }
@@ -111,7 +115,10 @@ impl SqliteTableRecreator {
     fn generate_create_table_with_name(&self, table: &Table, table_name: &str) -> String {
         let mut parts = Vec::new();
 
-        parts.push(format!("CREATE TABLE {}", table_name));
+        parts.push(format!(
+            "CREATE TABLE {}",
+            quote_identifier_sqlite(table_name)
+        ));
         parts.push("(".to_string());
 
         let mut elements = Vec::new();
@@ -139,7 +146,7 @@ impl SqliteTableRecreator {
     fn generate_column_definition(&self, column: &Column) -> String {
         let mut parts = Vec::new();
 
-        parts.push(column.name.clone());
+        parts.push(quote_identifier_sqlite(&column.name));
         parts.push(self.map_column_type(&column.column_type));
 
         if !column.nullable {
@@ -178,10 +185,10 @@ impl SqliteTableRecreator {
     fn generate_constraint_definition(&self, constraint: &Constraint) -> String {
         match constraint {
             Constraint::PRIMARY_KEY { columns } => {
-                format!("PRIMARY KEY ({})", columns.join(", "))
+                format!("PRIMARY KEY ({})", quote_columns_sqlite(columns))
             }
             Constraint::UNIQUE { columns } => {
-                format!("UNIQUE ({})", columns.join(", "))
+                format!("UNIQUE ({})", quote_columns_sqlite(columns))
             }
             Constraint::CHECK {
                 check_expression, ..
@@ -195,9 +202,9 @@ impl SqliteTableRecreator {
             } => {
                 format!(
                     "FOREIGN KEY ({}) REFERENCES {} ({})",
-                    columns.join(", "),
-                    referenced_table,
-                    referenced_columns.join(", ")
+                    quote_columns_sqlite(columns),
+                    quote_identifier_sqlite(referenced_table),
+                    quote_columns_sqlite(referenced_columns)
                 )
             }
         }
@@ -217,6 +224,8 @@ impl SqliteTableRecreator {
         old_table: Option<&Table>,
     ) -> String {
         let new_table_name = format!("new_{}", new_table.name);
+        let quoted_new_table = quote_identifier_sqlite(&new_table_name);
+        let quoted_table = quote_identifier_sqlite(&new_table.name);
 
         // 旧テーブル情報がない場合は、新テーブルと同じカラムを仮定
         let old_columns: std::collections::HashSet<&str> = match old_table {
@@ -229,11 +238,11 @@ impl SqliteTableRecreator {
         let mut select_expressions = Vec::new();
 
         for column in &new_table.columns {
-            insert_columns.push(column.name.as_str());
+            insert_columns.push(quote_identifier_sqlite(&column.name));
 
             if old_columns.contains(column.name.as_str()) {
                 // 共通カラム: そのままコピー
-                select_expressions.push(column.name.clone());
+                select_expressions.push(quote_identifier_sqlite(&column.name));
             } else {
                 // 追加されたカラム: DEFAULT値またはNULLを使用
                 if let Some(ref default_value) = column.default_value {
@@ -255,7 +264,7 @@ impl SqliteTableRecreator {
 
         format!(
             "INSERT INTO {} ({}) SELECT {} FROM {}",
-            new_table_name, insert_columns_str, select_expressions_str, new_table.name
+            quoted_new_table, insert_columns_str, select_expressions_str, quoted_table
         )
     }
 
@@ -290,9 +299,9 @@ impl SqliteTableRecreator {
         format!(
             "CREATE {} {} ON {} ({})",
             index_type,
-            index.name,
-            table.name,
-            index.columns.join(", ")
+            quote_identifier_sqlite(&index.name),
+            quote_identifier_sqlite(&table.name),
+            quote_columns_sqlite(&index.columns)
         )
     }
 }
@@ -356,14 +365,17 @@ mod tests {
         assert!(statements.len() >= 9);
         assert_eq!(statements[0], "PRAGMA foreign_keys=off");
         assert_eq!(statements[1], "BEGIN TRANSACTION");
-        assert!(statements[2].starts_with("CREATE TABLE new_users"));
-        assert!(statements[3].starts_with("INSERT INTO new_users"));
-        assert_eq!(statements[4], "DROP TABLE users");
-        assert_eq!(statements[5], "ALTER TABLE new_users RENAME TO users");
+        assert!(statements[2].starts_with(r#"CREATE TABLE "new_users""#));
+        assert!(statements[3].starts_with(r#"INSERT INTO "new_users""#));
+        assert_eq!(statements[4], r#"DROP TABLE "users""#);
+        assert_eq!(
+            statements[5],
+            r#"ALTER TABLE "new_users" RENAME TO "users""#
+        );
         // インデックスがない場合、次はCOMMIT
         assert!(statements.contains(&"COMMIT".to_string()));
         assert!(statements.contains(&"PRAGMA foreign_keys=on".to_string()));
-        assert!(statements.contains(&"PRAGMA foreign_key_check(users)".to_string()));
+        assert!(statements.contains(&r#"PRAGMA foreign_key_check("users")"#.to_string()));
     }
 
     #[test]
@@ -389,7 +401,7 @@ mod tests {
         // インデックス再作成を確認
         assert!(statements
             .iter()
-            .any(|s| s.contains("CREATE INDEX idx_users_email")));
+            .any(|s| s.contains(r#"CREATE INDEX "idx_users_email""#)));
     }
 
     #[test]
@@ -412,7 +424,7 @@ mod tests {
 
         // CREATE TABLE内にUNIQUE制約が含まれることを確認
         let create_table_stmt = &statements[2];
-        assert!(create_table_stmt.contains("UNIQUE (email)"));
+        assert!(create_table_stmt.contains(r#"UNIQUE ("email")"#));
     }
 
     #[test]
@@ -425,7 +437,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            "INSERT INTO new_users (id, name, email) SELECT id, name, email FROM users"
+            r#"INSERT INTO "new_users" ("id", "name", "email") SELECT "id", "name", "email" FROM "users""#
         );
     }
 
@@ -436,11 +448,11 @@ mod tests {
 
         let sql = recreator.generate_create_table_with_name(&table, "new_users");
 
-        assert!(sql.starts_with("CREATE TABLE new_users"));
-        assert!(sql.contains("id INTEGER NOT NULL"));
-        assert!(sql.contains("name TEXT NOT NULL"));
-        assert!(sql.contains("email TEXT"));
-        assert!(sql.contains("PRIMARY KEY (id)"));
+        assert!(sql.starts_with(r#"CREATE TABLE "new_users""#));
+        assert!(sql.contains(r#""id" INTEGER NOT NULL"#));
+        assert!(sql.contains(r#""name" TEXT NOT NULL"#));
+        assert!(sql.contains(r#""email" TEXT"#));
+        assert!(sql.contains(r#"PRIMARY KEY ("id")"#));
     }
 
     #[test]
@@ -502,7 +514,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            "INSERT INTO new_users (id, name, email) SELECT id, name, email FROM users"
+            r#"INSERT INTO "new_users" ("id", "name", "email") SELECT "id", "name", "email" FROM "users""#
         );
     }
 
@@ -547,7 +559,7 @@ mod tests {
         // 追加されたnullableカラムにはNULLが入る
         assert_eq!(
             sql,
-            "INSERT INTO new_users (id, name, bio) SELECT id, name, NULL FROM users"
+            r#"INSERT INTO "new_users" ("id", "name", "bio") SELECT "id", "name", NULL FROM "users""#
         );
     }
 
@@ -594,7 +606,7 @@ mod tests {
         // 追加されたカラムにはDEFAULT値が入る
         assert_eq!(
             sql,
-            "INSERT INTO new_users (id, name, status) SELECT id, name, 'active' FROM users"
+            r#"INSERT INTO "new_users" ("id", "name", "status") SELECT "id", "name", 'active' FROM "users""#
         );
     }
 
@@ -624,7 +636,7 @@ mod tests {
         // 削除されたカラムはSELECTに含まれない
         assert_eq!(
             sql,
-            "INSERT INTO new_users (id, name) SELECT id, name FROM users"
+            r#"INSERT INTO "new_users" ("id", "name") SELECT "id", "name" FROM "users""#
         );
     }
 
@@ -659,7 +671,7 @@ mod tests {
         // NOT NULLでDEFAULTがない場合はフォールバック値（0）
         assert_eq!(
             sql,
-            "INSERT INTO new_users (id, count) SELECT id, 0 FROM users"
+            r#"INSERT INTO "new_users" ("id", "count") SELECT "id", 0 FROM "users""#
         );
     }
 
@@ -673,7 +685,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            "INSERT INTO new_users (id, name, email) SELECT id, name, email FROM users"
+            r#"INSERT INTO "new_users" ("id", "name", "email") SELECT "id", "name", "email" FROM "users""#
         );
     }
 }

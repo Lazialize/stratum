@@ -11,6 +11,12 @@ use crate::core::schema::{Column, ColumnType, EnumDefinition, Index, Table};
 use crate::core::schema_diff::{ColumnDiff, EnumDiff, RenamedColumn};
 use sha2::{Digest, Sha256};
 
+// sql_quoteモジュールから識別子クォート関数を再エクスポート
+pub(crate) use crate::adapters::sql_quote::{
+    quote_columns_mysql, quote_columns_postgres, quote_columns_sqlite, quote_identifier_mysql,
+    quote_identifier_postgres, quote_identifier_sqlite, quote_regclass_postgres,
+};
+
 /// PostgreSQL/MySQLの識別子最大長
 const MAX_IDENTIFIER_LENGTH: usize = 63;
 
@@ -67,14 +73,22 @@ pub(crate) fn generate_fk_constraint_name(
 }
 
 /// カラム定義の共通組み立てヘルパー
+///
+/// # Arguments
+///
+/// * `quoted_name` - クォート済みのカラム名
+/// * `column` - カラム定義（nullable, default_valueなどを参照）
+/// * `type_str` - SQL型文字列
+/// * `extra_parts` - 追加の修飾子（AUTO_INCREMENTなど）
 pub(crate) fn build_column_definition(
+    quoted_name: &str,
     column: &Column,
     type_str: String,
     extra_parts: &[&str],
 ) -> String {
     let mut parts = Vec::new();
 
-    parts.push(column.name.clone());
+    parts.push(quoted_name.to_string());
     parts.push(type_str);
 
     if !column.nullable {
