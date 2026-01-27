@@ -4,6 +4,7 @@
 pub mod config_loader;
 pub mod config_serializer;
 pub mod database_config_resolver;
+pub mod destructive_change_detector;
 pub mod migration_generator;
 pub mod migration_pipeline;
 pub mod schema_checksum;

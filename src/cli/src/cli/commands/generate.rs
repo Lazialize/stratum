@@ -7,8 +7,10 @@
 // - 生成されたファイルパスの表示
 
 use crate::cli::command_context::CommandContext;
+use crate::cli::commands::destructive_change_formatter::DestructiveChangeFormatter;
 use crate::core::config::Config;
 use crate::core::schema::Schema;
+use crate::services::destructive_change_detector::DestructiveChangeDetector;
 use crate::services::migration_generator::MigrationGenerator;
 use crate::services::schema_checksum::SchemaChecksumService;
 use crate::services::schema_diff_detector::SchemaDiffDetector;
@@ -29,6 +31,8 @@ pub struct GenerateCommand {
     pub description: Option<String>,
     /// ドライラン（SQLを表示するがファイルは作成しない）
     pub dry_run: bool,
+    /// 破壊的変更を許可
+    pub allow_destructive: bool,
 }
 
 /// 型変更情報
@@ -96,6 +100,10 @@ impl GenerateCommandHandler {
             ));
         }
 
+        // 破壊的変更の検出
+        let destructive_detector = DestructiveChangeDetector::new();
+        let destructive_report = destructive_detector.detect(&diff);
+
         // リネーム検証を実行（旧スキーマ照合あり）
         let validator = SchemaValidatorService::new();
         let rename_validation =
@@ -131,12 +139,24 @@ impl GenerateCommandHandler {
             ));
         }
 
+        // 破壊的変更がある場合はデフォルト拒否
+        if destructive_report.has_destructive_changes() && !command.allow_destructive {
+            if !command.dry_run {
+                let formatter = DestructiveChangeFormatter::new();
+                return Err(anyhow!(formatter.format_error(
+                    &destructive_report,
+                    "strata generate"
+                )));
+            }
+        }
+
         // スキーマ付きでSQLを生成（型変更検証を含む）
-        let sql_result = generator.generate_up_sql_with_schemas(
+        let sql_result = generator.generate_up_sql_with_schemas_and_options(
             &diff,
             &previous_schema,
             &current_schema,
             config.dialect,
+            command.allow_destructive,
         );
 
         // 型変更検証エラーの処理
@@ -160,15 +180,30 @@ impl GenerateCommandHandler {
         for warning in renamed_from_warnings {
             validation_result.add_warning(warning);
         }
+        if let Some(warning) = self.generate_enum_recreate_deprecation_warning(&current_schema) {
+            validation_result.add_warning(warning);
+        }
 
         let (down_sql, _) = generator
-            .generate_down_sql_with_schemas(
+            .generate_down_sql_with_schemas_and_options(
                 &diff,
                 &previous_schema,
                 &current_schema,
                 config.dialect,
+                command.allow_destructive,
             )
             .map_err(|e| anyhow::anyhow!("Failed to generate DOWN SQL: {}", e))?;
+
+        let destructive_warning = if destructive_report.has_destructive_changes()
+            && command.allow_destructive
+            && !command.dry_run
+        {
+            Some(
+                DestructiveChangeFormatter::new().format_warning(&destructive_report),
+            )
+        } else {
+            None
+        };
 
         // dry-runモードの場合はSQLを表示して終了
         if command.dry_run {
@@ -178,6 +213,7 @@ impl GenerateCommandHandler {
                 &down_sql,
                 &diff,
                 &validation_result,
+                &destructive_report,
             );
         }
 
@@ -208,6 +244,7 @@ impl GenerateCommandHandler {
             &sanitized_description,
             config.dialect,
             &checksum,
+            Some(destructive_report.clone()),
         );
         let meta_path = migration_dir.join(".meta.yaml");
         fs::write(&meta_path, metadata)
@@ -216,7 +253,11 @@ impl GenerateCommandHandler {
         // 現在のスキーマを保存（次回の差分検出用）
         self.save_current_schema(&command.project_path, config, &current_schema)?;
 
-        Ok(migration_name)
+        if let Some(warning) = destructive_warning {
+            Ok(format!("{}\n{}", warning, migration_name))
+        } else {
+            Ok(migration_name)
+        }
     }
 
     /// dry-runモードの実行
@@ -227,6 +268,7 @@ impl GenerateCommandHandler {
         down_sql: &str,
         diff: &crate::core::schema_diff::SchemaDiff,
         validation_result: &crate::core::error::ValidationResult,
+        destructive_report: &crate::core::destructive_change_report::DestructiveChangeReport,
     ) -> Result<String> {
         use std::fmt::Write;
 
@@ -274,6 +316,11 @@ impl GenerateCommandHandler {
                 .unwrap();
             }
             writeln!(&mut output).unwrap();
+        }
+
+        // 破壊的変更のプレビュー
+        if destructive_report.has_destructive_changes() {
+            self.append_destructive_preview(&mut output, destructive_report)?;
         }
 
         // 警告の表示（黄色）
@@ -347,6 +394,98 @@ impl GenerateCommandHandler {
         .unwrap();
 
         Ok(output)
+    }
+
+    fn append_destructive_preview(
+        &self,
+        output: &mut String,
+        destructive_report: &crate::core::destructive_change_report::DestructiveChangeReport,
+    ) -> Result<()> {
+        use std::fmt::Write;
+
+        writeln!(
+            output,
+            "{}",
+            "⚠ Destructive Changes Detected".red().bold()
+        )
+        .unwrap();
+
+        for table in &destructive_report.tables_dropped {
+            writeln!(output, "  {}", format!("DROP TABLE: {}", table).red()).unwrap();
+        }
+
+        for entry in &destructive_report.columns_dropped {
+            for column in &entry.columns {
+                writeln!(
+                    output,
+                    "  {}",
+                    format!("DROP COLUMN: {}.{}", entry.table, column).red()
+                )
+                .unwrap();
+            }
+        }
+
+        for entry in &destructive_report.columns_renamed {
+            writeln!(
+                output,
+                "  {}",
+                format!(
+                    "RENAME COLUMN: {}.{} -> {}",
+                    entry.table, entry.old_name, entry.new_name
+                )
+                .red()
+            )
+            .unwrap();
+        }
+
+        for enum_name in &destructive_report.enums_dropped {
+            writeln!(
+                output,
+                "  {}",
+                format!("DROP ENUM: {}", enum_name).red()
+            )
+            .unwrap();
+        }
+
+        for enum_name in &destructive_report.enums_recreated {
+            writeln!(
+                output,
+                "  {}",
+                format!("RECREATE ENUM: {}", enum_name).red()
+            )
+            .unwrap();
+        }
+
+        let dropped_column_count: usize = destructive_report
+            .columns_dropped
+            .iter()
+            .map(|entry| entry.columns.len())
+            .sum();
+
+        writeln!(
+            output,
+            "  {}",
+            format!(
+                "Impact summary: tables dropped={}, columns dropped={}, columns renamed={}, enums dropped={}, enums recreated={}",
+                destructive_report.tables_dropped.len(),
+                dropped_column_count,
+                destructive_report.columns_renamed.len(),
+                destructive_report.enums_dropped.len(),
+                destructive_report.enums_recreated.len()
+            )
+            .red()
+        )
+        .unwrap();
+
+        writeln!(
+            output,
+            "\n{}",
+            "To proceed, run with --allow-destructive flag".red()
+        )
+        .unwrap();
+        writeln!(output).unwrap();
+
+        Ok(())
     }
 
     /// dry-runモードでのエラー表示
@@ -531,6 +670,24 @@ impl GenerateCommandHandler {
         warnings
     }
 
+    fn generate_enum_recreate_deprecation_warning(
+        &self,
+        schema: &Schema,
+    ) -> Option<crate::core::error::ValidationWarning> {
+        use crate::core::error::{ValidationWarning, WarningKind};
+
+        if schema.enum_recreate_allowed {
+            Some(ValidationWarning::new(
+                "Warning: 'enum_recreate_allowed' is deprecated. Use '--allow-destructive' instead."
+                    .to_string(),
+                None,
+                WarningKind::Compatibility,
+            ))
+        } else {
+            None
+        }
+    }
+
     /// 前回のスキーマ状態を読み込む
     fn load_previous_schema(&self, project_path: &Path, config: &Config) -> Result<Schema> {
         let snapshot_path = project_path
@@ -641,6 +798,7 @@ mod tests {
             project_path: std::path::PathBuf::from("/tmp"),
             description: Some("test".to_string()),
             dry_run: true,
+            allow_destructive: false,
         };
         assert!(command.dry_run);
     }
@@ -673,12 +831,14 @@ mod tests {
 
     #[test]
     fn test_execute_dry_run_output_format() {
+        use crate::core::destructive_change_report::DestructiveChangeReport;
         use crate::core::error::ValidationResult;
         use crate::core::schema_diff::SchemaDiff;
 
         let handler = GenerateCommandHandler::new();
         let diff = SchemaDiff::new();
         let validation_result = ValidationResult::new();
+        let destructive_report = DestructiveChangeReport::new();
 
         let result = handler.execute_dry_run(
             "20260124120000_test",
@@ -686,6 +846,7 @@ mod tests {
             "DROP TABLE users;",
             &diff,
             &validation_result,
+            &destructive_report,
         );
 
         assert!(result.is_ok());
@@ -699,13 +860,51 @@ mod tests {
     }
 
     #[test]
+    fn test_execute_dry_run_includes_destructive_preview() {
+        use crate::core::destructive_change_report::{DestructiveChangeReport, DroppedColumn};
+        use crate::core::error::ValidationResult;
+        use crate::core::schema_diff::SchemaDiff;
+
+        let handler = GenerateCommandHandler::new();
+        let diff = SchemaDiff::new();
+        let validation_result = ValidationResult::new();
+        let destructive_report = DestructiveChangeReport {
+            tables_dropped: vec!["users".to_string()],
+            columns_dropped: vec![DroppedColumn {
+                table: "orders".to_string(),
+                columns: vec!["legacy".to_string()],
+            }],
+            columns_renamed: Vec::new(),
+            enums_dropped: Vec::new(),
+            enums_recreated: Vec::new(),
+        };
+
+        let result = handler.execute_dry_run(
+            "20260124120000_drop_table",
+            "DROP TABLE users;",
+            "CREATE TABLE users (id INTEGER);",
+            &diff,
+            &validation_result,
+            &destructive_report,
+        );
+
+        let output = result.expect("dry-run output");
+        assert!(output.contains("Destructive Changes Detected"));
+        assert!(output.contains("DROP TABLE: users"));
+        assert!(output.contains("DROP COLUMN: orders.legacy"));
+        assert!(output.contains("--allow-destructive"));
+    }
+
+    #[test]
     fn test_execute_dry_run_with_warnings() {
+        use crate::core::destructive_change_report::DestructiveChangeReport;
         use crate::core::error::{ErrorLocation, ValidationResult, ValidationWarning};
         use crate::core::schema_diff::SchemaDiff;
 
         let handler = GenerateCommandHandler::new();
         let diff = SchemaDiff::new();
         let mut validation_result = ValidationResult::new();
+        let destructive_report = DestructiveChangeReport::new();
         validation_result.add_warning(ValidationWarning::data_loss(
             "VARCHAR(255) → VARCHAR(100) may truncate data".to_string(),
             Some(ErrorLocation {
@@ -721,6 +920,7 @@ mod tests {
             "ALTER TABLE users ...",
             &diff,
             &validation_result,
+            &destructive_report,
         );
 
         assert!(result.is_ok());
@@ -879,6 +1079,7 @@ mod tests {
     #[test]
     fn test_execute_dry_run_with_renames() {
         use crate::core::error::ValidationResult;
+        use crate::core::destructive_change_report::DestructiveChangeReport;
         use crate::core::schema::{Column, ColumnType};
         use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
 
@@ -907,6 +1108,7 @@ mod tests {
         diff.modified_tables.push(table_diff);
 
         let validation_result = ValidationResult::new();
+        let destructive_report = DestructiveChangeReport::new();
 
         let result = handler.execute_dry_run(
             "20260124120000_rename_column",
@@ -914,6 +1116,7 @@ mod tests {
             "ALTER TABLE users RENAME COLUMN user_name TO name;",
             &diff,
             &validation_result,
+            &destructive_report,
         );
 
         assert!(result.is_ok());
@@ -942,6 +1145,7 @@ mod tests {
     fn test_dry_run_displays_rename_sql_preview() {
         // Task 6.2: dry-runモードでリネームSQLがプレビュー表示されることを確認
         use crate::core::error::ValidationResult;
+        use crate::core::destructive_change_report::DestructiveChangeReport;
         use crate::core::schema::{Column, ColumnType};
         use crate::core::schema_diff::{RenamedColumn, SchemaDiff, TableDiff};
 
@@ -970,6 +1174,7 @@ mod tests {
         diff.modified_tables.push(table_diff);
 
         let validation_result = ValidationResult::new();
+        let destructive_report = DestructiveChangeReport::new();
 
         let up_sql = "ALTER TABLE contacts RENAME COLUMN email TO email_address;";
         let down_sql = "ALTER TABLE contacts RENAME COLUMN email_address TO email;";
@@ -980,6 +1185,7 @@ mod tests {
             down_sql,
             &diff,
             &validation_result,
+            &destructive_report,
         );
 
         assert!(result.is_ok());
@@ -1024,6 +1230,22 @@ mod tests {
             WarningKind::RenamedFromRemoveRecommendation
         ));
         assert!(warnings[0].message.contains("renamed_from"));
+    }
+
+    #[test]
+    fn test_generate_enum_recreate_deprecation_warning() {
+        use crate::core::error::WarningKind;
+
+        let handler = GenerateCommandHandler::new();
+        let mut schema = Schema::new("1.0".to_string());
+        schema.enum_recreate_allowed = true;
+
+        let warning = handler
+            .generate_enum_recreate_deprecation_warning(&schema)
+            .expect("warning should exist");
+
+        assert_eq!(warning.kind, WarningKind::Compatibility);
+        assert!(warning.message.contains("enum_recreate_allowed"));
     }
 
     // ======================================

@@ -9,11 +9,16 @@
 
 use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::command_context::CommandContext;
+use crate::cli::commands::destructive_change_formatter::DestructiveChangeFormatter;
 use crate::cli::commands::split_sql_statements;
 use crate::core::config::Dialect;
-use crate::core::migration::{AppliedMigration, Migration};
+use crate::core::migration::{
+    AppliedMigration, DestructiveChangeStatus, Migration, MigrationMetadata,
+};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
+use colored::Colorize;
+use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -28,6 +33,8 @@ pub struct ApplyCommand {
     pub env: String,
     /// タイムアウト（秒）
     pub timeout: Option<u64>,
+    /// 破壊的変更を許可
+    pub allow_destructive: bool,
 }
 
 /// applyコマンドハンドラー
@@ -102,6 +109,7 @@ impl ApplyCommandHandler {
 
         // マイグレーションを順次適用
         let mut applied = Vec::new();
+        let mut warnings = Vec::new();
         for (version, description, migration_dir) in pending_migrations {
             let start_time = Utc::now();
 
@@ -114,16 +122,50 @@ impl ApplyCommandHandler {
             let meta_path = migration_dir.join(".meta.yaml");
             let meta_content = fs::read_to_string(&meta_path)
                 .with_context(|| format!("Failed to read metadata file: {:?}", meta_path))?;
+            let metadata: MigrationMetadata =
+                serde_saphyr::from_str(&meta_content).with_context(|| "Failed to parse metadata")?;
 
-            // メタデータをHashMapとしてパース
-            use std::collections::HashMap as StdHashMap;
-            let metadata: StdHashMap<String, String> = serde_saphyr::from_str(&meta_content)
-                .with_context(|| "Failed to parse metadata")?;
+            // 破壊的変更の判定
+            match metadata.destructive_change_status() {
+                DestructiveChangeStatus::Legacy => {
+                    if !command.allow_destructive {
+                        let formatter = DestructiveChangeFormatter::new();
+                        return Err(anyhow!(formatter.format_legacy_error(
+                            version,
+                            "strata apply"
+                        )));
+                    }
+                    warnings.push(
+                        format!(
+                            "{}",
+                            format!(
+                                "Warning: Legacy migration format detected ({})",
+                                version
+                            )
+                            .yellow()
+                            .bold()
+                        )
+                        .to_string(),
+                    );
+                }
+                DestructiveChangeStatus::Present => {
+                    let report = metadata
+                        .destructive_changes
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Destructive change report missing"))?;
+                    if !command.allow_destructive {
+                        let formatter = DestructiveChangeFormatter::new();
+                        let mut message = String::new();
+                        message.push_str(&format!("Migration: {}\n\n", version));
+                        message.push_str(&formatter.format_error(report, "strata apply"));
+                        return Err(anyhow!(message));
+                    }
+                    warnings.push(DestructiveChangeFormatter::new().format_warning(report));
+                }
+                DestructiveChangeStatus::None => {}
+            }
 
-            let checksum = metadata
-                .get("checksum")
-                .ok_or_else(|| anyhow!("Metadata does not contain checksum"))?
-                .to_string();
+            let checksum = metadata.checksum.clone();
 
             // トランザクション内でマイグレーションを実行
             let result = self
@@ -154,7 +196,12 @@ impl ApplyCommandHandler {
         }
 
         // 結果サマリーを生成
-        Ok(self.generate_summary(&applied))
+        let summary = self.generate_summary(&applied);
+        if warnings.is_empty() {
+            Ok(summary)
+        } else {
+            Ok(format!("{}\n{}", warnings.join("\n"), summary))
+        }
     }
 
     /// 利用可能なマイグレーションファイルを読み込む
@@ -270,17 +317,80 @@ impl ApplyCommandHandler {
             pending_migrations.len()
         ));
 
+        let mut has_destructive = false;
+
         for (version, description, migration_dir) in pending_migrations {
             let up_sql_path = migration_dir.join("up.sql");
             let up_sql = fs::read_to_string(&up_sql_path)
                 .with_context(|| format!("Failed to read migration file: {:?}", up_sql_path))?;
 
+            let meta_path = migration_dir.join(".meta.yaml");
+            let meta_content = fs::read_to_string(&meta_path)
+                .with_context(|| format!("Failed to read metadata file: {:?}", meta_path))?;
+            let metadata: MigrationMetadata =
+                serde_saphyr::from_str(&meta_content).with_context(|| "Failed to parse metadata")?;
+            let destructive_status = metadata.destructive_change_status();
+
             output.push_str(&format!("\u{25b6} {} - {}\n", version, description));
+
+            match destructive_status {
+                DestructiveChangeStatus::Legacy => {
+                    has_destructive = true;
+                    output.push_str(
+                        &format!(
+                            "{}\n",
+                            "⚠ Legacy migration format detected - treating as destructive"
+                                .yellow()
+                                .bold()
+                        )
+                        .to_string(),
+                    );
+                }
+                DestructiveChangeStatus::Present => {
+                    has_destructive = true;
+                    output.push_str(
+                        &format!(
+                            "{}\n",
+                            "⚠ Destructive Changes Detected".red().bold()
+                        )
+                        .to_string(),
+                    );
+                }
+                DestructiveChangeStatus::None => {}
+            }
+
             output.push_str("SQL:\n");
-            output.push_str(&format!("{}\n\n", up_sql));
+            let rendered_sql = if destructive_status == DestructiveChangeStatus::Present {
+                self.highlight_destructive_sql(&up_sql)
+            } else {
+                up_sql
+            };
+            output.push_str(&format!("{}\n\n", rendered_sql));
+        }
+
+        if has_destructive {
+            output.push_str("To proceed, run with --allow-destructive flag\n");
         }
 
         Ok(output)
+    }
+
+    fn highlight_destructive_sql(&self, sql: &str) -> String {
+        let pattern = r"(?i)\b(DROP\s+(TABLE|COLUMN|TYPE|INDEX|CONSTRAINT)|ALTER\s+.*\s+(DROP|RENAME)|RENAME\s+(TABLE|COLUMN))\b";
+        let regex = match Regex::new(pattern) {
+            Ok(regex) => regex,
+            Err(_) => return sql.to_string(),
+        };
+
+        let mut rendered = Vec::new();
+        for line in sql.lines() {
+            if regex.is_match(line) {
+                rendered.push(line.red().to_string());
+            } else {
+                rendered.push(line.to_string());
+            }
+        }
+        rendered.join("\n")
     }
 
     /// 適用結果のサマリーを生成
@@ -350,6 +460,21 @@ mod tests {
         assert!(summary.contains("20260121120000"));
         assert!(summary.contains("20260121120001"));
         assert!(summary.contains("300ms")); // 100 + 200
+    }
+
+    #[test]
+    fn test_highlight_destructive_sql_marks_drop() {
+        use colored::control;
+
+        let handler = ApplyCommandHandler::new();
+        let sql = "CREATE TABLE users (id INTEGER);\nDROP TABLE users;";
+
+        control::set_override(true);
+        let rendered = handler.highlight_destructive_sql(sql);
+        control::set_override(false);
+
+        assert!(rendered.contains("\u{1b}[31m"));
+        assert!(rendered.contains("DROP TABLE users;"));
     }
 
     #[tokio::test]

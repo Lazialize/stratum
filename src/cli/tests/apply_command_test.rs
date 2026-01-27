@@ -32,6 +32,7 @@ async fn test_apply_command_no_config_file() {
         dry_run: false,
         env: "development".to_string(),
         timeout: None,
+        allow_destructive: false,
     };
 
     let result = handler.execute(&command).await;
@@ -65,6 +66,7 @@ async fn test_apply_command_no_pending_migrations() {
         dry_run: false,
         env: "development".to_string(),
         timeout: None,
+        allow_destructive: false,
     };
 
     let result = handler.execute(&command).await;
@@ -103,8 +105,9 @@ async fn test_apply_command_dry_run_mode() {
 
     let metadata = r#"version: "20260121120000"
 description: "create_users"
-dialect: SQLite
+dialect: sqlite
 checksum: "test_checksum"
+destructive_changes: {}
 "#;
     fs::write(migration_dir.join(".meta.yaml"), metadata).unwrap();
 
@@ -114,6 +117,7 @@ checksum: "test_checksum"
         dry_run: true,
         env: "development".to_string(),
         timeout: None,
+        allow_destructive: false,
     };
 
     let result = handler.execute(&command).await;
@@ -158,8 +162,9 @@ async fn test_apply_command_success_with_sqlite() {
 
     let metadata = r#"version: "20260121120000"
 description: "create_users"
-dialect: SQLite
+dialect: sqlite
 checksum: "test_checksum"
+destructive_changes: {}
 "#;
     fs::write(migration_dir.join(".meta.yaml"), metadata).unwrap();
 
@@ -169,6 +174,7 @@ checksum: "test_checksum"
         dry_run: false,
         env: "development".to_string(),
         timeout: None,
+        allow_destructive: false,
     };
 
     let result = handler.execute(&command).await;
@@ -214,8 +220,9 @@ async fn test_apply_command_migration_already_applied() {
 
     let metadata = r#"version: "20260121120000"
 description: "create_users"
-dialect: SQLite
+dialect: sqlite
 checksum: "test_checksum"
+destructive_changes: {}
 "#;
     fs::write(migration_dir.join(".meta.yaml"), metadata).unwrap();
 
@@ -225,6 +232,7 @@ checksum: "test_checksum"
         dry_run: false,
         env: "development".to_string(),
         timeout: None,
+        allow_destructive: false,
     };
 
     // 1回目の適用
@@ -275,8 +283,9 @@ async fn test_apply_command_multiple_migrations() {
         migration_dir1.join(".meta.yaml"),
         r#"version: "20260121120000"
 description: "create_users"
-dialect: SQLite
+dialect: sqlite
 checksum: "checksum1"
+destructive_changes: {}
 "#,
     )
     .unwrap();
@@ -294,8 +303,9 @@ checksum: "checksum1"
         migration_dir2.join(".meta.yaml"),
         r#"version: "20260121120001"
 description: "create_posts"
-dialect: SQLite
+dialect: sqlite
 checksum: "checksum2"
+destructive_changes: {}
 "#,
     )
     .unwrap();
@@ -306,6 +316,7 @@ checksum: "checksum2"
         dry_run: false,
         env: "development".to_string(),
         timeout: None,
+        allow_destructive: false,
     };
 
     let result = handler.execute(&command).await;
@@ -352,8 +363,9 @@ async fn test_apply_command_sql_error() {
         migration_dir.join(".meta.yaml"),
         r#"version: "20260121120000"
 description: "invalid_sql"
-dialect: SQLite
+dialect: sqlite
 checksum: "test_checksum"
+destructive_changes: {}
 "#,
     )
     .unwrap();
@@ -364,6 +376,7 @@ checksum: "test_checksum"
         dry_run: false,
         env: "development".to_string(),
         timeout: None,
+        allow_destructive: false,
     };
 
     let result = handler.execute(&command).await;
