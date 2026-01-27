@@ -21,6 +21,12 @@ use colored::Colorize;
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+static DESTRUCTIVE_SQL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(DROP\s+(TABLE|COLUMN|TYPE|INDEX|CONSTRAINT)|ALTER\s+.*\s+(DROP|RENAME)|RENAME\s+(TABLE|COLUMN))\b")
+        .expect("Invalid destructive SQL regex pattern")
+});
 
 /// applyコマンドの入力パラメータ
 #[derive(Debug, Clone)]
@@ -122,28 +128,24 @@ impl ApplyCommandHandler {
             let meta_path = migration_dir.join(".meta.yaml");
             let meta_content = fs::read_to_string(&meta_path)
                 .with_context(|| format!("Failed to read metadata file: {:?}", meta_path))?;
-            let metadata: MigrationMetadata =
-                serde_saphyr::from_str(&meta_content).with_context(|| "Failed to parse metadata")?;
+            let metadata: MigrationMetadata = serde_saphyr::from_str(&meta_content)
+                .with_context(|| "Failed to parse metadata")?;
 
             // 破壊的変更の判定
             match metadata.destructive_change_status() {
                 DestructiveChangeStatus::Legacy => {
                     if !command.allow_destructive {
                         let formatter = DestructiveChangeFormatter::new();
-                        return Err(anyhow!(formatter.format_legacy_error(
-                            version,
-                            "strata apply"
-                        )));
+                        return Err(anyhow!(
+                            formatter.format_legacy_error(version, "strata apply")
+                        ));
                     }
                     warnings.push(
                         format!(
                             "{}",
-                            format!(
-                                "Warning: Legacy migration format detected ({})",
-                                version
-                            )
-                            .yellow()
-                            .bold()
+                            format!("Warning: Legacy migration format detected ({})", version)
+                                .yellow()
+                                .bold()
                         )
                         .to_string(),
                     );
@@ -327,9 +329,13 @@ impl ApplyCommandHandler {
             let meta_path = migration_dir.join(".meta.yaml");
             let meta_content = fs::read_to_string(&meta_path)
                 .with_context(|| format!("Failed to read metadata file: {:?}", meta_path))?;
-            let metadata: MigrationMetadata =
-                serde_saphyr::from_str(&meta_content).with_context(|| "Failed to parse metadata")?;
-            let destructive_status = metadata.destructive_change_status();
+            // dry-run ではレガシー .meta.yaml（例: dialect: SQLite）でもエラーにせず
+            // Legacy 扱いにする
+            let destructive_status =
+                match serde_saphyr::from_str::<MigrationMetadata>(&meta_content) {
+                    Ok(metadata) => metadata.destructive_change_status(),
+                    Err(_) => DestructiveChangeStatus::Legacy,
+                };
 
             output.push_str(&format!("\u{25b6} {} - {}\n", version, description));
 
@@ -349,11 +355,7 @@ impl ApplyCommandHandler {
                 DestructiveChangeStatus::Present => {
                     has_destructive = true;
                     output.push_str(
-                        &format!(
-                            "{}\n",
-                            "⚠ Destructive Changes Detected".red().bold()
-                        )
-                        .to_string(),
+                        &format!("{}\n", "⚠ Destructive Changes Detected".red().bold()).to_string(),
                     );
                 }
                 DestructiveChangeStatus::None => {}
@@ -376,11 +378,7 @@ impl ApplyCommandHandler {
     }
 
     fn highlight_destructive_sql(&self, sql: &str) -> String {
-        let pattern = r"(?i)\b(DROP\s+(TABLE|COLUMN|TYPE|INDEX|CONSTRAINT)|ALTER\s+.*\s+(DROP|RENAME)|RENAME\s+(TABLE|COLUMN))\b";
-        let regex = match Regex::new(pattern) {
-            Ok(regex) => regex,
-            Err(_) => return sql.to_string(),
-        };
+        let regex = &*DESTRUCTIVE_SQL_REGEX;
 
         let mut rendered = Vec::new();
         for line in sql.lines() {

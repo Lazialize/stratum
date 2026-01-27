@@ -4,10 +4,10 @@
 // 内部では MigrationPipeline を使用してSQL生成を行う。
 
 use crate::core::config::Dialect;
-use crate::core::error::ValidationResult;
-use crate::core::schema::Schema;
 use crate::core::destructive_change_report::DestructiveChangeReport;
+use crate::core::error::ValidationResult;
 use crate::core::migration::MigrationMetadata;
+use crate::core::schema::Schema;
 use crate::core::schema_diff::SchemaDiff;
 use crate::services::migration_pipeline::MigrationPipeline;
 use chrono::Utc;
@@ -170,7 +170,7 @@ impl MigrationGenerator {
 
         serde_saphyr::to_string(&metadata).unwrap_or_else(|_| {
             format!(
-                "version: {}\ndescription: {}\ndialect: {:?}\nchecksum: {}\n",
+                "version: {}\ndescription: {}\ndialect: {}\nchecksum: {}\n",
                 version, description, dialect, checksum
             )
         })
@@ -198,13 +198,7 @@ impl MigrationGenerator {
         new_schema: &Schema,
         dialect: Dialect,
     ) -> Result<(String, ValidationResult), String> {
-        self.generate_up_sql_with_schemas_and_options(
-            diff,
-            old_schema,
-            new_schema,
-            dialect,
-            false,
-        )
+        self.generate_up_sql_with_schemas_and_options(diff, old_schema, new_schema, dialect, false)
     }
 
     /// DOWN SQLを生成（スキーマ付き、型変更対応）
@@ -230,11 +224,7 @@ impl MigrationGenerator {
         dialect: Dialect,
     ) -> Result<(String, ValidationResult), String> {
         self.generate_down_sql_with_schemas_and_options(
-            diff,
-            old_schema,
-            new_schema,
-            dialect,
-            false,
+            diff, old_schema, new_schema, dialect, false,
         )
     }
 
