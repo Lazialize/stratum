@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use std::env;
 use std::process;
@@ -19,7 +19,12 @@ fn main() {
     let cli = Cli::parse();
 
     // 非同期ランタイムを作成して実行
-    let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    let runtime = tokio::runtime::Runtime::new()
+        .context("Failed to create Tokio runtime")
+        .unwrap_or_else(|e| {
+            eprintln!("Error: {:#}", e);
+            process::exit(1);
+        });
 
     let result = runtime.block_on(run_command(cli));
 

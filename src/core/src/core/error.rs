@@ -242,6 +242,15 @@ impl ErrorLocation {
         }
     }
 
+    /// テーブル名とカラム名を指定してエラー位置を作成
+    pub fn with_table_and_column(table: &str, column: &str) -> Self {
+        Self {
+            table: Some(table.to_string()),
+            column: Some(column.to_string()),
+            line: None,
+        }
+    }
+
     /// 位置情報をフォーマット
     pub fn format(&self) -> String {
         let mut parts = Vec::new();
@@ -324,6 +333,13 @@ impl ValidationResult {
     pub fn merge(&mut self, other: ValidationResult) {
         self.errors.extend(other.errors);
         self.warnings.extend(other.warnings);
+    }
+
+    /// 複数のバリデーション結果を一括マージ
+    pub fn merge_all(&mut self, results: impl IntoIterator<Item = ValidationResult>) {
+        for result in results {
+            self.merge(result);
+        }
     }
 }
 

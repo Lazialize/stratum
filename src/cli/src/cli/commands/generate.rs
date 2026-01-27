@@ -239,13 +239,15 @@ impl GenerateCommandHandler {
         let checksum = checksum_calculator.calculate_checksum(&current_schema);
 
         // メタデータを生成
-        let metadata = generator.generate_migration_metadata(
-            &timestamp,
-            &sanitized_description,
-            config.dialect,
-            &checksum,
-            Some(destructive_report.clone()),
-        );
+        let metadata = generator
+            .generate_migration_metadata(
+                &timestamp,
+                &sanitized_description,
+                config.dialect,
+                &checksum,
+                destructive_report.clone(),
+            )
+            .map_err(|e| anyhow::anyhow!(e))?;
         let meta_path = migration_dir.join(".meta.yaml");
         fs::write(&meta_path, metadata)
             .with_context(|| format!("Failed to write metadata: {:?}", meta_path))?;
@@ -641,11 +643,10 @@ impl GenerateCommandHandler {
         for (table_name, table) in &schema.tables {
             for column in &table.columns {
                 if column.renamed_from.is_some() {
-                    let location = Some(ErrorLocation {
-                        table: Some(table_name.clone()),
-                        column: Some(column.name.clone()),
-                        line: None,
-                    });
+                    let location = Some(ErrorLocation::with_table_and_column(
+                        table_name,
+                        &column.name,
+                    ));
                     warnings.push(ValidationWarning::renamed_from_remove_recommendation(
                         format!(
                             "Column '{}.{}' still has 'renamed_from' attribute. Consider removing it after migration is applied.",

@@ -97,11 +97,10 @@ impl TypeChangeValidator {
         let old_category = TypeCategory::from_column_type(old_type);
         let new_category = TypeCategory::from_column_type(new_type);
 
-        let location = Some(ErrorLocation {
-            table: Some(table_name.to_string()),
-            column: Some(column_name.to_string()),
-            line: None,
-        });
+        let location = Some(ErrorLocation::with_table_and_column(
+            table_name,
+            column_name,
+        ));
 
         match old_category.conversion_result(&new_category) {
             TypeConversionResult::Safe | TypeConversionResult::SafeWithPrecisionCheck => Ok(None),
@@ -137,11 +136,10 @@ impl TypeChangeValidator {
         table_name: &str,
         column_name: &str,
     ) -> Option<ValidationWarning> {
-        let location = Some(ErrorLocation {
-            table: Some(table_name.to_string()),
-            column: Some(column_name.to_string()),
-            line: None,
-        });
+        let location = Some(ErrorLocation::with_table_and_column(
+            table_name,
+            column_name,
+        ));
 
         match (old_type, new_type) {
             // VARCHAR サイズ縮小
@@ -250,11 +248,10 @@ impl TypeChangeValidator {
         column_name: &str,
         dialect: &Dialect,
     ) -> Option<ValidationError> {
-        let location = Some(ErrorLocation {
-            table: Some(table_name.to_string()),
-            column: Some(column_name.to_string()),
-            line: None,
-        });
+        let location = Some(ErrorLocation::with_table_and_column(
+            table_name,
+            column_name,
+        ));
 
         match dialect {
             Dialect::MySQL => self.validate_mysql_constraints(old_type, new_type, location),

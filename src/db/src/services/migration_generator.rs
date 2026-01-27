@@ -158,8 +158,8 @@ impl MigrationGenerator {
         description: &str,
         dialect: Dialect,
         checksum: &str,
-        destructive_changes: Option<DestructiveChangeReport>,
-    ) -> String {
+        destructive_changes: DestructiveChangeReport,
+    ) -> Result<String, String> {
         let metadata = MigrationMetadata {
             version: version.to_string(),
             description: description.to_string(),
@@ -168,12 +168,8 @@ impl MigrationGenerator {
             destructive_changes,
         };
 
-        serde_saphyr::to_string(&metadata).unwrap_or_else(|_| {
-            format!(
-                "version: {}\ndescription: {}\ndialect: {}\nchecksum: {}\n",
-                version, description, dialect, checksum
-            )
-        })
+        serde_saphyr::to_string(&metadata)
+            .map_err(|e| format!("Failed to serialize metadata: {}", e))
     }
 
     /// UP SQLを生成（スキーマ付き、型変更対応）
@@ -307,13 +303,15 @@ mod tests {
     #[test]
     fn test_generate_migration_metadata() {
         let generator = MigrationGenerator::new();
-        let metadata = generator.generate_migration_metadata(
-            "20260122120000",
-            "create_users",
-            Dialect::PostgreSQL,
-            "abc123",
-            Some(DestructiveChangeReport::new()),
-        );
+        let metadata = generator
+            .generate_migration_metadata(
+                "20260122120000",
+                "create_users",
+                Dialect::PostgreSQL,
+                "abc123",
+                DestructiveChangeReport::new(),
+            )
+            .expect("Failed to generate metadata");
 
         assert!(
             metadata.contains("version: 20260122120000")

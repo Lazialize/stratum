@@ -85,7 +85,6 @@ impl DestructiveChangeReport {
 #[cfg(test)]
 mod tests {
     use super::{DestructiveChangeReport, DroppedColumn, RenamedColumnInfo};
-    use serde::{Deserialize, Serialize};
 
     #[test]
     fn new_report_is_empty() {
@@ -174,26 +173,5 @@ mod tests {
         assert!(!yaml.contains("columns_renamed"));
         assert!(!yaml.contains("enums_dropped"));
         assert!(!yaml.contains("enums_recreated"));
-    }
-
-    #[test]
-    fn missing_destructive_changes_field_deserializes_to_none() {
-        #[derive(Debug, PartialEq, Serialize, Deserialize)]
-        struct MetadataWrapper {
-            version: String,
-            #[serde(default)]
-            destructive_changes: Option<DestructiveChangeReport>,
-        }
-
-        let yaml = r#"version: "20260125120000""#;
-        let parsed: MetadataWrapper = serde_saphyr::from_str(yaml).expect("deserialize metadata");
-
-        assert_eq!(
-            parsed,
-            MetadataWrapper {
-                version: "20260125120000".to_string(),
-                destructive_changes: None,
-            }
-        );
     }
 }

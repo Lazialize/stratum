@@ -56,8 +56,7 @@ pub struct MigrationMetadata {
     pub checksum: String,
 
     /// 破壊的変更の検出結果
-    #[serde(default)]
-    pub destructive_changes: Option<DestructiveChangeReport>,
+    pub destructive_changes: DestructiveChangeReport,
 }
 
 /// 破壊的変更の判定結果
@@ -67,22 +66,15 @@ pub enum DestructiveChangeStatus {
     None,
     /// 破壊的変更あり
     Present,
-    /// 旧メタデータ（判定不能のため破壊的扱い）
-    Legacy,
 }
 
 impl MigrationMetadata {
     /// 破壊的変更の有無を判定
     pub fn destructive_change_status(&self) -> DestructiveChangeStatus {
-        match &self.destructive_changes {
-            None => DestructiveChangeStatus::Legacy,
-            Some(report) => {
-                if report.has_destructive_changes() {
-                    DestructiveChangeStatus::Present
-                } else {
-                    DestructiveChangeStatus::None
-                }
-            }
+        if self.destructive_changes.has_destructive_changes() {
+            DestructiveChangeStatus::Present
+        } else {
+            DestructiveChangeStatus::None
         }
     }
 }
@@ -411,20 +403,17 @@ mod tests {
     }
 
     #[test]
-    fn test_metadata_missing_destructive_changes_is_legacy() {
+    fn test_metadata_missing_destructive_changes_is_error() {
         let yaml = r#"version: "20260125120000"
 description: "legacy"
 dialect: postgresql
 checksum: "abc123"
 "#;
 
-        let metadata: MigrationMetadata =
-            serde_saphyr::from_str(yaml).expect("Failed to deserialize metadata");
-
-        assert_eq!(metadata.destructive_changes, None);
-        assert_eq!(
-            metadata.destructive_change_status(),
-            DestructiveChangeStatus::Legacy
+        let result = serde_saphyr::from_str::<MigrationMetadata>(yaml);
+        assert!(
+            result.is_err(),
+            "Missing destructive_changes should cause parse error"
         );
     }
 
@@ -440,10 +429,7 @@ destructive_changes: {}
         let metadata: MigrationMetadata =
             serde_saphyr::from_str(yaml).expect("Failed to deserialize metadata");
 
-        assert_eq!(
-            metadata.destructive_changes,
-            Some(DestructiveChangeReport::new())
-        );
+        assert_eq!(metadata.destructive_changes, DestructiveChangeReport::new());
         assert_eq!(
             metadata.destructive_change_status(),
             DestructiveChangeStatus::None
@@ -464,11 +450,7 @@ destructive_changes:
         let metadata: MigrationMetadata =
             serde_saphyr::from_str(yaml).expect("Failed to deserialize metadata");
 
-        assert!(metadata
-            .destructive_changes
-            .as_ref()
-            .expect("report should exist")
-            .has_destructive_changes());
+        assert!(metadata.destructive_changes.has_destructive_changes());
         assert_eq!(
             metadata.destructive_change_status(),
             DestructiveChangeStatus::Present

@@ -9,17 +9,34 @@ use crate::core::migration::{Migration, MigrationRecord};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use sqlx::{any::AnyQueryResult, AnyPool, Row};
+use std::sync::LazyLock;
 
-/// 許可されるマイグレーションテーブル名のパターン
+/// 許可されるマイグレーションテーブル名のパターン（コンパイル済み正規表現）
 ///
 /// # Security
 /// - 英字またはアンダースコアで開始
 /// - 英数字とアンダースコアのみで構成
 /// - 最大63文字（PostgreSQL識別子制限）
-const ALLOWED_TABLE_NAME_PATTERN: &str = r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$";
+static ALLOWED_TABLE_NAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$").expect("Invalid table name regex pattern")
+});
 
 /// デフォルトのマイグレーションテーブル名
 pub const DEFAULT_MIGRATION_TABLE: &str = "schema_migrations";
+
+/// データベース方言に応じたプレースホルダ文字列を返す
+///
+/// PostgreSQLは `$1`, `$2`, ... 形式、MySQL/SQLiteは `?` 形式を使用する。
+///
+/// # Arguments
+/// * `dialect` - データベース方言
+/// * `n` - パラメータの番号（1始まり）
+fn placeholder(dialect: Dialect, n: usize) -> String {
+    match dialect {
+        Dialect::PostgreSQL => format!("${n}"),
+        Dialect::MySQL | Dialect::SQLite => "?".to_string(),
+    }
+}
 
 /// データベースマイグレーターサービス
 ///
@@ -54,8 +71,7 @@ impl DatabaseMigratorService {
             });
         }
 
-        let re = Regex::new(ALLOWED_TABLE_NAME_PATTERN).expect("Invalid regex pattern");
-        if !re.is_match(name) {
+        if !ALLOWED_TABLE_NAME_RE.is_match(name) {
             return Err(DatabaseError::InvalidTableName {
                 name: name.to_string(),
                 reason: "Table name must start with letter or underscore, contain only alphanumeric characters and underscores, and be at most 63 characters".to_string(),
@@ -146,14 +162,18 @@ impl DatabaseMigratorService {
         migration: &Migration,
         dialect: Dialect,
     ) -> (String, Vec<String>) {
-        let sql = match dialect {
-            Dialect::PostgreSQL => {
-                "INSERT INTO schema_migrations (version, description, applied_at, checksum) VALUES ($1, $2, $3::timestamptz, $4)".to_string()
-            }
-            Dialect::MySQL | Dialect::SQLite => {
-                "INSERT INTO schema_migrations (version, description, applied_at, checksum) VALUES (?, ?, ?, ?)".to_string()
-            }
+        let p1 = placeholder(dialect, 1);
+        let p2 = placeholder(dialect, 2);
+        let p3 = placeholder(dialect, 3);
+        let p4 = placeholder(dialect, 4);
+        let cast = if dialect == Dialect::PostgreSQL {
+            "::timestamptz"
+        } else {
+            ""
         };
+        let sql = format!(
+            "INSERT INTO schema_migrations (version, description, applied_at, checksum) VALUES ({p1}, {p2}, {p3}{cast}, {p4})"
+        );
 
         let params = vec![
             migration.version.clone(),
@@ -222,12 +242,8 @@ impl DatabaseMigratorService {
         version: &str,
         dialect: Dialect,
     ) -> (String, Vec<String>) {
-        let sql = match dialect {
-            Dialect::PostgreSQL => "DELETE FROM schema_migrations WHERE version = $1".to_string(),
-            Dialect::MySQL | Dialect::SQLite => {
-                "DELETE FROM schema_migrations WHERE version = ?".to_string()
-            }
-        };
+        let p1 = placeholder(dialect, 1);
+        let sql = format!("DELETE FROM schema_migrations WHERE version = {p1}");
 
         let params = vec![version.to_string()];
 

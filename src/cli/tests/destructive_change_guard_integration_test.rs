@@ -224,7 +224,7 @@ destructive_changes:
 }
 
 #[tokio::test]
-async fn test_apply_legacy_metadata_requires_allow() {
+async fn test_apply_invalid_metadata_without_destructive_changes_fails() {
     install_default_drivers();
     let temp_dir = TempDir::new().unwrap();
     let project_path = temp_dir.path().to_path_buf();
@@ -259,7 +259,7 @@ checksum: "test_checksum"
     let result = handler.execute(&command).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("Legacy migration format detected"));
+    assert!(err.contains("Failed to parse metadata"));
 }
 
 #[tokio::test]

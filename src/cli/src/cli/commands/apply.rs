@@ -133,28 +133,8 @@ impl ApplyCommandHandler {
 
             // 破壊的変更の判定
             match metadata.destructive_change_status() {
-                DestructiveChangeStatus::Legacy => {
-                    if !command.allow_destructive {
-                        let formatter = DestructiveChangeFormatter::new();
-                        return Err(anyhow!(
-                            formatter.format_legacy_error(version, "strata apply")
-                        ));
-                    }
-                    warnings.push(
-                        format!(
-                            "{}",
-                            format!("Warning: Legacy migration format detected ({})", version)
-                                .yellow()
-                                .bold()
-                        )
-                        .to_string(),
-                    );
-                }
                 DestructiveChangeStatus::Present => {
-                    let report = metadata
-                        .destructive_changes
-                        .as_ref()
-                        .ok_or_else(|| anyhow!("Destructive change report missing"))?;
+                    let report = &metadata.destructive_changes;
                     if !command.allow_destructive {
                         let formatter = DestructiveChangeFormatter::new();
                         let mut message = String::new();
@@ -329,29 +309,13 @@ impl ApplyCommandHandler {
             let meta_path = migration_dir.join(".meta.yaml");
             let meta_content = fs::read_to_string(&meta_path)
                 .with_context(|| format!("Failed to read metadata file: {:?}", meta_path))?;
-            // dry-run ではレガシー .meta.yaml（例: dialect: SQLite）でもエラーにせず
-            // Legacy 扱いにする
-            let destructive_status =
-                match serde_saphyr::from_str::<MigrationMetadata>(&meta_content) {
-                    Ok(metadata) => metadata.destructive_change_status(),
-                    Err(_) => DestructiveChangeStatus::Legacy,
-                };
+            let metadata: MigrationMetadata = serde_saphyr::from_str(&meta_content)
+                .with_context(|| format!("Failed to parse metadata: {:?}", meta_path))?;
+            let destructive_status = metadata.destructive_change_status();
 
             output.push_str(&format!("\u{25b6} {} - {}\n", version, description));
 
             match destructive_status {
-                DestructiveChangeStatus::Legacy => {
-                    has_destructive = true;
-                    output.push_str(
-                        &format!(
-                            "{}\n",
-                            "⚠ Legacy migration format detected - treating as destructive"
-                                .yellow()
-                                .bold()
-                        )
-                        .to_string(),
-                    );
-                }
                 DestructiveChangeStatus::Present => {
                     has_destructive = true;
                     output.push_str(

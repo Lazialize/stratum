@@ -36,26 +36,6 @@ impl DestructiveChangeFormatter {
         output
     }
 
-    pub fn format_legacy_error(&self, version: &str, command: &str) -> String {
-        let mut output = String::new();
-
-        output.push_str(format!("{}\n\n", "Destructive migration detected".red().bold()).as_str());
-        output.push_str(&format!("Migration: {}\n", version));
-        output.push_str(&format!(
-            "{}\n\n",
-            "⚠ Legacy migration format detected".yellow().bold()
-        ));
-        output.push_str("To proceed, choose one of the following:\n");
-        output.push_str(&format!("  1. Review SQL: {} --dry-run\n", command));
-        output.push_str(&format!(
-            "  2. Allow destructive changes: {} --allow-destructive\n",
-            command
-        ));
-        output.push_str("  3. Regenerate migration with current version of strata\n");
-
-        output
-    }
-
     pub fn format_warning(&self, report: &DestructiveChangeReport) -> String {
         let mut output = String::new();
 
@@ -164,18 +144,6 @@ mod tests {
         assert!(output.contains("Enums to be recreated: priority"));
         assert!(output.contains("Review changes: strata generate --dry-run"));
         assert!(output.contains("Allow destructive changes: strata generate --allow-destructive"));
-    }
-
-    #[test]
-    fn format_legacy_error_includes_minimal_details() {
-        let formatter = DestructiveChangeFormatter::new();
-        let output = formatter.format_legacy_error("20260125120000", "strata apply");
-
-        assert!(output.contains("Destructive migration detected"));
-        assert!(output.contains("Migration: 20260125120000"));
-        assert!(output.contains("Legacy migration format detected"));
-        assert!(output.contains("Review SQL: strata apply --dry-run"));
-        assert!(output.contains("Allow destructive changes: strata apply --allow-destructive"));
     }
 
     #[test]

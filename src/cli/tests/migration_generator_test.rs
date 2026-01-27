@@ -142,13 +142,15 @@ mod migration_generator_tests {
         let description = "create_users_table";
         let checksum = "abc123def456";
 
-        let metadata = generator.generate_migration_metadata(
-            version,
-            description,
-            Dialect::PostgreSQL,
-            checksum,
-            Some(strata::core::destructive_change_report::DestructiveChangeReport::new()),
-        );
+        let metadata = generator
+            .generate_migration_metadata(
+                version,
+                description,
+                Dialect::PostgreSQL,
+                checksum,
+                strata::core::destructive_change_report::DestructiveChangeReport::new(),
+            )
+            .expect("Failed to generate metadata");
 
         assert!(metadata.contains("version:"));
         assert!(metadata.contains("20260122120000"));
