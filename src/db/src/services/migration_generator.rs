@@ -261,6 +261,71 @@ impl Default for MigrationGeneratorService {
     }
 }
 
+impl crate::services::traits::MigrationGenerator for MigrationGeneratorService {
+    fn generate_timestamp(&self) -> String {
+        self.generate_timestamp()
+    }
+
+    fn sanitize_description(&self, description: &str) -> String {
+        self.sanitize_description(description)
+    }
+
+    fn generate_migration_filename(&self, timestamp: &str, description: &str) -> String {
+        self.generate_migration_filename(timestamp, description)
+    }
+
+    fn generate_up_sql_with_schemas_and_options(
+        &self,
+        diff: &SchemaDiff,
+        old_schema: &Schema,
+        new_schema: &Schema,
+        dialect: Dialect,
+        allow_destructive: bool,
+    ) -> Result<(String, ValidationResult), String> {
+        self.generate_up_sql_with_schemas_and_options(
+            diff,
+            old_schema,
+            new_schema,
+            dialect,
+            allow_destructive,
+        )
+    }
+
+    fn generate_down_sql_with_schemas_and_options(
+        &self,
+        diff: &SchemaDiff,
+        old_schema: &Schema,
+        new_schema: &Schema,
+        dialect: Dialect,
+        allow_destructive: bool,
+    ) -> Result<(String, ValidationResult), String> {
+        self.generate_down_sql_with_schemas_and_options(
+            diff,
+            old_schema,
+            new_schema,
+            dialect,
+            allow_destructive,
+        )
+    }
+
+    fn generate_migration_metadata(
+        &self,
+        version: &str,
+        description: &str,
+        dialect: Dialect,
+        checksum: &str,
+        destructive_changes: DestructiveChangeReport,
+    ) -> Result<String, String> {
+        self.generate_migration_metadata(
+            version,
+            description,
+            dialect,
+            checksum,
+            destructive_changes,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

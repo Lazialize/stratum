@@ -341,6 +341,27 @@ impl ValidationResult {
             self.merge(result);
         }
     }
+
+    /// Result型に変換する
+    ///
+    /// エラーがない場合は `Ok(warnings)` を返し、
+    /// エラーがある場合は `Err(errors)` を返します。
+    pub fn into_result(self) -> Result<Vec<ValidationWarning>, Vec<ValidationError>> {
+        if self.errors.is_empty() {
+            Ok(self.warnings)
+        } else {
+            Err(self.errors)
+        }
+    }
+
+    /// 全エラーを改行区切りの文字列に変換
+    pub fn errors_to_string(&self) -> String {
+        self.errors
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 impl Default for ValidationResult {
@@ -766,5 +787,63 @@ mod tests {
             cause: "Permission denied".to_string(),
         };
         assert!(dir_error.is_directory_create());
+    }
+
+    #[test]
+    fn test_validation_result_into_result_ok() {
+        let mut result = ValidationResult::new();
+        result.add_warning(ValidationWarning::compatibility(
+            "test warning".to_string(),
+            None,
+        ));
+        let converted = result.into_result();
+        assert!(converted.is_ok());
+        assert_eq!(converted.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_validation_result_into_result_err() {
+        let mut result = ValidationResult::new();
+        result.add_error(ValidationError::Syntax {
+            message: "test error".to_string(),
+            location: None,
+            suggestion: None,
+        });
+        let converted = result.into_result();
+        assert!(converted.is_err());
+        assert_eq!(converted.unwrap_err().len(), 1);
+    }
+
+    #[test]
+    fn test_validation_result_into_result_empty() {
+        let result = ValidationResult::new();
+        let converted = result.into_result();
+        assert!(converted.is_ok());
+        assert!(converted.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_validation_result_errors_to_string() {
+        let mut result = ValidationResult::new();
+        result.add_error(ValidationError::Syntax {
+            message: "error1".to_string(),
+            location: None,
+            suggestion: None,
+        });
+        result.add_error(ValidationError::Reference {
+            message: "error2".to_string(),
+            location: None,
+            suggestion: None,
+        });
+        let s = result.errors_to_string();
+        assert!(s.contains("error1"));
+        assert!(s.contains("error2"));
+        assert!(s.contains('\n'));
+    }
+
+    #[test]
+    fn test_validation_result_errors_to_string_empty() {
+        let result = ValidationResult::new();
+        assert!(result.errors_to_string().is_empty());
     }
 }

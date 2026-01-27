@@ -81,12 +81,7 @@ impl DryRunFormatter {
     // --- セクション別フォーマッタ ---
 
     fn append_header(output: &mut String, migration_name: &str) {
-        writeln!(
-            output,
-            "{}",
-            "=== Dry Run: Migration Preview ===".bold()
-        )
-        .unwrap();
+        writeln!(output, "{}", "=== Dry Run: Migration Preview ===".bold()).unwrap();
         writeln!(output, "Migration: {}", migration_name.cyan()).unwrap();
         writeln!(output).unwrap();
     }

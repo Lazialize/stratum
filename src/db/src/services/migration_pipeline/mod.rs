@@ -116,12 +116,7 @@ impl<'a> MigrationPipeline<'a> {
         let validation_result = self.stage_prepare()?;
         if !validation_result.is_valid() {
             return Err(PipelineStageError::Prepare {
-                message: validation_result
-                    .errors
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n"),
+                message: validation_result.errors_to_string(),
             });
         }
 

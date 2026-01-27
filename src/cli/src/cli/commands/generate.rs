@@ -18,6 +18,7 @@ use crate::services::schema_diff_detector::SchemaDiffDetectorService;
 use crate::services::schema_io::schema_parser::SchemaParserService;
 use crate::services::schema_io::schema_serializer::SchemaSerializerService;
 use crate::services::schema_validator::SchemaValidatorService;
+use crate::services::traits::{MigrationGenerator, SchemaDiffDetector, SchemaValidator};
 use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -54,14 +55,49 @@ struct GeneratedSql {
     validation_result: crate::core::error::ValidationResult,
 }
 
+/// サービスプロバイダー
+///
+/// GenerateCommandHandler が使用するサービスをまとめて保持します。
+/// テスト時にモックサービスを注入可能にするために使用します。
+pub struct ServiceProvider {
+    pub diff_detector: Box<dyn SchemaDiffDetector>,
+    pub validator: Box<dyn SchemaValidator>,
+    pub generator: Box<dyn MigrationGenerator>,
+}
+
+impl ServiceProvider {
+    /// デフォルトの実体サービスを使用するプロバイダーを作成
+    pub fn default_services() -> Self {
+        Self {
+            diff_detector: Box::new(SchemaDiffDetectorService::new()),
+            validator: Box::new(SchemaValidatorService::new()),
+            generator: Box::new(MigrationGeneratorService::new()),
+        }
+    }
+}
+
 /// generateコマンドハンドラー
-#[derive(Debug, Clone)]
-pub struct GenerateCommandHandler {}
+pub struct GenerateCommandHandler {
+    services: ServiceProvider,
+}
+
+impl std::fmt::Debug for GenerateCommandHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GenerateCommandHandler").finish()
+    }
+}
 
 impl GenerateCommandHandler {
     /// 新しいGenerateCommandHandlerを作成
     pub fn new() -> Self {
-        Self {}
+        Self {
+            services: ServiceProvider::default_services(),
+        }
+    }
+
+    /// カスタムサービスプロバイダーを注入してハンドラーを作成
+    pub fn with_services(services: ServiceProvider) -> Self {
+        Self { services }
     }
 
     /// generateコマンドを実行
@@ -147,9 +183,10 @@ impl GenerateCommandHandler {
         current_schema: &Schema,
         previous_schema: &Schema,
     ) -> Result<DiffValidationResult> {
-        let detector = SchemaDiffDetectorService::new();
-        let (diff, diff_warnings) =
-            detector.detect_diff_with_warnings(previous_schema, current_schema);
+        let (diff, diff_warnings) = self
+            .services
+            .diff_detector
+            .detect_diff_with_warnings(previous_schema, current_schema);
 
         if diff.is_empty() {
             return Err(anyhow!(
@@ -162,33 +199,30 @@ impl GenerateCommandHandler {
         let destructive_report = destructive_detector.detect(&diff);
 
         // リネーム検証
-        let validator = SchemaValidatorService::new();
-        let rename_validation =
-            validator.validate_renames_with_old_schema(previous_schema, current_schema);
+        let rename_validation = self
+            .services
+            .validator
+            .validate_renames_with_old_schema(previous_schema, current_schema);
 
         let renamed_from_warnings = self.generate_renamed_from_remove_warnings(current_schema);
 
         // マイグレーション名の生成
-        let generator = MigrationGeneratorService::new();
-        let timestamp = generator.generate_timestamp();
+        let timestamp = self.services.generator.generate_timestamp();
         let description = command
             .description
             .clone()
             .unwrap_or_else(|| self.generate_auto_description(&diff));
-        let sanitized_description = generator.sanitize_description(&description);
-        let migration_name =
-            generator.generate_migration_filename(&timestamp, &sanitized_description);
+        let sanitized_description = self.services.generator.sanitize_description(&description);
+        let migration_name = self
+            .services
+            .generator
+            .generate_migration_filename(&timestamp, &sanitized_description);
 
         // リネーム検証エラーがある場合は処理を中止
-        if !rename_validation.errors.is_empty() {
-            let error_messages: Vec<String> = rename_validation
-                .errors
-                .iter()
-                .map(|e| e.to_string())
-                .collect();
+        if !rename_validation.is_valid() {
             return Err(anyhow::anyhow!(
                 "Rename validation errors:\n{}",
-                error_messages.join("\n")
+                rename_validation.errors_to_string()
             ));
         }
 
@@ -224,16 +258,18 @@ impl GenerateCommandHandler {
         current_schema: &Schema,
         previous_schema: &Schema,
     ) -> Result<GeneratedSql> {
-        let generator = MigrationGeneratorService::new();
         let allow_destructive_for_sql = command.allow_destructive || command.dry_run;
 
-        let sql_result = generator.generate_up_sql_with_schemas_and_options(
-            &dvr.diff,
-            previous_schema,
-            current_schema,
-            config.dialect,
-            allow_destructive_for_sql,
-        );
+        let sql_result = self
+            .services
+            .generator
+            .generate_up_sql_with_schemas_and_options(
+                &dvr.diff,
+                previous_schema,
+                current_schema,
+                config.dialect,
+                allow_destructive_for_sql,
+            );
 
         // 型変更検証エラーの処理
         if let Err(e) = &sql_result {
@@ -261,7 +297,9 @@ impl GenerateCommandHandler {
             validation_result.add_warning(warning);
         }
 
-        let (down_sql, _) = generator
+        let (down_sql, _) = self
+            .services
+            .generator
             .generate_down_sql_with_schemas_and_options(
                 &dvr.diff,
                 previous_schema,
@@ -308,8 +346,9 @@ impl GenerateCommandHandler {
         let checksum_calculator = SchemaChecksumService::new();
         let checksum = checksum_calculator.calculate_checksum(current_schema);
 
-        let generator = MigrationGeneratorService::new();
-        let metadata = generator
+        let metadata = self
+            .services
+            .generator
             .generate_migration_metadata(
                 &dvr.timestamp,
                 &dvr.sanitized_description,

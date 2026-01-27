@@ -12,4 +12,5 @@ pub mod schema_conversion;
 pub mod schema_diff_detector;
 pub mod schema_io;
 pub mod schema_validator;
+pub mod traits;
 pub mod type_change_validator;

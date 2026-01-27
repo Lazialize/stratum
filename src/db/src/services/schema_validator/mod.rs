@@ -10,6 +10,7 @@ mod enum_validator;
 mod index_validator;
 mod rename_validator;
 mod table_validator;
+mod validation_helpers;
 
 use crate::core::config::Dialect;
 use crate::core::error::{ValidationError, ValidationResult, ValidationWarning};
@@ -193,6 +194,16 @@ impl SchemaValidatorService {
 impl Default for SchemaValidatorService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl crate::services::traits::SchemaValidator for SchemaValidatorService {
+    fn validate_renames_with_old_schema(
+        &self,
+        old_schema: &Schema,
+        new_schema: &Schema,
+    ) -> ValidationResult {
+        self.validate_renames_with_old_schema(old_schema, new_schema)
     }
 }
 

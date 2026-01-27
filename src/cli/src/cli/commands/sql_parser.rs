@@ -37,15 +37,7 @@ pub(crate) fn split_sql_statements(sql: &str) -> Vec<String> {
                 i = consume_double_quoted(&mut current, bytes, i, c, &mut parser);
             }
             QuoteState::None => {
-                i = consume_unquoted(
-                    &mut current,
-                    &mut statements,
-                    sql,
-                    bytes,
-                    i,
-                    c,
-                    &mut parser,
-                );
+                i = consume_unquoted(&mut current, &mut statements, sql, bytes, i, c, &mut parser);
             }
         }
     }

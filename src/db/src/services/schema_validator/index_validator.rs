@@ -1,6 +1,7 @@
 // インデックスの検証
 
-use crate::core::error::{ErrorLocation, ValidationError, ValidationResult};
+use super::validation_helpers::check_column_exists;
+use crate::core::error::ValidationResult;
 use crate::core::schema::Schema;
 
 /// インデックスのカラム参照整合性検証
@@ -10,22 +11,13 @@ pub fn validate_index_references(schema: &Schema) -> ValidationResult {
     for (table_name, table) in &schema.tables {
         for index in &table.indexes {
             for column_name in &index.columns {
-                if table.get_column(column_name).is_none() {
-                    result.add_error(ValidationError::Reference {
-                        message: format!(
-                            "Index '{}' references column '{}' which does not exist in table '{}'",
-                            index.name, column_name, table_name
-                        ),
-                        location: Some(ErrorLocation::with_table_and_column(
-                            table_name,
-                            column_name,
-                        )),
-                        suggestion: Some(format!(
-                            "Define column '{}' or remove it from the index",
-                            column_name
-                        )),
-                    });
-                }
+                check_column_exists(
+                    table,
+                    table_name,
+                    column_name,
+                    &mut result,
+                    &format!("Index '{}' references", index.name),
+                );
             }
         }
     }

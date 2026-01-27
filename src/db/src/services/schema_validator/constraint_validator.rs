@@ -1,5 +1,6 @@
 // 制約の検証（PK, FK, UNIQUE）
 
+use super::validation_helpers::check_column_exists;
 use crate::core::error::{ErrorLocation, ValidationError, ValidationResult};
 use crate::core::schema::{Constraint, Schema};
 
@@ -36,16 +37,13 @@ pub fn validate_constraint_references(schema: &Schema) -> ValidationResult {
                 | Constraint::UNIQUE { columns }
                 | Constraint::CHECK { columns, .. } => {
                     for column_name in columns {
-                        if table.get_column(column_name).is_none() {
-                            result.add_error(ValidationError::Reference {
-                                message: format!(
-                                    "Constraint references column '{}' which does not exist in table '{}'",
-                                    column_name, table_name
-                                ),
-                                location: Some(ErrorLocation::with_table_and_column(table_name, column_name)),
-                                suggestion: Some(format!("Define column '{}'", column_name)),
-                            });
-                        }
+                        check_column_exists(
+                            table,
+                            table_name,
+                            column_name,
+                            &mut result,
+                            "Constraint references",
+                        );
                     }
                 }
                 Constraint::FOREIGN_KEY {
@@ -55,16 +53,13 @@ pub fn validate_constraint_references(schema: &Schema) -> ValidationResult {
                 } => {
                     // 外部キーのソースカラム存在確認
                     for column_name in columns {
-                        if table.get_column(column_name).is_none() {
-                            result.add_error(ValidationError::Reference {
-                                message: format!(
-                                    "Foreign key constraint references column '{}' which does not exist in table '{}'",
-                                    column_name, table_name
-                                ),
-                                location: Some(ErrorLocation::with_table_and_column(table_name, column_name)),
-                                suggestion: Some(format!("Define column '{}'", column_name)),
-                            });
-                        }
+                        check_column_exists(
+                            table,
+                            table_name,
+                            column_name,
+                            &mut result,
+                            "Foreign key constraint references",
+                        );
                     }
 
                     // 参照先テーブルの存在確認

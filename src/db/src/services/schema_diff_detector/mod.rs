@@ -134,6 +134,16 @@ impl Default for SchemaDiffDetectorService {
     }
 }
 
+impl crate::services::traits::SchemaDiffDetector for SchemaDiffDetectorService {
+    fn detect_diff_with_warnings(
+        &self,
+        old_schema: &Schema,
+        new_schema: &Schema,
+    ) -> (SchemaDiff, Vec<ValidationWarning>) {
+        self.detect_diff_with_warnings(old_schema, new_schema)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
