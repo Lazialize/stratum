@@ -28,6 +28,8 @@ use std::path::{Path, PathBuf};
 pub struct GenerateCommand {
     /// プロジェクトのルートパス
     pub project_path: PathBuf,
+    /// カスタム設定ファイルパス
+    pub config_path: Option<PathBuf>,
     /// マイグレーションの説明（オプション）
     pub description: Option<String>,
     /// ドライラン（SQLを表示するがファイルは作成しない）
@@ -110,7 +112,8 @@ impl GenerateCommandHandler {
     ///
     /// 成功時は生成されたマイグレーションディレクトリのパス、失敗時はエラーメッセージ
     pub fn execute(&self, command: &GenerateCommand) -> Result<String> {
-        let context = CommandContext::load(command.project_path.clone())?;
+        let context =
+            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
         let config = &context.config;
 
         // スキーマの読み込み
@@ -118,7 +121,10 @@ impl GenerateCommandHandler {
             self.load_schemas(&context, &command.project_path, config)?;
 
         // 差分検出・バリデーション
-        let dvr = self.detect_and_validate_diff(command, &current_schema, &previous_schema)?;
+        let dvr = match self.detect_and_validate_diff(command, &current_schema, &previous_schema)? {
+            Some(dvr) => dvr,
+            None => return Ok("No schema changes found. Schema is up to date.".to_string()),
+        };
 
         // SQL生成
         let generated =
@@ -177,21 +183,21 @@ impl GenerateCommandHandler {
     }
 
     /// 差分検出・バリデーション
+    ///
+    /// 差分がない場合は `Ok(None)` を返す
     fn detect_and_validate_diff(
         &self,
         command: &GenerateCommand,
         current_schema: &Schema,
         previous_schema: &Schema,
-    ) -> Result<DiffValidationResult> {
+    ) -> Result<Option<DiffValidationResult>> {
         let (diff, diff_warnings) = self
             .services
             .diff_detector
             .detect_diff_with_warnings(previous_schema, current_schema);
 
         if diff.is_empty() {
-            return Err(anyhow!(
-                "No schema changes found. No migration files were generated."
-            ));
+            return Ok(None);
         }
 
         // 破壊的変更の検出
@@ -237,7 +243,7 @@ impl GenerateCommandHandler {
             ));
         }
 
-        Ok(DiffValidationResult {
+        Ok(Some(DiffValidationResult {
             diff,
             diff_warnings,
             destructive_report,
@@ -246,7 +252,7 @@ impl GenerateCommandHandler {
             migration_name,
             timestamp,
             sanitized_description,
-        })
+        }))
     }
 
     /// SQL生成と警告統合
@@ -556,6 +562,7 @@ mod tests {
     fn test_generate_command_has_dry_run_field() {
         let command = GenerateCommand {
             project_path: std::path::PathBuf::from("/tmp"),
+            config_path: None,
             description: Some("test".to_string()),
             dry_run: true,
             allow_destructive: false,

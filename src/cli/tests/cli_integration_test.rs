@@ -339,6 +339,7 @@ tables:
             let handler = GenerateCommandHandler::new();
             let command = GenerateCommand {
                 project_path: self.project_path.clone(),
+                config_path: None,
                 description: Some(description.to_string()),
                 dry_run: false,
                 allow_destructive,
@@ -361,6 +362,7 @@ tables:
             let handler = ApplyCommandHandler::new();
             let command = ApplyCommand {
                 project_path: self.project_path.clone(),
+                config_path: None,
                 dry_run: false,
                 env: "development".to_string(),
                 timeout: None,
@@ -375,6 +377,7 @@ tables:
             let handler = ApplyCommandHandler::new();
             let command = ApplyCommand {
                 project_path: self.project_path.clone(),
+                config_path: None,
                 dry_run: true,
                 env: "development".to_string(),
                 timeout: None,
@@ -389,8 +392,11 @@ tables:
             let handler = RollbackCommandHandler::new();
             let command = RollbackCommand {
                 project_path: self.project_path.clone(),
+                config_path: None,
                 steps: Some(steps),
                 env: "development".to_string(),
+                dry_run: false,
+                allow_destructive: true, // down.sql may contain DROP TABLE
             };
 
             handler.execute(&command).await.map_err(|e| e.to_string())
@@ -401,6 +407,7 @@ tables:
             let handler = StatusCommandHandler::new();
             let command = StatusCommand {
                 project_path: self.project_path.clone(),
+                config_path: None,
                 env: "development".to_string(),
             };
 
@@ -958,16 +965,14 @@ tables:
         // 変更なしでgenerate
         let result = project.generate("no_changes");
 
-        // エラーになるか、「変更なし」メッセージが返るはず
+        // 2.5: 「変更なし」は Ok で返されるようになった
         println!("Generate with no changes result: {:?}", result);
+        assert!(result.is_ok(), "Expected Ok for no changes");
+        let msg = result.unwrap().to_lowercase();
         assert!(
-            result.is_err()
-                || result
-                    .as_ref()
-                    .unwrap()
-                    .to_lowercase()
-                    .contains("no change"),
-            "Expected error or 'no changes' message"
+            msg.contains("no schema changes") || msg.contains("no changes"),
+            "Expected 'no changes' message, got: {}",
+            msg
         );
 
         // マイグレーション数は1のまま

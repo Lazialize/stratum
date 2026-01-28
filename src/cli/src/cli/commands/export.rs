@@ -12,7 +12,7 @@ use crate::core::config::Dialect;
 use crate::core::schema::Schema;
 use crate::services::schema_conversion::{RawTableInfo, SchemaConversionService};
 use crate::services::schema_io::schema_serializer::SchemaSerializerService;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use sqlx::AnyPool;
 use std::collections::HashSet;
 use std::fs;
@@ -23,10 +23,14 @@ use std::path::PathBuf;
 pub struct ExportCommand {
     /// プロジェクトのルートパス
     pub project_path: PathBuf,
+    /// カスタム設定ファイルパス
+    pub config_path: Option<PathBuf>,
     /// 環境名
     pub env: String,
     /// 出力先ディレクトリ（Noneの場合は標準出力）
     pub output_dir: Option<PathBuf>,
+    /// 既存ファイルを確認なしで上書き
+    pub force: bool,
 }
 
 /// exportコマンドハンドラー
@@ -53,7 +57,8 @@ impl ExportCommandHandler {
     /// 成功時はエクスポート結果のサマリー（または標準出力用のYAML）、失敗時はエラーメッセージ
     pub async fn execute(&self, command: &ExportCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let context = CommandContext::load(command.project_path.clone())?;
+        let context =
+            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
         let config = &context.config;
 
         // データベースに接続
@@ -81,7 +86,16 @@ impl ExportCommandHandler {
                 .with_context(|| format!("Failed to create output directory: {:?}", output_dir))?;
 
             let output_file = output_dir.join("schema.yaml");
-            fs::write(&output_file, yaml_content)
+
+            // 上書き確認
+            if output_file.exists() && !command.force {
+                return Err(anyhow!(
+                    "Output file already exists: {:?}\nUse --force to overwrite.",
+                    output_file
+                ));
+            }
+
+            fs::write(&output_file, &yaml_content)
                 .with_context(|| format!("Failed to write schema file: {:?}", output_file))?;
 
             Ok(self.format_export_summary(&table_names, Some(output_dir)))

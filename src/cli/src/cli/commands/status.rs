@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 pub struct StatusCommand {
     /// プロジェクトのルートパス
     pub project_path: PathBuf,
+    /// カスタム設定ファイルパス
+    pub config_path: Option<PathBuf>,
     /// 環境名
     pub env: String,
 }
@@ -44,7 +46,8 @@ impl StatusCommandHandler {
     /// 成功時はマイグレーション状態のサマリー、失敗時はエラーメッセージ
     pub async fn execute(&self, command: &StatusCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let context = CommandContext::load(command.project_path.clone())?;
+        let context =
+            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
 
         // マイグレーションディレクトリのパスを解決
         let migrations_dir = context.require_migrations_dir()?;

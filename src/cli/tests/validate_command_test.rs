@@ -18,6 +18,7 @@ fn test_new_handler() {
 fn test_validate_command_struct() {
     let command = ValidateCommand {
         project_path: PathBuf::from("/test/path"),
+        config_path: None,
         schema_dir: None,
     };
 
@@ -33,6 +34,7 @@ fn test_validate_no_config_file() {
     let handler = ValidateCommandHandler::new();
     let command = ValidateCommand {
         project_path,
+        config_path: None,
         schema_dir: None,
     };
 
@@ -55,6 +57,7 @@ fn test_validate_no_schema_dir() {
     let handler = ValidateCommandHandler::new();
     let command = ValidateCommand {
         project_path,
+        config_path: None,
         schema_dir: None,
     };
 
@@ -74,6 +77,7 @@ fn test_validate_empty_schema_dir() {
     let handler = ValidateCommandHandler::new();
     let command = ValidateCommand {
         project_path,
+        config_path: None,
         schema_dir: None,
     };
 
@@ -119,6 +123,7 @@ tables:
     let handler = ValidateCommandHandler::new();
     let command = ValidateCommand {
         project_path,
+        config_path: None,
         schema_dir: None,
     };
 
@@ -157,6 +162,7 @@ tables:
     let handler = ValidateCommandHandler::new();
     let command = ValidateCommand {
         project_path,
+        config_path: None,
         schema_dir: None,
     };
 
@@ -202,6 +208,7 @@ tables:
     let handler = ValidateCommandHandler::new();
     let command = ValidateCommand {
         project_path,
+        config_path: None,
         schema_dir: None,
     };
 
@@ -240,6 +247,7 @@ tables:
     let handler = ValidateCommandHandler::new();
     let command = ValidateCommand {
         project_path: project_path.clone(),
+        config_path: None,
         schema_dir: Some(custom_schema_dir),
     };
 

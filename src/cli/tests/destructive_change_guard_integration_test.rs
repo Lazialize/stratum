@@ -96,6 +96,7 @@ fn test_generate_rejects_destructive_without_allow() {
     let handler = GenerateCommandHandler::new();
     let command = GenerateCommand {
         project_path: project_path.to_path_buf(),
+        config_path: None,
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: false,
@@ -120,6 +121,7 @@ fn test_generate_allows_destructive_with_flag_and_writes_metadata() {
     let handler = GenerateCommandHandler::new();
     let command = GenerateCommand {
         project_path: project_path.to_path_buf(),
+        config_path: None,
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: true,
@@ -168,6 +170,7 @@ destructive_changes:
     let handler = ApplyCommandHandler::new();
     let command = ApplyCommand {
         project_path: project_path.clone(),
+        config_path: None,
         dry_run: false,
         env: "development".to_string(),
         timeout: None,
@@ -211,6 +214,7 @@ destructive_changes:
     let handler = ApplyCommandHandler::new();
     let command = ApplyCommand {
         project_path: project_path.clone(),
+        config_path: None,
         dry_run: false,
         env: "development".to_string(),
         timeout: None,
@@ -250,6 +254,7 @@ checksum: "test_checksum"
     let handler = ApplyCommandHandler::new();
     let command = ApplyCommand {
         project_path: project_path.clone(),
+        config_path: None,
         dry_run: false,
         env: "development".to_string(),
         timeout: None,
@@ -277,6 +282,7 @@ async fn test_e2e_destructive_generate_apply_flow() {
     let handler = GenerateCommandHandler::new();
     let command = GenerateCommand {
         project_path: project_path.clone(),
+        config_path: None,
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: true,
@@ -295,6 +301,7 @@ async fn test_e2e_destructive_generate_apply_flow() {
     let apply_handler = ApplyCommandHandler::new();
     let apply_command = ApplyCommand {
         project_path: project_path.clone(),
+        config_path: None,
         dry_run: false,
         env: "development".to_string(),
         timeout: None,

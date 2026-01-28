@@ -21,8 +21,11 @@ fn test_new_handler() {
 fn test_rollback_command_struct() {
     let command = RollbackCommand {
         project_path: PathBuf::from("/test/path"),
+        config_path: None,
         steps: Some(1),
         env: "development".to_string(),
+        dry_run: false,
+        allow_destructive: false,
     };
 
     assert_eq!(command.project_path, PathBuf::from("/test/path"));
@@ -38,8 +41,11 @@ async fn test_rollback_no_config_file() {
     let handler = RollbackCommandHandler::new();
     let command = RollbackCommand {
         project_path,
+        config_path: None,
         steps: None,
         env: "development".to_string(),
+        dry_run: false,
+        allow_destructive: false,
     };
 
     let result = handler.execute(&command).await;
@@ -61,8 +67,11 @@ async fn test_rollback_no_migrations_dir() {
     let handler = RollbackCommandHandler::new();
     let command = RollbackCommand {
         project_path,
+        config_path: None,
         steps: None,
         env: "development".to_string(),
+        dry_run: false,
+        allow_destructive: false,
     };
 
     let result = handler.execute(&command).await;
@@ -183,8 +192,11 @@ async fn test_rollback_single_migration_sqlite() {
     let handler = RollbackCommandHandler::new();
     let command = RollbackCommand {
         project_path: project_path.clone(),
+        config_path: None,
         steps: None, // デフォルトは1件
         env: "development".to_string(),
+        dry_run: false,
+        allow_destructive: true, // down.sql may contain DROP TABLE
     };
 
     let result = handler.execute(&command).await;

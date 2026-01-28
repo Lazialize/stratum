@@ -10,10 +10,12 @@ use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::migration_loader;
 use crate::cli::commands::split_sql_statements;
+use crate::cli::commands::DESTRUCTIVE_SQL_REGEX;
 use crate::core::config::Dialect;
 use crate::core::migration::AppliedMigration;
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
+use colored::Colorize;
 use std::fs;
 use std::path::PathBuf;
 
@@ -22,10 +24,16 @@ use std::path::PathBuf;
 pub struct RollbackCommand {
     /// プロジェクトのルートパス
     pub project_path: PathBuf,
+    /// カスタム設定ファイルパス
+    pub config_path: Option<PathBuf>,
     /// ロールバックするマイグレーションの数
     pub steps: Option<u32>,
     /// 対象環境
     pub env: String,
+    /// Dry run - 実行せずにSQLを表示
+    pub dry_run: bool,
+    /// 破壊的変更を許可
+    pub allow_destructive: bool,
 }
 
 /// rollbackコマンドハンドラー
@@ -49,7 +57,8 @@ impl RollbackCommandHandler {
     /// 成功時はロールバックされたマイグレーションの概要、失敗時はエラーメッセージ
     pub async fn execute(&self, command: &RollbackCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let context = CommandContext::load(command.project_path.clone())?;
+        let context =
+            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
         let config = &context.config;
 
         // マイグレーションディレクトリのパスを解決
@@ -59,7 +68,7 @@ impl RollbackCommandHandler {
         let available_migrations = migration_loader::load_available_migrations(&migrations_dir)?;
 
         if available_migrations.is_empty() {
-            return Err(anyhow!("No migration files found"));
+            return Ok("No migration files found.".to_string());
         }
 
         // データベース接続を確立
@@ -85,7 +94,7 @@ impl RollbackCommandHandler {
             .with_context(|| "Failed to get applied migration history")?;
 
         if applied_migrations.is_empty() {
-            return Err(anyhow!("No migrations to rollback"));
+            return Ok("No migrations to rollback. No migrations have been applied.".to_string());
         }
 
         // ロールバックする件数を決定（デフォルトは1）
@@ -99,11 +108,12 @@ impl RollbackCommandHandler {
             .take(to_rollback_count)
             .collect();
 
-        // マイグレーションを順次ロールバック
-        let mut rolled_back = Vec::new();
-        for record in to_rollback {
-            let start_time = Utc::now();
+        // ロールバック対象のマイグレーションと down.sql を収集
+        let mut rollback_items: Vec<(&crate::core::migration::MigrationRecord, String, PathBuf)> =
+            Vec::new();
+        let mut has_destructive = false;
 
+        for record in &to_rollback {
             // マイグレーションディレクトリを検索
             let migration_info = available_migrations
                 .iter()
@@ -116,6 +126,39 @@ impl RollbackCommandHandler {
             let down_sql_path = migration_dir.join("down.sql");
             let down_sql = fs::read_to_string(&down_sql_path)
                 .with_context(|| format!("Failed to read migration file: {:?}", down_sql_path))?;
+
+            // 破壊的変更をチェック
+            if self.contains_destructive_sql(&down_sql) {
+                has_destructive = true;
+            }
+
+            rollback_items.push((record, down_sql, migration_dir.clone()));
+        }
+
+        // 破壊的変更がある場合の処理
+        if has_destructive && !command.allow_destructive && !command.dry_run {
+            let mut msg = String::from("Rollback contains destructive changes.\n\n");
+            msg.push_str("Migrations to rollback:\n");
+            for (record, down_sql, _) in &rollback_items {
+                msg.push_str(&format!("  - {} - {}\n", record.version, record.description));
+                if self.contains_destructive_sql(down_sql) {
+                    msg.push_str("    Contains: DROP/RENAME statements\n");
+                }
+            }
+            msg.push_str("\nTo proceed, run with --allow-destructive flag.\n");
+            msg.push_str("Or use --dry-run to preview the SQL first.");
+            return Err(anyhow!(msg));
+        }
+
+        // Dry run モードの場合は SQL を表示して終了
+        if command.dry_run {
+            return Ok(self.execute_dry_run(&rollback_items, has_destructive));
+        }
+
+        // マイグレーションを順次ロールバック
+        let mut rolled_back = Vec::new();
+        for (record, down_sql, _) in rollback_items {
+            let start_time = Utc::now();
 
             // トランザクション内でロールバックを実行
             let result = self
@@ -224,6 +267,64 @@ impl RollbackCommandHandler {
         summary.push_str(&format!("\nTotal execution time: {}ms\n", total_duration));
 
         summary
+    }
+
+    /// SQLに破壊的変更が含まれているかチェック
+    fn contains_destructive_sql(&self, sql: &str) -> bool {
+        DESTRUCTIVE_SQL_REGEX.is_match(sql)
+    }
+
+    /// Dry run モードの出力を生成
+    fn execute_dry_run(
+        &self,
+        rollback_items: &[(&crate::core::migration::MigrationRecord, String, PathBuf)],
+        has_destructive: bool,
+    ) -> String {
+        let mut output = String::from("=== DRY RUN MODE ===\n");
+        output.push_str(&format!(
+            "The following {} migration(s) will be rolled back:\n\n",
+            rollback_items.len()
+        ));
+
+        for (record, down_sql, _) in rollback_items {
+            output.push_str(&format!("▶ {} - {}\n", record.version, record.description));
+
+            if self.contains_destructive_sql(down_sql) {
+                output.push_str(&format!(
+                    "{}\n",
+                    "⚠ Contains Destructive Changes".red().bold()
+                ));
+            }
+
+            output.push_str("SQL:\n");
+            let rendered_sql = if self.contains_destructive_sql(down_sql) {
+                self.highlight_destructive_sql(down_sql)
+            } else {
+                down_sql.clone()
+            };
+            output.push_str(&format!("{}\n\n", rendered_sql));
+        }
+
+        if has_destructive {
+            output.push_str("To proceed, run with --allow-destructive flag\n");
+        }
+
+        output
+    }
+
+    /// 破壊的SQLをハイライト
+    fn highlight_destructive_sql(&self, sql: &str) -> String {
+        let regex = &*DESTRUCTIVE_SQL_REGEX;
+
+        let mut rendered = Vec::new();
+        for line in sql.lines() {
+            if regex.is_match(line) {
+                rendered.push(line.red().to_string());
+            } else {
+                rendered.push(line.to_string());
+            }
+        }
+        rendered.join("\n")
     }
 }
 

@@ -20,8 +20,10 @@ fn test_new_handler() {
 fn test_export_command_struct() {
     let command = ExportCommand {
         project_path: PathBuf::from("/test/path"),
+        config_path: None,
         env: "development".to_string(),
         output_dir: Some(PathBuf::from("/test/output")),
+        force: false,
     };
 
     assert_eq!(command.project_path, PathBuf::from("/test/path"));
@@ -37,8 +39,10 @@ async fn test_export_no_config_file() {
     let handler = ExportCommandHandler::new();
     let command = ExportCommand {
         project_path,
+        config_path: None,
         env: "development".to_string(),
         output_dir: None,
+        force: false,
     };
 
     let result = handler.execute(&command).await;
@@ -57,8 +61,10 @@ async fn test_export_invalid_environment() {
     let handler = ExportCommandHandler::new();
     let command = ExportCommand {
         project_path,
+        config_path: None,
         env: "invalid_env".to_string(),
         output_dir: None,
+        force: false,
     };
 
     let result = handler.execute(&command).await;
@@ -134,8 +140,10 @@ async fn test_export_from_sqlite_database() {
     let handler = ExportCommandHandler::new();
     let command = ExportCommand {
         project_path: project_path.clone(),
+        config_path: None,
         env: "development".to_string(),
         output_dir: Some(export_dir.clone()),
+        force: true, // Allow overwrite in test
     };
 
     let result = handler.execute(&command).await;
@@ -187,8 +195,10 @@ async fn test_export_to_stdout() {
     let handler = ExportCommandHandler::new();
     let command = ExportCommand {
         project_path,
+        config_path: None,
         env: "development".to_string(),
         output_dir: None,
+        force: false,
     };
 
     let result = handler.execute(&command).await;

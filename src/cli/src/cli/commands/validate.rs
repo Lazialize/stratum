@@ -29,6 +29,8 @@ pub struct ValidationSummary {
 pub struct ValidateCommand {
     /// プロジェクトのルートパス
     pub project_path: PathBuf,
+    /// カスタム設定ファイルパス
+    pub config_path: Option<PathBuf>,
     /// スキーマディレクトリのパス（指定されない場合は設定ファイルから取得）
     pub schema_dir: Option<PathBuf>,
 }
@@ -54,7 +56,8 @@ impl ValidateCommandHandler {
     /// 成功時は検証結果のサマリー、失敗時はエラーメッセージ
     pub fn execute(&self, command: &ValidateCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let context = CommandContext::load(command.project_path.clone())?;
+        let context =
+            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
         let config = &context.config;
 
         // スキーマディレクトリのパスを解決

@@ -12,28 +12,24 @@ use crate::cli::command_context::CommandContext;
 use crate::cli::commands::destructive_change_formatter::DestructiveChangeFormatter;
 use crate::cli::commands::migration_loader;
 use crate::cli::commands::split_sql_statements;
+use crate::cli::commands::DESTRUCTIVE_SQL_REGEX;
 use crate::core::config::Dialect;
 use crate::core::migration::{
-    AppliedMigration, DestructiveChangeStatus, Migration, MigrationMetadata,
+    AppliedMigration, DestructiveChangeStatus, Migration, MigrationMetadata, MigrationRecord,
 };
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use colored::Colorize;
-use regex::Regex;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::LazyLock;
-
-static DESTRUCTIVE_SQL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(DROP\s+(TABLE|COLUMN|TYPE|INDEX|CONSTRAINT)|ALTER\s+.*\s+(DROP|RENAME)|RENAME\s+(TABLE|COLUMN))\b")
-        .expect("Invalid destructive SQL regex pattern")
-});
 
 /// applyコマンドの入力パラメータ
 #[derive(Debug, Clone)]
 pub struct ApplyCommand {
     /// プロジェクトのルートパス
     pub project_path: PathBuf,
+    /// カスタム設定ファイルパス
+    pub config_path: Option<PathBuf>,
     /// Dry run - 実行せずにSQLを表示
     pub dry_run: bool,
     /// 対象環境
@@ -65,7 +61,8 @@ impl ApplyCommandHandler {
     /// 成功時は適用されたマイグレーションの概要、失敗時はエラーメッセージ
     pub async fn execute(&self, command: &ApplyCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let context = CommandContext::load(command.project_path.clone())?;
+        let context =
+            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
         let config = &context.config;
 
         // マイグレーションディレクトリのパスを解決
@@ -75,18 +72,14 @@ impl ApplyCommandHandler {
         let available_migrations = migration_loader::load_available_migrations(&migrations_dir)?;
 
         if available_migrations.is_empty() {
-            return Err(anyhow!("No migration files found"));
-        }
-
-        if command.dry_run {
-            // Dry runモード: データベースに接続せずに全てのマイグレーションをpendingとみなす
-            let pending_migrations: Vec<_> = available_migrations.iter().collect();
-            return self.execute_dry_run(&pending_migrations);
+            return Ok("No migration files found.".to_string());
         }
 
         // データベース接続を確立し、マイグレーション履歴を取得
-        let (pool, applied_migrations) = context.connect_and_load_migrations(&command.env).await?;
-        let migrator = DatabaseMigratorService::new();
+        // dry-run モードでも DB に接続して適用済みマイグレーションを確認する
+        let (pool, applied_migrations) = context
+            .connect_and_load_migrations_with_timeout(&command.env, command.timeout)
+            .await?;
 
         // 未適用のマイグレーションを特定
         let pending_migrations: Vec<_> = available_migrations
@@ -99,8 +92,22 @@ impl ApplyCommandHandler {
             .collect();
 
         if pending_migrations.is_empty() {
-            return Err(anyhow!("No pending migrations to apply"));
+            return Ok("No pending migrations to apply. Database is up to date.".to_string());
         }
+
+        // 適用済みマイグレーションのチェックサム検証
+        let checksum_warnings =
+            self.verify_applied_checksums(&available_migrations, &applied_migrations);
+        for warning in &checksum_warnings {
+            eprintln!("{}", warning.yellow());
+        }
+
+        // Dry run モードの場合は SQL を表示して終了
+        if command.dry_run {
+            return self.execute_dry_run(&pending_migrations);
+        }
+
+        let migrator = DatabaseMigratorService::new();
 
         // マイグレーションを順次適用
         let mut applied = Vec::new();
@@ -317,6 +324,46 @@ impl ApplyCommandHandler {
         summary.push_str(&format!("\nTotal execution time: {}ms\n", total_duration));
 
         summary
+    }
+
+    /// 適用済みマイグレーションのチェックサム検証
+    ///
+    /// ローカルファイルのチェックサムと DB 記録のチェックサムを比較し、
+    /// 不一致がある場合は警告を返す。
+    fn verify_applied_checksums(
+        &self,
+        available_migrations: &[(String, String, PathBuf)],
+        applied_migrations: &[MigrationRecord],
+    ) -> Vec<String> {
+        let mut warnings = Vec::new();
+
+        for record in applied_migrations {
+            // ローカルにファイルがあるか確認
+            if let Some((_, _, migration_dir)) = available_migrations
+                .iter()
+                .find(|(v, _, _)| v == &record.version)
+            {
+                let meta_path = migration_dir.join(".meta.yaml");
+                if meta_path.exists() {
+                    if let Ok(meta_content) = fs::read_to_string(&meta_path) {
+                        if let Ok(metadata) =
+                            serde_saphyr::from_str::<MigrationMetadata>(&meta_content)
+                        {
+                            if metadata.checksum != record.checksum {
+                                warnings.push(format!(
+                                    "Warning: Checksum mismatch for migration {}: local={}, applied={}",
+                                    record.version,
+                                    metadata.checksum,
+                                    record.checksum
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        warnings
     }
 }
 

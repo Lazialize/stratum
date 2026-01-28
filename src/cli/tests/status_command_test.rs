@@ -21,6 +21,7 @@ fn test_new_handler() {
 fn test_status_command_struct() {
     let command = StatusCommand {
         project_path: PathBuf::from("/test/path"),
+        config_path: None,
         env: "development".to_string(),
     };
 
@@ -36,6 +37,7 @@ async fn test_status_no_config_file() {
     let handler = StatusCommandHandler::new();
     let command = StatusCommand {
         project_path,
+        config_path: None,
         env: "development".to_string(),
     };
 
@@ -58,6 +60,7 @@ async fn test_status_no_migrations_dir() {
     let handler = StatusCommandHandler::new();
     let command = StatusCommand {
         project_path,
+        config_path: None,
         env: "development".to_string(),
     };
 
@@ -77,6 +80,7 @@ async fn test_status_no_migrations() {
     let handler = StatusCommandHandler::new();
     let command = StatusCommand {
         project_path,
+        config_path: None,
         env: "development".to_string(),
     };
 
@@ -129,6 +133,7 @@ async fn test_status_with_pending_migrations() {
     let handler = StatusCommandHandler::new();
     let command = StatusCommand {
         project_path,
+        config_path: None,
         env: "development".to_string(),
     };
 
@@ -212,6 +217,7 @@ async fn test_status_with_applied_migrations() {
     let handler = StatusCommandHandler::new();
     let command = StatusCommand {
         project_path,
+        config_path: None,
         env: "development".to_string(),
     };
 

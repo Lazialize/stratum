@@ -23,7 +23,17 @@ pub struct CommandContext {
 impl CommandContext {
     /// プロジェクトルートから設定を読み込んでコンテキストを作成
     pub fn load(project_path: PathBuf) -> Result<Self> {
-        let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
+        Self::load_with_config(project_path, None)
+    }
+
+    /// カスタム設定ファイルパスを指定してコンテキストを作成
+    pub fn load_with_config(
+        project_path: PathBuf,
+        custom_config_path: Option<PathBuf>,
+    ) -> Result<Self> {
+        let config_path = custom_config_path
+            .unwrap_or_else(|| project_path.join(Config::DEFAULT_CONFIG_PATH));
+
         if !config_path.exists() {
             return Err(anyhow!(
                 "Config file not found: {:?}. Please initialize the project first with the `init` command.",
@@ -97,7 +107,19 @@ impl CommandContext {
 
     /// 接続プールを作成
     pub async fn connect_pool(&self, env: &str) -> Result<AnyPool> {
-        let db_config = self.database_config(env)?;
+        self.connect_pool_with_timeout(env, None).await
+    }
+
+    /// タイムアウト付きで接続プールを作成
+    pub async fn connect_pool_with_timeout(
+        &self,
+        env: &str,
+        timeout: Option<u64>,
+    ) -> Result<AnyPool> {
+        let mut db_config = self.database_config(env)?;
+        if let Some(t) = timeout {
+            db_config.timeout = Some(t);
+        }
         let db_service = DatabaseConnectionService::new();
         db_service
             .create_pool(self.config.dialect, &db_config)
@@ -110,7 +132,17 @@ impl CommandContext {
         &self,
         env: &str,
     ) -> Result<(AnyPool, Vec<MigrationRecord>)> {
-        let pool = self.connect_pool(env).await?;
+        self.connect_and_load_migrations_with_timeout(env, None)
+            .await
+    }
+
+    /// タイムアウト付きでDB接続を確立し、マイグレーション履歴テーブルを作成（未作成の場合）、適用済みマイグレーションを取得
+    pub async fn connect_and_load_migrations_with_timeout(
+        &self,
+        env: &str,
+        timeout: Option<u64>,
+    ) -> Result<(AnyPool, Vec<MigrationRecord>)> {
+        let pool = self.connect_pool_with_timeout(env, timeout).await?;
 
         let migrator = DatabaseMigratorService::new();
         migrator

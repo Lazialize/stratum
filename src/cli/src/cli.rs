@@ -157,6 +157,12 @@ pub enum Commands {
     ///
     ///   # Rollback in production
     ///   strata rollback --env production --steps 1
+    ///
+    ///   # Dry run to preview SQL
+    ///   strata rollback --dry-run
+    ///
+    ///   # Allow destructive rollback
+    ///   strata rollback --allow-destructive
     Rollback {
         /// Number of migrations to rollback
         #[arg(long, value_name = "N")]
@@ -165,6 +171,14 @@ pub enum Commands {
         /// Target environment
         #[arg(short, long, value_name = "ENV", default_value = "development")]
         env: String,
+
+        /// Dry run - show SQL without executing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Allow destructive changes (DROP, RENAME, etc.)
+        #[arg(long)]
+        allow_destructive: bool,
     },
 
     /// Validate schema definitions

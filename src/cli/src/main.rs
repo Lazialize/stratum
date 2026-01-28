@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use colored::control as color_control;
 use std::env;
+use std::path::PathBuf;
 use std::process;
 use strata::cli::commands::apply::{ApplyCommand, ApplyCommandHandler};
 use strata::cli::commands::export::{ExportCommand, ExportCommandHandler};
@@ -43,8 +45,29 @@ fn main() {
 
 /// コマンドを実行する
 async fn run_command(cli: Cli) -> Result<String> {
+    // --no-color フラグの処理
+    if cli.no_color {
+        color_control::set_override(false);
+    }
+
+    // --verbose フラグの処理
+    // 環境変数を設定して、ハンドラーや他のコンポーネントで参照可能にする
+    if cli.verbose {
+        env::set_var("STRATA_VERBOSE", "1");
+        eprintln!("Verbose mode enabled");
+    }
+
     // プロジェクトのルートパスを取得
     let project_path = env::current_dir()?;
+
+    // --config フラグの処理（絶対パスに変換）
+    let config_path: Option<PathBuf> = cli.config.map(|p| {
+        if p.is_absolute() {
+            p
+        } else {
+            project_path.join(p)
+        }
+    });
 
     match cli.command {
         Commands::Init { dialect, force } => {
@@ -72,6 +95,7 @@ async fn run_command(cli: Cli) -> Result<String> {
             let handler = GenerateCommandHandler::new();
             let command = GenerateCommand {
                 project_path,
+                config_path,
                 description,
                 dry_run,
                 allow_destructive,
@@ -88,6 +112,7 @@ async fn run_command(cli: Cli) -> Result<String> {
             let handler = ApplyCommandHandler::new();
             let command = ApplyCommand {
                 project_path,
+                config_path,
                 dry_run,
                 env,
                 timeout,
@@ -96,12 +121,20 @@ async fn run_command(cli: Cli) -> Result<String> {
             handler.execute(&command).await
         }
 
-        Commands::Rollback { steps, env } => {
+        Commands::Rollback {
+            steps,
+            env,
+            dry_run,
+            allow_destructive,
+        } => {
             let handler = RollbackCommandHandler::new();
             let command = RollbackCommand {
                 project_path,
+                config_path,
                 steps,
                 env,
+                dry_run,
+                allow_destructive,
             };
             handler.execute(&command).await
         }
@@ -110,6 +143,7 @@ async fn run_command(cli: Cli) -> Result<String> {
             let handler = ValidateCommandHandler::new();
             let command = ValidateCommand {
                 project_path,
+                config_path,
                 schema_dir,
             };
             handler.execute(&command)
@@ -117,20 +151,26 @@ async fn run_command(cli: Cli) -> Result<String> {
 
         Commands::Status { env } => {
             let handler = StatusCommandHandler::new();
-            let command = StatusCommand { project_path, env };
+            let command = StatusCommand {
+                project_path,
+                config_path,
+                env,
+            };
             handler.execute(&command).await
         }
 
         Commands::Export {
             output,
             env,
-            force: _,
+            force,
         } => {
             let handler = ExportCommandHandler::new();
             let command = ExportCommand {
                 project_path,
+                config_path,
                 env,
                 output_dir: output,
+                force,
             };
             handler.execute(&command).await
         }

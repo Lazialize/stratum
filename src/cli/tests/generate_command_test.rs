@@ -24,6 +24,7 @@ mod generate_command_tests {
         let handler = GenerateCommandHandler::new();
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
+            config_path: None,
             description: Some("test migration".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -49,6 +50,7 @@ mod generate_command_tests {
         let handler = GenerateCommandHandler::new();
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
+            config_path: None,
             description: Some("test migration".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -61,6 +63,7 @@ mod generate_command_tests {
     }
 
     /// 空のスキーマディレクトリの場合は差分なし
+    /// 2.5: 「変更なし」は正常終了（Ok）として扱う
     #[test]
     fn test_execute_empty_schema_directory() {
         let temp_dir = TempDir::new().unwrap();
@@ -72,15 +75,16 @@ mod generate_command_tests {
         let handler = GenerateCommandHandler::new();
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
+            config_path: None,
             description: Some("initial migration".to_string()),
             dry_run: false,
             allow_destructive: false,
         };
 
         let result = handler.execute(&command);
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("changes") || err_msg.contains("schema"));
+        assert!(result.is_ok());
+        let msg = result.unwrap();
+        assert!(msg.contains("No schema changes"));
     }
 
     /// 新規テーブル追加のマイグレーション生成
@@ -98,6 +102,7 @@ mod generate_command_tests {
         let handler = GenerateCommandHandler::new();
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
+            config_path: None,
             description: Some("create users table".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -136,6 +141,7 @@ mod generate_command_tests {
         let handler = GenerateCommandHandler::new();
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
+            config_path: None,
             description: None, // descriptionなし
             dry_run: false,
             allow_destructive: false,
@@ -160,6 +166,7 @@ mod generate_command_tests {
         let handler = GenerateCommandHandler::new();
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
+            config_path: None,
             description: Some("create orders table".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -215,6 +222,7 @@ mod generate_command_tests {
         let handler = GenerateCommandHandler::new();
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
+            config_path: None,
             description: Some("initial schema".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -250,6 +258,7 @@ mod generate_command_tests {
         let handler = GenerateCommandHandler::new();
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
+            config_path: None,
             description: Some("create customers".to_string()),
             dry_run: false,
             allow_destructive: false,
