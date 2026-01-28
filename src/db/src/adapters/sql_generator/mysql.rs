@@ -22,51 +22,12 @@ impl MysqlSqlGenerator {
         Self {}
     }
 
-    /// カラム定義のSQL文字列を生成
-    fn generate_column_definition(&self, column: &Column) -> String {
-        let type_str = self.map_column_type(&column.column_type, column.auto_increment);
-        let auto_increment = if column.auto_increment.unwrap_or(false) {
-            "AUTO_INCREMENT"
-        } else {
-            ""
-        };
-        let quoted_name = quote_identifier_mysql(&column.name);
-        build_column_definition(&quoted_name, column, type_str, &[auto_increment])
-    }
-
     /// ColumnTypeをMySQLの型文字列にマッピング
     ///
     /// TypeMappingServiceに委譲して型変換を行います。
     fn map_column_type(&self, column_type: &ColumnType, auto_increment: Option<bool>) -> String {
         let service = TypeMappingService::new(Dialect::MySQL);
         service.to_sql_type_with_auto_increment(column_type, auto_increment)
-    }
-
-    /// 制約定義のSQL文字列を生成
-    fn generate_constraint_definition(&self, constraint: &Constraint) -> String {
-        match constraint {
-            Constraint::PRIMARY_KEY { columns } => {
-                format!("PRIMARY KEY ({})", quote_columns_mysql(columns))
-            }
-            Constraint::UNIQUE { columns } => {
-                format!("UNIQUE ({})", quote_columns_mysql(columns))
-            }
-            Constraint::CHECK {
-                check_expression, ..
-            } => {
-                // MySQL 8.0.16以降でCHECK制約がサポートされる
-                format!("CHECK ({})", check_expression)
-            }
-            Constraint::FOREIGN_KEY { .. } => {
-                // FOREIGN KEY制約はALTER TABLEで追加するため、ここでは空文字列を返す
-                String::new()
-            }
-        }
-    }
-
-    /// テーブル制約として追加する制約かどうかを判定
-    fn should_add_as_table_constraint(&self, constraint: &Constraint) -> bool {
-        !matches!(constraint, Constraint::FOREIGN_KEY { .. })
     }
 
     /// MODIFY COLUMN用のカラム定義を生成
@@ -92,24 +53,44 @@ impl MysqlSqlGenerator {
 }
 
 impl SqlGenerator for MysqlSqlGenerator {
-    fn generate_add_column(&self, table_name: &str, column: &Column) -> String {
-        format!(
-            "ALTER TABLE {} ADD COLUMN {}",
-            quote_identifier_mysql(table_name),
-            self.generate_column_definition(column)
-        )
+    fn quote_identifier(&self, name: &str) -> String {
+        quote_identifier_mysql(name)
     }
 
-    fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
-        format!(
-            "ALTER TABLE {} DROP COLUMN {}",
-            quote_identifier_mysql(table_name),
-            quote_identifier_mysql(column_name)
-        )
+    fn quote_columns(&self, columns: &[String]) -> String {
+        quote_columns_mysql(columns)
     }
 
-    fn generate_drop_table(&self, table_name: &str) -> String {
-        format!("DROP TABLE {}", quote_identifier_mysql(table_name))
+    fn generate_column_definition(&self, column: &Column) -> String {
+        let type_str = self.map_column_type(&column.column_type, column.auto_increment);
+        let auto_increment = if column.auto_increment.unwrap_or(false) {
+            "AUTO_INCREMENT"
+        } else {
+            ""
+        };
+        let quoted_name = quote_identifier_mysql(&column.name);
+        build_column_definition(&quoted_name, column, type_str, &[auto_increment])
+    }
+
+    fn generate_constraint_definition(&self, constraint: &Constraint) -> String {
+        match constraint {
+            Constraint::PRIMARY_KEY { columns } => {
+                format!("PRIMARY KEY ({})", quote_columns_mysql(columns))
+            }
+            Constraint::UNIQUE { columns } => {
+                format!("UNIQUE ({})", quote_columns_mysql(columns))
+            }
+            Constraint::CHECK {
+                check_expression, ..
+            } => {
+                // MySQL 8.0.16以降でCHECK制約がサポートされる
+                format!("CHECK ({})", check_expression)
+            }
+            Constraint::FOREIGN_KEY { .. } => {
+                // FOREIGN KEY制約はALTER TABLEで追加するため、ここでは空文字列を返す
+                String::new()
+            }
+        }
     }
 
     fn generate_drop_index(&self, table_name: &str, index: &Index) -> String {
@@ -146,88 +127,6 @@ impl SqlGenerator for MysqlSqlGenerator {
         );
 
         vec![sql]
-    }
-
-    fn generate_create_table(&self, table: &Table) -> String {
-        let mut parts = Vec::new();
-
-        parts.push(format!(
-            "CREATE TABLE {}",
-            quote_identifier_mysql(&table.name)
-        ));
-        parts.push("(".to_string());
-
-        let mut elements = Vec::new();
-
-        // カラム定義
-        for column in &table.columns {
-            elements.push(format!("    {}", self.generate_column_definition(column)));
-        }
-
-        // テーブル制約（FOREIGN KEY以外）
-        for constraint in &table.constraints {
-            if self.should_add_as_table_constraint(constraint) {
-                let constraint_def = self.generate_constraint_definition(constraint);
-                if !constraint_def.is_empty() {
-                    elements.push(format!("    {}", constraint_def));
-                }
-            }
-        }
-
-        parts.push(elements.join(",\n"));
-        parts.push(")".to_string());
-
-        parts.join("\n")
-    }
-
-    fn generate_create_index(&self, table: &Table, index: &Index) -> String {
-        let index_type = if index.unique {
-            "UNIQUE INDEX"
-        } else {
-            "INDEX"
-        };
-
-        format!(
-            "CREATE {} {} ON {} ({})",
-            index_type,
-            quote_identifier_mysql(&index.name),
-            quote_identifier_mysql(&table.name),
-            quote_columns_mysql(&index.columns)
-        )
-    }
-
-    fn generate_alter_table_add_constraint(
-        &self,
-        table: &Table,
-        constraint_index: usize,
-    ) -> String {
-        if let Some(constraint) = table.constraints.get(constraint_index) {
-            match constraint {
-                Constraint::FOREIGN_KEY {
-                    columns,
-                    referenced_table,
-                    referenced_columns,
-                } => {
-                    let constraint_name =
-                        generate_fk_constraint_name(&table.name, columns, referenced_table);
-
-                    format!(
-                        "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
-                        quote_identifier_mysql(&table.name),
-                        quote_identifier_mysql(&constraint_name),
-                        quote_columns_mysql(columns),
-                        quote_identifier_mysql(referenced_table),
-                        quote_columns_mysql(referenced_columns)
-                    )
-                }
-                _ => {
-                    // FOREIGN KEY以外の制約はCREATE TABLEで定義されるため、ここでは空文字列
-                    String::new()
-                }
-            }
-        } else {
-            String::new()
-        }
     }
 
     fn generate_rename_column(

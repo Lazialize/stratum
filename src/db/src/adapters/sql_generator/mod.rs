@@ -7,7 +7,7 @@ pub mod postgres;
 pub mod sqlite;
 pub mod sqlite_table_recreator;
 
-use crate::core::schema::{Column, ColumnType, EnumDefinition, Index, Table};
+use crate::core::schema::{Column, ColumnType, Constraint, EnumDefinition, Index, Table};
 use crate::core::schema_diff::{ColumnDiff, EnumDiff, RenamedColumn};
 use sha2::{Digest, Sha256};
 
@@ -178,69 +178,115 @@ impl MigrationDirection {
 /// SQLジェネレータートレイト
 ///
 /// 各データベース方言用のSQLジェネレーターが実装すべきインターフェース。
+/// プリミティブメソッド（quote_identifier, quote_columns, generate_column_definition,
+/// generate_constraint_definition）を各実装が提供し、共通アルゴリズムはデフォルト実装で提供。
 pub trait SqlGenerator {
+    // ===========================================
+    // プリミティブメソッド（各実装が提供）
+    // ===========================================
+
+    /// ダイアレクト固有の識別子クォート
+    fn quote_identifier(&self, name: &str) -> String;
+
+    /// ダイアレクト固有のカラムリストクォート
+    fn quote_columns(&self, columns: &[String]) -> String;
+
+    /// ダイアレクト固有のカラム定義生成
+    fn generate_column_definition(&self, column: &Column) -> String;
+
+    /// ダイアレクト固有の制約定義生成
+    fn generate_constraint_definition(&self, constraint: &Constraint) -> String;
+
+    // ===========================================
+    // デフォルト実装付きメソッド
+    // ===========================================
+
+    /// テーブル制約としてCREATE TABLE内に含めるかの判定
+    ///
+    /// デフォルト: FOREIGN_KEY以外はtrue。
+    /// SQLiteはオーバーライドして全制約をCREATE TABLE内に定義。
+    fn should_add_as_table_constraint(&self, constraint: &Constraint) -> bool {
+        !matches!(constraint, Constraint::FOREIGN_KEY { .. })
+    }
+
     /// CREATE TABLE文を生成
-    ///
-    /// # Arguments
-    ///
-    /// * `table` - テーブル定義
-    ///
-    /// # Returns
-    ///
-    /// CREATE TABLE文のSQL文字列
-    fn generate_create_table(&self, table: &Table) -> String;
+    fn generate_create_table(&self, table: &Table) -> String {
+        let mut parts = Vec::new();
+
+        parts.push(format!(
+            "CREATE TABLE {}",
+            self.quote_identifier(&table.name)
+        ));
+        parts.push("(".to_string());
+
+        let mut elements = Vec::new();
+
+        // カラム定義
+        for column in &table.columns {
+            elements.push(format!("    {}", self.generate_column_definition(column)));
+        }
+
+        // テーブル制約
+        for constraint in &table.constraints {
+            if self.should_add_as_table_constraint(constraint) {
+                let constraint_def = self.generate_constraint_definition(constraint);
+                if !constraint_def.is_empty() {
+                    elements.push(format!("    {}", constraint_def));
+                }
+            }
+        }
+
+        parts.push(elements.join(",\n"));
+        parts.push(")".to_string());
+
+        parts.join("\n")
+    }
 
     /// CREATE INDEX文を生成
-    ///
-    /// # Arguments
-    ///
-    /// * `table` - テーブル定義
-    /// * `index` - インデックス定義
-    ///
-    /// # Returns
-    ///
-    /// CREATE INDEX文のSQL文字列
-    fn generate_create_index(&self, table: &Table, index: &Index) -> String;
+    fn generate_create_index(&self, table: &Table, index: &Index) -> String {
+        let index_type = if index.unique {
+            "UNIQUE INDEX"
+        } else {
+            "INDEX"
+        };
+
+        format!(
+            "CREATE {} {} ON {} ({})",
+            index_type,
+            self.quote_identifier(&index.name),
+            self.quote_identifier(&table.name),
+            self.quote_columns(&index.columns)
+        )
+    }
 
     /// ALTER TABLE ADD COLUMN文を生成
-    ///
-    /// # Arguments
-    ///
-    /// * `table_name` - テーブル名
-    /// * `column` - 追加するカラム
-    ///
-    /// # Returns
-    ///
-    /// ALTER TABLE ADD COLUMN文のSQL文字列
-    fn generate_add_column(&self, table_name: &str, column: &Column) -> String;
+    fn generate_add_column(&self, table_name: &str, column: &Column) -> String {
+        format!(
+            "ALTER TABLE {} ADD COLUMN {}",
+            self.quote_identifier(table_name),
+            self.generate_column_definition(column)
+        )
+    }
 
     /// ALTER TABLE DROP COLUMN文を生成
-    ///
-    /// # Arguments
-    ///
-    /// * `table_name` - テーブル名
-    /// * `column_name` - 削除するカラム名
     fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
-        format!("ALTER TABLE {} DROP COLUMN {}", table_name, column_name)
+        format!(
+            "ALTER TABLE {} DROP COLUMN {}",
+            self.quote_identifier(table_name),
+            self.quote_identifier(column_name)
+        )
     }
 
     /// DROP TABLE文を生成
-    ///
-    /// # Arguments
-    ///
-    /// * `table_name` - テーブル名
     fn generate_drop_table(&self, table_name: &str) -> String {
-        format!("DROP TABLE {}", table_name)
+        format!("DROP TABLE {}", self.quote_identifier(table_name))
     }
 
     /// DROP INDEX文を生成
     ///
-    /// # Arguments
-    ///
-    /// * `table_name` - テーブル名（MySQL向け）
-    /// * `index` - インデックス定義
+    /// MySQLは `ON table_name` が必要なためオーバーライド。
     fn generate_drop_index(&self, _table_name: &str, index: &Index) -> String {
-        format!("DROP INDEX {}", index.name)
+        format!("DROP INDEX {}", self.quote_identifier(&index.name))
     }
 
     /// DOWN時に復元が必要なテーブルの注意コメントを生成
@@ -253,16 +299,40 @@ pub trait SqlGenerator {
 
     /// ALTER TABLE文（制約追加）を生成
     ///
-    /// # Arguments
-    ///
-    /// * `table` - テーブル定義
-    /// * `constraint_index` - 追加する制約のインデックス
-    ///
-    /// # Returns
-    ///
-    /// ALTER TABLE文のSQL文字列
-    fn generate_alter_table_add_constraint(&self, table: &Table, constraint_index: usize)
-        -> String;
+    /// FOREIGN KEY制約のみALTER TABLEで追加。それ以外は空文字列。
+    fn generate_alter_table_add_constraint(
+        &self,
+        table: &Table,
+        constraint_index: usize,
+    ) -> String {
+        if let Some(constraint) = table.constraints.get(constraint_index) {
+            match constraint {
+                Constraint::FOREIGN_KEY {
+                    columns,
+                    referenced_table,
+                    referenced_columns,
+                } => {
+                    let constraint_name =
+                        generate_fk_constraint_name(&table.name, columns, referenced_table);
+
+                    format!(
+                        "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
+                        self.quote_identifier(&table.name),
+                        self.quote_identifier(&constraint_name),
+                        self.quote_columns(columns),
+                        self.quote_identifier(referenced_table),
+                        self.quote_columns(referenced_columns)
+                    )
+                }
+                _ => {
+                    // FOREIGN KEY以外の制約はCREATE TABLEで定義されるため、ここでは空文字列
+                    String::new()
+                }
+            }
+        } else {
+            String::new()
+        }
+    }
 
     /// 既存テーブルへの制約追加SQL文を生成
     ///
@@ -398,30 +468,30 @@ pub trait SqlGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::schema::Column;
+    use crate::core::schema::{Column, Constraint};
     use crate::core::schema_diff::RenamedColumn;
 
     // ダミー実装（デフォルト実装のテスト用）
     struct DummySqlGenerator;
 
     impl SqlGenerator for DummySqlGenerator {
-        fn generate_create_table(&self, _table: &Table) -> String {
+        fn quote_identifier(&self, name: &str) -> String {
+            format!("\"{}\"", name)
+        }
+
+        fn quote_columns(&self, columns: &[String]) -> String {
+            columns
+                .iter()
+                .map(|c| self.quote_identifier(c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+
+        fn generate_column_definition(&self, _column: &Column) -> String {
             String::new()
         }
 
-        fn generate_create_index(&self, _table: &Table, _index: &Index) -> String {
-            String::new()
-        }
-
-        fn generate_add_column(&self, _table_name: &str, _column: &Column) -> String {
-            String::new()
-        }
-
-        fn generate_alter_table_add_constraint(
-            &self,
-            _table: &Table,
-            _constraint_index: usize,
-        ) -> String {
+        fn generate_constraint_definition(&self, _constraint: &Constraint) -> String {
             String::new()
         }
     }

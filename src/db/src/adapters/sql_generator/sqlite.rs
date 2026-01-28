@@ -10,7 +10,7 @@ use crate::adapters::sql_generator::{
 };
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
-use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
+use crate::core::schema::{Column, ColumnType, Constraint, Table};
 use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
 
 /// SQLite用SQLジェネレーター
@@ -23,13 +23,6 @@ impl SqliteSqlGenerator {
         Self {}
     }
 
-    /// カラム定義のSQL文字列を生成
-    fn generate_column_definition(&self, column: &Column) -> String {
-        let type_str = self.map_column_type(&column.column_type);
-        let quoted_name = quote_identifier_sqlite(&column.name);
-        build_column_definition(&quoted_name, column, type_str, &[])
-    }
-
     /// ColumnTypeをSQLiteの型文字列にマッピング
     ///
     /// TypeMappingServiceに委譲して型変換を行います。
@@ -37,8 +30,23 @@ impl SqliteSqlGenerator {
         let service = TypeMappingService::new(Dialect::SQLite);
         service.to_sql_type(column_type)
     }
+}
 
-    /// 制約定義のSQL文字列を生成
+impl SqlGenerator for SqliteSqlGenerator {
+    fn quote_identifier(&self, name: &str) -> String {
+        quote_identifier_sqlite(name)
+    }
+
+    fn quote_columns(&self, columns: &[String]) -> String {
+        quote_columns_sqlite(columns)
+    }
+
+    fn generate_column_definition(&self, column: &Column) -> String {
+        let type_str = self.map_column_type(&column.column_type);
+        let quoted_name = quote_identifier_sqlite(&column.name);
+        build_column_definition(&quoted_name, column, type_str, &[])
+    }
+
     fn generate_constraint_definition(&self, constraint: &Constraint) -> String {
         match constraint {
             Constraint::PRIMARY_KEY { columns } => {
@@ -67,73 +75,10 @@ impl SqliteSqlGenerator {
             }
         }
     }
-}
 
-impl SqlGenerator for SqliteSqlGenerator {
-    fn generate_add_column(&self, table_name: &str, column: &Column) -> String {
-        format!(
-            "ALTER TABLE {} ADD COLUMN {}",
-            quote_identifier_sqlite(table_name),
-            self.generate_column_definition(column)
-        )
-    }
-
-    fn generate_drop_column(&self, table_name: &str, column_name: &str) -> String {
-        format!(
-            "ALTER TABLE {} DROP COLUMN {}",
-            quote_identifier_sqlite(table_name),
-            quote_identifier_sqlite(column_name)
-        )
-    }
-
-    fn generate_drop_table(&self, table_name: &str) -> String {
-        format!("DROP TABLE {}", quote_identifier_sqlite(table_name))
-    }
-
-    fn generate_create_table(&self, table: &Table) -> String {
-        let mut parts = Vec::new();
-
-        parts.push(format!(
-            "CREATE TABLE {}",
-            quote_identifier_sqlite(&table.name)
-        ));
-        parts.push("(".to_string());
-
-        let mut elements = Vec::new();
-
-        // カラム定義
-        for column in &table.columns {
-            elements.push(format!("    {}", self.generate_column_definition(column)));
-        }
-
-        // テーブル制約（すべての制約をCREATE TABLE内で定義）
-        for constraint in &table.constraints {
-            let constraint_def = self.generate_constraint_definition(constraint);
-            if !constraint_def.is_empty() {
-                elements.push(format!("    {}", constraint_def));
-            }
-        }
-
-        parts.push(elements.join(",\n"));
-        parts.push(")".to_string());
-
-        parts.join("\n")
-    }
-
-    fn generate_create_index(&self, table: &Table, index: &Index) -> String {
-        let index_type = if index.unique {
-            "UNIQUE INDEX"
-        } else {
-            "INDEX"
-        };
-
-        format!(
-            "CREATE {} {} ON {} ({})",
-            index_type,
-            quote_identifier_sqlite(&index.name),
-            quote_identifier_sqlite(&table.name),
-            quote_columns_sqlite(&index.columns)
-        )
+    /// SQLiteは全制約をCREATE TABLE内で定義
+    fn should_add_as_table_constraint(&self, _constraint: &Constraint) -> bool {
+        true
     }
 
     fn generate_alter_table_add_constraint(
@@ -226,6 +171,7 @@ impl Default for SqliteSqlGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::schema::Index;
     use crate::core::schema_diff::ColumnChange;
 
     #[test]
