@@ -70,7 +70,7 @@ mod cli_integration_tests {
             let db_config = if let Some(ref db_path) = self.db_path {
                 DatabaseConfig {
                     host: String::new(),
-                    port: 0,
+                    port: None,
                     database: db_path.to_string_lossy().to_string(),
                     user: None,
                     password: None,
@@ -79,7 +79,7 @@ mod cli_integration_tests {
             } else {
                 DatabaseConfig {
                     host: "localhost".to_string(),
-                    port: 5432,
+                    port: Some(5432),
                     database: "testdb".to_string(),
                     user: Some("postgres".to_string()),
                     password: Some("postgres".to_string()),
@@ -109,7 +109,7 @@ mod cli_integration_tests {
 
             let db_config = DatabaseConfig {
                 host: host.to_string(),
-                port,
+                port: Some(port),
                 database: database.to_string(),
                 user: Some("postgres".to_string()),
                 password: Some("postgres".to_string()),
@@ -138,7 +138,7 @@ mod cli_integration_tests {
 
             let db_config = DatabaseConfig {
                 host: host.to_string(),
-                port,
+                port: Some(port),
                 database: database.to_string(),
                 user: Some("root".to_string()),
                 password: None,

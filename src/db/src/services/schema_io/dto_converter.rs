@@ -73,6 +73,7 @@ impl DtoConverterService {
             primary_key: self.extract_primary_key(&table.constraints),
             indexes: table.indexes.clone(),
             constraints: self.convert_constraints_to_dto(&table.constraints),
+            renamed_from: table.renamed_from.clone(),
         }
     }
 
@@ -101,6 +102,9 @@ impl DtoConverterService {
             table.add_constraint(constraint);
         }
 
+        // renamed_from をコピー
+        table.renamed_from = dto.renamed_from.clone();
+
         Ok(table)
     }
 
@@ -114,10 +118,14 @@ impl DtoConverterService {
                 columns,
                 referenced_table,
                 referenced_columns,
+                on_delete,
+                on_update,
             } => Some(ConstraintDto::FOREIGN_KEY {
                 columns: columns.clone(),
                 referenced_table: referenced_table.clone(),
                 referenced_columns: referenced_columns.clone(),
+                on_delete: on_delete.clone(),
+                on_update: on_update.clone(),
             }),
             Constraint::UNIQUE { columns } => Some(ConstraintDto::UNIQUE {
                 columns: columns.clone(),
@@ -139,10 +147,14 @@ impl DtoConverterService {
                 columns,
                 referenced_table,
                 referenced_columns,
+                on_delete,
+                on_update,
             } => Constraint::FOREIGN_KEY {
                 columns: columns.clone(),
                 referenced_table: referenced_table.clone(),
                 referenced_columns: referenced_columns.clone(),
+                on_delete: on_delete.clone(),
+                on_update: on_update.clone(),
             },
             ConstraintDto::UNIQUE { columns } => Constraint::UNIQUE {
                 columns: columns.clone(),
@@ -382,6 +394,7 @@ mod tests {
             primary_key: None,
             indexes: vec![],
             constraints: vec![],
+            renamed_from: None,
         };
         let service = DtoConverterService::new();
 
@@ -403,6 +416,7 @@ mod tests {
             primary_key: Some(vec!["id".to_string()]),
             indexes: vec![],
             constraints: vec![],
+            renamed_from: None,
         };
         let service = DtoConverterService::new();
 
@@ -435,6 +449,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         };
         let service = DtoConverterService::new();
 
@@ -444,6 +460,7 @@ mod tests {
             columns,
             referenced_table,
             referenced_columns,
+            ..
         } = dto
         {
             assert_eq!(columns, vec!["user_id"]);
@@ -498,6 +515,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         };
         let service = DtoConverterService::new();
 
@@ -507,6 +526,7 @@ mod tests {
             columns,
             referenced_table,
             referenced_columns,
+            ..
         } = constraint
         {
             assert_eq!(columns, vec!["user_id"]);
@@ -656,6 +676,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         original.add_table(posts);
 
@@ -724,6 +746,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         original.add_index(Index::new(
             "idx_email".to_string(),

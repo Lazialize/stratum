@@ -1,6 +1,6 @@
 // インデックス差分検出
 
-use crate::core::schema_diff::TableDiff;
+use crate::core::schema_diff::{IndexDiff, TableDiff};
 use std::collections::HashSet;
 
 use super::SchemaDiffDetectorService;
@@ -26,6 +26,29 @@ impl SchemaDiffDetectorService {
         // 削除されたインデックス
         for index_name in old_index_names.difference(&new_index_names) {
             table_diff.removed_indexes.push((*index_name).clone());
+        }
+
+        // 変更されたインデックス（同名で内容が異なる）
+        for index_name in old_index_names.intersection(&new_index_names) {
+            let old_index = old_table
+                .indexes
+                .iter()
+                .find(|i| &i.name == *index_name)
+                .unwrap();
+            let new_index = new_table
+                .indexes
+                .iter()
+                .find(|i| &i.name == *index_name)
+                .unwrap();
+
+            // カラムリストまたはユニーク属性が異なる場合は変更とみなす
+            if old_index.columns != new_index.columns || old_index.unique != new_index.unique {
+                table_diff.modified_indexes.push(IndexDiff {
+                    index_name: (*index_name).clone(),
+                    old_index: old_index.clone(),
+                    new_index: new_index.clone(),
+                });
+            }
         }
     }
 }

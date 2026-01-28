@@ -98,6 +98,10 @@ pub struct Table {
 
     /// 制約定義のリスト
     pub constraints: Vec<Constraint>,
+
+    /// リネーム元のテーブル名（オプショナル）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
 }
 
 impl Table {
@@ -108,6 +112,7 @@ impl Table {
             columns: Vec::new(),
             indexes: Vec::new(),
             constraints: Vec::new(),
+            renamed_from: None,
         }
     }
 
@@ -324,6 +329,38 @@ impl Index {
     }
 }
 
+/// 参照アクション
+///
+/// FOREIGN KEY制約のON DELETE / ON UPDATE句で使用するアクションを表現します。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ReferentialAction {
+    /// 何もしない（デフォルト）
+    #[default]
+    NoAction,
+    /// 参照先の変更に追従して削除/更新
+    Cascade,
+    /// 参照先の削除/更新時にNULLに設定
+    SetNull,
+    /// 参照先の削除/更新時にデフォルト値に設定
+    SetDefault,
+    /// 参照先の削除/更新を制限
+    Restrict,
+}
+
+impl ReferentialAction {
+    /// SQL句として出力する文字列を返す
+    pub fn as_sql(&self) -> &'static str {
+        match self {
+            ReferentialAction::NoAction => "NO ACTION",
+            ReferentialAction::Cascade => "CASCADE",
+            ReferentialAction::SetNull => "SET NULL",
+            ReferentialAction::SetDefault => "SET DEFAULT",
+            ReferentialAction::Restrict => "RESTRICT",
+        }
+    }
+}
+
 /// 制約定義
 ///
 /// テーブルの制約（PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK）を表現します。
@@ -347,6 +384,14 @@ pub enum Constraint {
 
         /// 参照先カラム
         referenced_columns: Vec<String>,
+
+        /// 参照先レコード削除時のアクション
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on_delete: Option<ReferentialAction>,
+
+        /// 参照先レコード更新時のアクション
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on_update: Option<ReferentialAction>,
     },
 
     /// ユニーク制約
@@ -442,8 +487,129 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         };
         assert_eq!(fk.kind(), "FOREIGN_KEY");
+    }
+
+    #[test]
+    fn test_referential_action_as_sql() {
+        assert_eq!(ReferentialAction::NoAction.as_sql(), "NO ACTION");
+        assert_eq!(ReferentialAction::Cascade.as_sql(), "CASCADE");
+        assert_eq!(ReferentialAction::SetNull.as_sql(), "SET NULL");
+        assert_eq!(ReferentialAction::SetDefault.as_sql(), "SET DEFAULT");
+        assert_eq!(ReferentialAction::Restrict.as_sql(), "RESTRICT");
+    }
+
+    #[test]
+    fn test_referential_action_default() {
+        let action: ReferentialAction = Default::default();
+        assert_eq!(action, ReferentialAction::NoAction);
+    }
+
+    #[test]
+    fn test_foreign_key_with_referential_actions() {
+        let fk = Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+            on_delete: Some(ReferentialAction::Cascade),
+            on_update: Some(ReferentialAction::SetNull),
+        };
+
+        if let Constraint::FOREIGN_KEY {
+            on_delete,
+            on_update,
+            ..
+        } = fk
+        {
+            assert_eq!(on_delete, Some(ReferentialAction::Cascade));
+            assert_eq!(on_update, Some(ReferentialAction::SetNull));
+        } else {
+            panic!("Expected FOREIGN_KEY constraint");
+        }
+    }
+
+    #[test]
+    fn test_foreign_key_serialization_with_actions() {
+        let fk = Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+            on_delete: Some(ReferentialAction::Cascade),
+            on_update: Some(ReferentialAction::Restrict),
+        };
+
+        let json = serde_json::to_string(&fk).unwrap();
+        assert!(json.contains("on_delete"));
+        assert!(json.contains("CASCADE"));
+        assert!(json.contains("on_update"));
+        assert!(json.contains("RESTRICT"));
+    }
+
+    #[test]
+    fn test_foreign_key_serialization_without_actions() {
+        let fk = Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
+        };
+
+        let json = serde_json::to_string(&fk).unwrap();
+        // skip_serializing_if によりNoneは出力されない
+        assert!(!json.contains("on_delete"));
+        assert!(!json.contains("on_update"));
+    }
+
+    #[test]
+    fn test_foreign_key_deserialization_with_actions() {
+        let json = r#"{
+            "type": "FOREIGN_KEY",
+            "columns": ["user_id"],
+            "referenced_table": "users",
+            "referenced_columns": ["id"],
+            "on_delete": "CASCADE",
+            "on_update": "SET_NULL"
+        }"#;
+
+        let fk: Constraint = serde_json::from_str(json).unwrap();
+        if let Constraint::FOREIGN_KEY {
+            on_delete,
+            on_update,
+            ..
+        } = fk
+        {
+            assert_eq!(on_delete, Some(ReferentialAction::Cascade));
+            assert_eq!(on_update, Some(ReferentialAction::SetNull));
+        } else {
+            panic!("Expected FOREIGN_KEY constraint");
+        }
+    }
+
+    #[test]
+    fn test_foreign_key_deserialization_without_actions() {
+        let json = r#"{
+            "type": "FOREIGN_KEY",
+            "columns": ["user_id"],
+            "referenced_table": "users",
+            "referenced_columns": ["id"]
+        }"#;
+
+        let fk: Constraint = serde_json::from_str(json).unwrap();
+        if let Constraint::FOREIGN_KEY {
+            on_delete,
+            on_update,
+            ..
+        } = fk
+        {
+            assert!(on_delete.is_none());
+            assert!(on_update.is_none());
+        } else {
+            panic!("Expected FOREIGN_KEY constraint");
+        }
     }
 
     #[test]

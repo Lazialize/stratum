@@ -37,6 +37,15 @@ impl<'a> MigrationPipeline<'a> {
         generator: &dyn SqlGenerator,
     ) -> Result<Vec<String>, PipelineStageError> {
         let mut statements = Vec::new();
+
+        // リネームされたテーブルの処理（最初に実行）
+        for renamed_table in &self.diff.renamed_tables {
+            statements.push(
+                generator
+                    .generate_rename_table(&renamed_table.old_name, &renamed_table.new_table.name),
+            );
+        }
+
         // 外部キー依存関係を考慮してテーブルをソート
         let sorted_tables = self
             .diff
@@ -1047,6 +1056,131 @@ mod tests {
         assert!(
             sql.contains("DROP DEFAULT") || sql.contains("DROP SEQUENCE"),
             "Expected DROP DEFAULT or DROP SEQUENCE in down SQL: {}",
+            sql
+        );
+    }
+
+    // ==========================================
+    // テーブルリネーム関連テスト
+    // ==========================================
+
+    #[test]
+    fn test_pipeline_rename_table_up_postgresql() {
+        use crate::core::schema_diff::RenamedTable;
+
+        let mut diff = SchemaDiff::new();
+        let mut new_table = Table::new("accounts".to_string());
+        new_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        new_table.renamed_from = Some("users".to_string());
+
+        diff.renamed_tables.push(RenamedTable {
+            old_name: "users".to_string(),
+            new_table,
+        });
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains(r#"ALTER TABLE "users" RENAME TO "accounts""#),
+            "Expected rename SQL in: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_rename_table_up_mysql() {
+        use crate::core::schema_diff::RenamedTable;
+
+        let mut diff = SchemaDiff::new();
+        let mut new_table = Table::new("accounts".to_string());
+        new_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        new_table.renamed_from = Some("users".to_string());
+
+        diff.renamed_tables.push(RenamedTable {
+            old_name: "users".to_string(),
+            new_table,
+        });
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::MySQL);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains("RENAME TABLE `users` TO `accounts`"),
+            "Expected rename SQL in: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_rename_table_up_sqlite() {
+        use crate::core::schema_diff::RenamedTable;
+
+        let mut diff = SchemaDiff::new();
+        let mut new_table = Table::new("accounts".to_string());
+        new_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        new_table.renamed_from = Some("users".to_string());
+
+        diff.renamed_tables.push(RenamedTable {
+            old_name: "users".to_string(),
+            new_table,
+        });
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::SQLite);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains(r#"ALTER TABLE "users" RENAME TO "accounts""#),
+            "Expected rename SQL in: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_rename_table_down_postgresql() {
+        use crate::core::schema_diff::RenamedTable;
+
+        let mut diff = SchemaDiff::new();
+        let mut new_table = Table::new("accounts".to_string());
+        new_table.columns.push(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        new_table.renamed_from = Some("users".to_string());
+
+        diff.renamed_tables.push(RenamedTable {
+            old_name: "users".to_string(),
+            new_table,
+        });
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        // Down方向では逆リネーム（accounts → users）
+        assert!(
+            sql.contains(r#"ALTER TABLE "accounts" RENAME TO "users""#),
+            "Expected reverse rename SQL in: {}",
             sql
         );
     }

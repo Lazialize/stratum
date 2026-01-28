@@ -80,7 +80,7 @@ environments:
 
         let dev_config = config.get_database_config("development").unwrap();
         assert_eq!(dev_config.host, "localhost");
-        assert_eq!(dev_config.port, 5432);
+        assert_eq!(dev_config.port, Some(5432));
         assert_eq!(dev_config.database, "strata_dev");
 
         let prod_config = config.get_database_config("production").unwrap();
@@ -161,7 +161,7 @@ environments:
     fn test_database_config_with_env_vars() {
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 5432,
+            port: Some(5432),
             database: "strata_dev".to_string(),
             user: Some("postgres".to_string()),
             password: None,

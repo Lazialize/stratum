@@ -138,16 +138,12 @@ impl InitCommandHandler {
     ) -> Result<()> {
         // デフォルト値を設定
         let host = params.host.unwrap_or("localhost".to_string());
-        let port = params.port.unwrap_or(match params.dialect {
-            Dialect::PostgreSQL => 5432,
-            Dialect::MySQL => 3306,
-            Dialect::SQLite => 0,
-        });
 
         // データベース設定を作成
+        // portがNoneの場合はDialectのデフォルトポートが使用される
         let db_config = DatabaseConfig {
             host,
-            port,
+            port: params.port,
             database: params.database_name,
             user: params.user,
             password: params.password,

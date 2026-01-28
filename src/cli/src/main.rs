@@ -159,11 +159,7 @@ async fn run_command(cli: Cli) -> Result<String> {
             handler.execute(&command).await
         }
 
-        Commands::Export {
-            output,
-            env,
-            force,
-        } => {
+        Commands::Export { output, env, force } => {
             let handler = ExportCommandHandler::new();
             let command = ExportCommand {
                 project_path,

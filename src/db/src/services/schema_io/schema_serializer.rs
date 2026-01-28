@@ -242,6 +242,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         schema.add_table(table);
 
@@ -488,6 +490,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         schema.add_table(posts);
 

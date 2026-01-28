@@ -253,6 +253,8 @@ mod tests {
             columns: vec!["user_uuid".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["uuid".to_string()], // リネームされるカラムを参照
+            on_delete: None,
+            on_update: None,
         });
         schema.add_table(posts_table);
 

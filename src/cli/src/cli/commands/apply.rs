@@ -61,8 +61,10 @@ impl ApplyCommandHandler {
     /// 成功時は適用されたマイグレーションの概要、失敗時はエラーメッセージ
     pub async fn execute(&self, command: &ApplyCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let context =
-            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
+        let context = CommandContext::load_with_config(
+            command.project_path.clone(),
+            command.config_path.clone(),
+        )?;
         let config = &context.config;
 
         // マイグレーションディレクトリのパスを解決

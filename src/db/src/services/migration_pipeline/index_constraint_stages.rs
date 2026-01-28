@@ -12,6 +12,7 @@ impl<'a> MigrationPipeline<'a> {
     ///
     /// 追加されたインデックスのCREATE INDEX文と、
     /// 削除されたインデックスのDROP INDEX文を生成します。
+    /// 変更されたインデックスはDROP後にCREATEします。
     pub(super) fn stage_index_statements(&self, generator: &dyn SqlGenerator) -> Vec<String> {
         let mut statements = Vec::new();
 
@@ -19,6 +20,16 @@ impl<'a> MigrationPipeline<'a> {
             // 削除されたインデックスのDROP INDEX
             for index in &table_diff.removed_indexes {
                 statements.push(generator.generate_drop_index(&table_diff.table_name, index));
+            }
+
+            // 変更されたインデックス: DROP後にCREATE
+            for index_diff in &table_diff.modified_indexes {
+                statements.push(
+                    generator
+                        .generate_drop_index(&table_diff.table_name, &index_diff.old_index.name),
+                );
+                let table = crate::core::schema::Table::new(table_diff.table_name.clone());
+                statements.push(generator.generate_create_index(&table, &index_diff.new_index));
             }
 
             // 追加されたインデックスのCREATE INDEX
@@ -139,6 +150,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         diff.modified_tables.push(table_diff);
 
@@ -174,6 +187,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         diff.modified_tables.push(table_diff);
 
@@ -199,6 +214,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         diff.modified_tables.push(table_diff);
 
@@ -980,6 +997,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         diff.modified_tables.push(table_diff);
 
@@ -1096,6 +1115,136 @@ mod tests {
         );
         assert!(
             sql.contains(r#"CREATE UNIQUE INDEX "idx_users_new""#),
+            "Expected CREATE INDEX in UP SQL: {}",
+            sql
+        );
+    }
+
+    // ==========================================
+    // インデックス変更のテスト
+    // ==========================================
+
+    #[test]
+    fn test_pipeline_modify_index_generates_drop_and_create_postgres() {
+        use crate::core::schema::Index;
+        use crate::core::schema_diff::IndexDiff;
+
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_indexes.push(IndexDiff {
+            index_name: "idx_users_email".to_string(),
+            old_index: Index {
+                name: "idx_users_email".to_string(),
+                columns: vec!["email".to_string()],
+                unique: false,
+            },
+            new_index: Index {
+                name: "idx_users_email".to_string(),
+                columns: vec!["email".to_string(), "name".to_string()],
+                unique: true,
+            },
+        });
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        // DROP INDEX が先
+        assert!(
+            sql.contains(r#"DROP INDEX "idx_users_email""#),
+            "Expected DROP INDEX in UP SQL: {}",
+            sql
+        );
+        // CREATE INDEX が後
+        assert!(
+            sql.contains(r#"CREATE UNIQUE INDEX "idx_users_email""#),
+            "Expected CREATE UNIQUE INDEX in UP SQL: {}",
+            sql
+        );
+        // DROP が CREATE より先に来る
+        let drop_pos = sql.find("DROP INDEX").unwrap();
+        let create_pos = sql.find("CREATE UNIQUE INDEX").unwrap();
+        assert!(
+            drop_pos < create_pos,
+            "DROP INDEX should come before CREATE INDEX"
+        );
+    }
+
+    #[test]
+    fn test_pipeline_modify_index_mysql() {
+        use crate::core::schema::Index;
+        use crate::core::schema_diff::IndexDiff;
+
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_indexes.push(IndexDiff {
+            index_name: "idx_users_email".to_string(),
+            old_index: Index {
+                name: "idx_users_email".to_string(),
+                columns: vec!["email".to_string()],
+                unique: false,
+            },
+            new_index: Index {
+                name: "idx_users_email".to_string(),
+                columns: vec!["email".to_string()],
+                unique: true, // unique に変更
+            },
+        });
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::MySQL);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains("DROP INDEX"),
+            "Expected DROP INDEX in UP SQL: {}",
+            sql
+        );
+        assert!(
+            sql.contains("CREATE UNIQUE INDEX"),
+            "Expected CREATE UNIQUE INDEX in UP SQL: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_modify_index_sqlite() {
+        use crate::core::schema::Index;
+        use crate::core::schema_diff::IndexDiff;
+
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_indexes.push(IndexDiff {
+            index_name: "idx_users_email".to_string(),
+            old_index: Index {
+                name: "idx_users_email".to_string(),
+                columns: vec!["email".to_string()],
+                unique: false,
+            },
+            new_index: Index {
+                name: "idx_users_email".to_string(),
+                columns: vec!["email".to_string(), "name".to_string()],
+                unique: false,
+            },
+        });
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::SQLite);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains(r#"DROP INDEX "idx_users_email""#),
+            "Expected DROP INDEX in UP SQL: {}",
+            sql
+        );
+        assert!(
+            sql.contains(r#"CREATE INDEX "idx_users_email""#),
             "Expected CREATE INDEX in UP SQL: {}",
             sql
         );

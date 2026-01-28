@@ -400,18 +400,29 @@ impl SqlGenerator for PostgresSqlGenerator {
                 columns,
                 referenced_table,
                 referenced_columns,
+                on_delete,
+                on_update,
             } => {
                 let constraint_name =
                     generate_fk_constraint_name(table_name, columns, referenced_table);
 
-                format!(
+                let mut sql = format!(
                     "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
                     quote_identifier_postgres(table_name),
                     quote_identifier_postgres(&constraint_name),
                     quote_columns_postgres(columns),
                     quote_identifier_postgres(referenced_table),
                     quote_columns_postgres(referenced_columns)
-                )
+                );
+
+                if let Some(action) = on_delete {
+                    sql.push_str(&format!(" ON DELETE {}", action.as_sql()));
+                }
+                if let Some(action) = on_update {
+                    sql.push_str(&format!(" ON UPDATE {}", action.as_sql()));
+                }
+
+                sql
             }
             Constraint::UNIQUE { columns } => {
                 let constraint_name = generate_uq_constraint_name(table_name, columns);
@@ -1061,6 +1072,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         };
 
         let sql = generator.generate_add_constraint_for_existing_table("posts", &constraint);
@@ -1078,6 +1091,8 @@ mod tests {
             columns: vec!["org_id".to_string(), "user_id".to_string()],
             referenced_table: "org_users".to_string(),
             referenced_columns: vec!["organization_id".to_string(), "user_id".to_string()],
+            on_delete: None,
+            on_update: None,
         };
 
         let sql = generator.generate_add_constraint_for_existing_table("posts", &constraint);
@@ -1153,6 +1168,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         };
 
         let sql = generator.generate_drop_constraint_for_existing_table("posts", &constraint);

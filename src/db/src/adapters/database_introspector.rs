@@ -328,10 +328,7 @@ impl DatabaseIntrospector for PostgresIntrospector {
             let constraint_name: String = row.get(0);
             let column: String = row.get(1);
 
-            unique_map
-                .entry(constraint_name)
-                .or_default()
-                .push(column);
+            unique_map.entry(constraint_name).or_default().push(column);
         }
 
         for (_constraint_name, columns) in unique_map {

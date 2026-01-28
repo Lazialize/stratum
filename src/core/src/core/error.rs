@@ -146,6 +146,8 @@ pub enum WarningKind {
     ForeignKeyReference,
     /// renamed_from属性削除推奨警告
     RenamedFromRemoveRecommendation,
+    /// タイプミスの可能性に関する警告
+    PossibleTypo,
 }
 
 impl ValidationWarning {
@@ -198,6 +200,11 @@ impl ValidationWarning {
             location,
             WarningKind::RenamedFromRemoveRecommendation,
         )
+    }
+
+    /// タイプミスの可能性警告を作成
+    pub fn possible_typo(message: String, location: Option<ErrorLocation>) -> Self {
+        Self::new(message, location, WarningKind::PossibleTypo)
     }
 
     /// 位置情報をフォーマット

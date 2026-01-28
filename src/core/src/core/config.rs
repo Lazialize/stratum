@@ -30,6 +30,21 @@ impl std::fmt::Display for Dialect {
     }
 }
 
+impl Dialect {
+    /// Dialectに応じたデフォルトポートを返す
+    ///
+    /// - PostgreSQL: 5432
+    /// - MySQL: 3306
+    /// - SQLite: None（ファイルベースのためポート不要）
+    pub fn default_port(&self) -> Option<u16> {
+        match self {
+            Dialect::PostgreSQL => Some(5432),
+            Dialect::MySQL => Some(3306),
+            Dialect::SQLite => None,
+        }
+    }
+}
+
 /// プロジェクト設定
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -106,9 +121,9 @@ pub struct DatabaseConfig {
     #[serde(default = "default_host")]
     pub host: String,
 
-    /// ポート番号
-    #[serde(default = "default_port")]
-    pub port: u16,
+    /// ポート番号（Noneの場合はDialectのデフォルトポートを使用）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
 
     /// データベース名
     pub database: String,
@@ -127,11 +142,16 @@ fn default_host() -> String {
     "localhost".to_string()
 }
 
-fn default_port() -> u16 {
-    5432 // PostgreSQLのデフォルトポート
-}
-
 impl DatabaseConfig {
+    /// Dialectに応じた解決済みポート番号を取得
+    ///
+    /// portがSomeの場合はその値を返し、Noneの場合はDialectのデフォルトポートを返します。
+    /// SQLiteなどデフォルトポートがないDialectの場合は0を返します。
+    pub fn resolved_port(&self, dialect: Dialect) -> u16 {
+        self.port
+            .unwrap_or_else(|| dialect.default_port().unwrap_or(0))
+    }
+
     /// Validate database configuration
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.database.is_empty() {
@@ -151,5 +171,60 @@ mod tests {
         assert_eq!(Dialect::PostgreSQL.to_string(), "postgresql");
         assert_eq!(Dialect::MySQL.to_string(), "mysql");
         assert_eq!(Dialect::SQLite.to_string(), "sqlite");
+    }
+
+    #[test]
+    fn test_dialect_default_port() {
+        assert_eq!(Dialect::PostgreSQL.default_port(), Some(5432));
+        assert_eq!(Dialect::MySQL.default_port(), Some(3306));
+        assert_eq!(Dialect::SQLite.default_port(), None);
+    }
+
+    #[test]
+    fn test_resolved_port_with_explicit_port() {
+        let config = DatabaseConfig {
+            host: "localhost".to_string(),
+            port: Some(5433),
+            database: "test".to_string(),
+            user: None,
+            password: None,
+            timeout: None,
+        };
+
+        // 明示的に設定したポートは常にその値を返す
+        assert_eq!(config.resolved_port(Dialect::PostgreSQL), 5433);
+        assert_eq!(config.resolved_port(Dialect::MySQL), 5433);
+    }
+
+    #[test]
+    fn test_resolved_port_without_explicit_port() {
+        let config = DatabaseConfig {
+            host: "localhost".to_string(),
+            port: None,
+            database: "test".to_string(),
+            user: None,
+            password: None,
+            timeout: None,
+        };
+
+        // Noneの場合はDialectのデフォルトポートを返す
+        assert_eq!(config.resolved_port(Dialect::PostgreSQL), 5432);
+        assert_eq!(config.resolved_port(Dialect::MySQL), 3306);
+        assert_eq!(config.resolved_port(Dialect::SQLite), 0);
+    }
+
+    #[test]
+    fn test_explicit_port_5432_for_mysql_not_overwritten() {
+        // ユーザーが意図的にMySQLにポート5432を設定した場合、上書きされない
+        let config = DatabaseConfig {
+            host: "localhost".to_string(),
+            port: Some(5432),
+            database: "test".to_string(),
+            user: None,
+            password: None,
+            timeout: None,
+        };
+
+        assert_eq!(config.resolved_port(Dialect::MySQL), 5432);
     }
 }

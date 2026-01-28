@@ -157,6 +157,8 @@ mod mysql_sql_generator_tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         let sql = generator.generate_alter_table_add_constraint(&table, 0);

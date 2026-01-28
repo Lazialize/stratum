@@ -130,6 +130,8 @@ mod schema_validator_tests {
             columns: vec!["author_id".to_string()],
             referenced_table: "authors".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         schema.add_table(posts_table);
 
@@ -186,6 +188,8 @@ mod schema_validator_tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["uuid".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         schema.add_table(posts_table);
 
@@ -310,6 +314,8 @@ mod schema_validator_tests {
             columns: vec!["id".to_string()],
             referenced_table: "nonexistent".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         schema.add_table(table3);
 
@@ -370,6 +376,8 @@ mod schema_validator_tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
         schema.add_table(posts_table);
 

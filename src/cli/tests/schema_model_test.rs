@@ -79,6 +79,7 @@ tables:
             constraints: vec![Constraint::PRIMARY_KEY {
                 columns: vec!["id".to_string()],
             }],
+            renamed_from: None,
         };
 
         assert_eq!(table.name, "products");
@@ -163,6 +164,7 @@ referenced_columns: [id]
                 columns,
                 referenced_table,
                 referenced_columns,
+                ..
             } => {
                 assert_eq!(columns, vec!["user_id"]);
                 assert_eq!(referenced_table, "users");
@@ -232,6 +234,7 @@ check_expression: "age >= 0"
                 }],
                 indexes: vec![],
                 constraints: vec![],
+                renamed_from: None,
             },
         );
 
@@ -262,7 +265,10 @@ check_expression: "age >= 0"
                     columns: vec!["user_id".to_string()],
                     referenced_table: "users".to_string(),
                     referenced_columns: vec!["id".to_string()],
+                    on_delete: None,
+                    on_update: None,
                 }],
+                renamed_from: None,
             },
         );
 
@@ -289,6 +295,7 @@ check_expression: "age >= 0"
                 columns: vec![],
                 indexes: vec![],
                 constraints: vec![],
+                renamed_from: None,
             },
         );
 

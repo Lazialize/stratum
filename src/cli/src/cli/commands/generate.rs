@@ -112,8 +112,10 @@ impl GenerateCommandHandler {
     ///
     /// 成功時は生成されたマイグレーションディレクトリのパス、失敗時はエラーメッセージ
     pub fn execute(&self, command: &GenerateCommand) -> Result<String> {
-        let context =
-            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
+        let context = CommandContext::load_with_config(
+            command.project_path.clone(),
+            command.config_path.clone(),
+        )?;
         let config = &context.config;
 
         // スキーマの読み込み
@@ -266,16 +268,13 @@ impl GenerateCommandHandler {
     ) -> Result<GeneratedSql> {
         let allow_destructive_for_sql = command.allow_destructive || command.dry_run;
 
-        let sql_result = self
-            .services
-            .generator
-            .generate_up_sql_with_schemas(
-                &dvr.diff,
-                previous_schema,
-                current_schema,
-                config.dialect,
-                allow_destructive_for_sql,
-            );
+        let sql_result = self.services.generator.generate_up_sql_with_schemas(
+            &dvr.diff,
+            previous_schema,
+            current_schema,
+            config.dialect,
+            allow_destructive_for_sql,
+        );
 
         // 型変更検証エラーの処理
         if let Err(e) = &sql_result {

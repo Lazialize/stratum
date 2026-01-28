@@ -117,6 +117,8 @@ impl SchemaChecksumService {
                             columns,
                             referenced_table,
                             referenced_columns,
+                            on_delete,
+                            on_update,
                         } => {
                             constraint_data.insert("columns".to_string(), columns.join(","));
                             constraint_data
@@ -125,6 +127,14 @@ impl SchemaChecksumService {
                                 "referenced_columns".to_string(),
                                 referenced_columns.join(","),
                             );
+                            if let Some(action) = on_delete {
+                                constraint_data
+                                    .insert("on_delete".to_string(), action.as_sql().to_string());
+                            }
+                            if let Some(action) = on_update {
+                                constraint_data
+                                    .insert("on_update".to_string(), action.as_sql().to_string());
+                            }
                         }
                         crate::core::schema::Constraint::UNIQUE { columns } => {
                             constraint_data.insert("columns".to_string(), columns.join(","));

@@ -191,13 +191,24 @@ impl SqliteTableRecreator {
                 columns,
                 referenced_table,
                 referenced_columns,
+                on_delete,
+                on_update,
             } => {
-                format!(
+                let mut sql = format!(
                     "FOREIGN KEY ({}) REFERENCES {} ({})",
                     quote_columns_sqlite(columns),
                     quote_identifier_sqlite(referenced_table),
                     quote_columns_sqlite(referenced_columns)
-                )
+                );
+
+                if let Some(action) = on_delete {
+                    sql.push_str(&format!(" ON DELETE {}", action.as_sql()));
+                }
+                if let Some(action) = on_update {
+                    sql.push_str(&format!(" ON UPDATE {}", action.as_sql()));
+                }
+
+                sql
             }
         }
     }

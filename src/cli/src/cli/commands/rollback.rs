@@ -57,8 +57,10 @@ impl RollbackCommandHandler {
     /// 成功時はロールバックされたマイグレーションの概要、失敗時はエラーメッセージ
     pub async fn execute(&self, command: &RollbackCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let context =
-            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
+        let context = CommandContext::load_with_config(
+            command.project_path.clone(),
+            command.config_path.clone(),
+        )?;
         let config = &context.config;
 
         // マイグレーションディレクトリのパスを解決
@@ -140,7 +142,10 @@ impl RollbackCommandHandler {
             let mut msg = String::from("Rollback contains destructive changes.\n\n");
             msg.push_str("Migrations to rollback:\n");
             for (record, down_sql, _) in &rollback_items {
-                msg.push_str(&format!("  - {} - {}\n", record.version, record.description));
+                msg.push_str(&format!(
+                    "  - {} - {}\n",
+                    record.version, record.description
+                ));
                 if self.contains_destructive_sql(down_sql) {
                     msg.push_str("    Contains: DROP/RENAME statements\n");
                 }

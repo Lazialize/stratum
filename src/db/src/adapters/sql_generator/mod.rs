@@ -289,6 +289,24 @@ pub trait SqlGenerator {
         format!("DROP INDEX {}", self.quote_identifier(index_name))
     }
 
+    /// テーブルリネームSQL文を生成
+    ///
+    /// # Arguments
+    ///
+    /// * `old_name` - 旧テーブル名
+    /// * `new_name` - 新テーブル名
+    ///
+    /// # Returns
+    ///
+    /// ALTER TABLE RENAME文のSQL文字列
+    fn generate_rename_table(&self, old_name: &str, new_name: &str) -> String {
+        format!(
+            "ALTER TABLE {} RENAME TO {}",
+            self.quote_identifier(old_name),
+            self.quote_identifier(new_name)
+        )
+    }
+
     /// DOWN時に復元が必要なテーブルの注意コメントを生成
     fn generate_missing_table_notice(&self, table_name: &str) -> String {
         format!(
@@ -311,18 +329,29 @@ pub trait SqlGenerator {
                     columns,
                     referenced_table,
                     referenced_columns,
+                    on_delete,
+                    on_update,
                 } => {
                     let constraint_name =
                         generate_fk_constraint_name(&table.name, columns, referenced_table);
 
-                    format!(
+                    let mut sql = format!(
                         "ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
                         self.quote_identifier(&table.name),
                         self.quote_identifier(&constraint_name),
                         self.quote_columns(columns),
                         self.quote_identifier(referenced_table),
                         self.quote_columns(referenced_columns)
-                    )
+                    );
+
+                    if let Some(action) = on_delete {
+                        sql.push_str(&format!(" ON DELETE {}", action.as_sql()));
+                    }
+                    if let Some(action) = on_update {
+                        sql.push_str(&format!(" ON UPDATE {}", action.as_sql()));
+                    }
+
+                    sql
                 }
                 _ => {
                     // FOREIGN KEY以外の制約はCREATE TABLEで定義されるため、ここでは空文字列

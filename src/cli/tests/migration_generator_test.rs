@@ -224,8 +224,7 @@ mod migration_generator_tests {
             }],
         });
 
-        let without_allow =
-            generator.generate_up_sql(&diff, Dialect::PostgreSQL, false);
+        let without_allow = generator.generate_up_sql(&diff, Dialect::PostgreSQL, false);
         assert!(without_allow.is_err());
 
         let with_allow = generator.generate_up_sql(&diff, Dialect::PostgreSQL, true);

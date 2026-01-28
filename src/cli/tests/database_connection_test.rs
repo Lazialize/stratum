@@ -18,7 +18,7 @@ mod database_connection_tests {
     fn test_build_connection_string_postgres() {
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 5432,
+            port: Some(5432),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: Some("testpass".to_string()),
@@ -40,7 +40,7 @@ mod database_connection_tests {
     fn test_build_connection_string_mysql() {
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 3306,
+            port: Some(3306),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: Some("testpass".to_string()),
@@ -62,7 +62,7 @@ mod database_connection_tests {
     fn test_build_connection_string_sqlite() {
         let config = DatabaseConfig {
             host: "".to_string(),
-            port: 0,
+            port: None,
             database: "/path/to/test.db".to_string(),
             user: None,
             password: None,
@@ -81,7 +81,7 @@ mod database_connection_tests {
     fn test_connection_string_with_password() {
         let config = DatabaseConfig {
             host: "db.example.com".to_string(),
-            port: 5432,
+            port: Some(5432),
             database: "proddb".to_string(),
             user: Some("admin".to_string()),
             password: Some("secret123".to_string()),
@@ -100,7 +100,7 @@ mod database_connection_tests {
     fn test_connection_string_without_password() {
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 5432,
+            port: Some(5432),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: None,
@@ -120,7 +120,7 @@ mod database_connection_tests {
     fn test_default_username_postgres() {
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 5432,
+            port: Some(5432),
             database: "testdb".to_string(),
             user: None,
             password: None,
@@ -139,7 +139,7 @@ mod database_connection_tests {
     fn test_default_username_mysql() {
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 3306,
+            port: Some(3306),
             database: "testdb".to_string(),
             user: None,
             password: None,
@@ -168,7 +168,7 @@ mod database_connection_tests {
     fn test_connection_timeout() {
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 5432,
+            port: Some(5432),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: None,

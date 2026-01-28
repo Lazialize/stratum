@@ -104,6 +104,8 @@ impl SchemaConversionService {
                 columns: columns.clone(),
                 referenced_table: referenced_table.clone(),
                 referenced_columns: referenced_columns.clone(),
+                on_delete: None,
+                on_update: None,
             },
             RawConstraintInfo::Unique { columns } => Constraint::UNIQUE {
                 columns: columns.clone(),
@@ -416,6 +418,7 @@ mod tests {
             columns,
             referenced_table,
             referenced_columns,
+            ..
         } = constraint
         {
             assert_eq!(columns, vec!["user_id"]);

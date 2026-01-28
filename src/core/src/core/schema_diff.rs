@@ -122,6 +122,22 @@ pub struct SchemaDiff {
 
     /// 変更されたテーブル
     pub modified_tables: Vec<TableDiff>,
+
+    /// リネームされたテーブル
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub renamed_tables: Vec<RenamedTable>,
+}
+
+/// リネームされたテーブル
+///
+/// テーブル名の変更を表現します。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RenamedTable {
+    /// 旧テーブル名
+    pub old_name: String,
+
+    /// 新テーブル定義
+    pub new_table: Table,
 }
 
 impl SchemaDiff {
@@ -135,6 +151,7 @@ impl SchemaDiff {
             added_tables: Vec::new(),
             removed_tables: Vec::new(),
             modified_tables: Vec::new(),
+            renamed_tables: Vec::new(),
         }
     }
 
@@ -146,6 +163,7 @@ impl SchemaDiff {
             && self.added_tables.is_empty()
             && self.removed_tables.is_empty()
             && self.modified_tables.is_empty()
+            && self.renamed_tables.is_empty()
     }
 
     /// 差分の項目数を取得
@@ -155,6 +173,7 @@ impl SchemaDiff {
             + self.modified_enums.len()
             + self.added_tables.len()
             + self.removed_tables.len()
+            + self.renamed_tables.len()
             + self.modified_tables.len()
     }
 
@@ -269,6 +288,10 @@ pub struct TableDiff {
     /// 削除されたインデックス
     pub removed_indexes: Vec<String>,
 
+    /// 変更されたインデックス
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modified_indexes: Vec<IndexDiff>,
+
     /// 追加された制約
     pub added_constraints: Vec<Constraint>,
 
@@ -287,6 +310,7 @@ impl TableDiff {
             renamed_columns: Vec::new(),
             added_indexes: Vec::new(),
             removed_indexes: Vec::new(),
+            modified_indexes: Vec::new(),
             added_constraints: Vec::new(),
             removed_constraints: Vec::new(),
         }
@@ -300,6 +324,7 @@ impl TableDiff {
             && self.renamed_columns.is_empty()
             && self.added_indexes.is_empty()
             && self.removed_indexes.is_empty()
+            && self.modified_indexes.is_empty()
             && self.added_constraints.is_empty()
             && self.removed_constraints.is_empty()
     }
@@ -380,6 +405,21 @@ pub enum EnumChangeKind {
 pub struct EnumColumnRef {
     pub table_name: String,
     pub column_name: String,
+}
+
+/// インデックス差分
+///
+/// インデックスの変更内容を表現します。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IndexDiff {
+    /// インデックス名
+    pub index_name: String,
+
+    /// 変更前のインデックス定義
+    pub old_index: Index,
+
+    /// 変更後のインデックス定義
+    pub new_index: Index,
 }
 
 impl ColumnDiff {
@@ -572,6 +612,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         // postsを先に追加（依存関係解決前の順序）
@@ -598,6 +640,8 @@ mod tests {
             columns: vec!["a_id".to_string()],
             referenced_table: "a".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         let mut table_c = Table::new("c".to_string());
@@ -605,6 +649,8 @@ mod tests {
             columns: vec!["b_id".to_string()],
             referenced_table: "b".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         // 逆順で追加
@@ -631,6 +677,8 @@ mod tests {
             columns: vec!["b_id".to_string()],
             referenced_table: "b".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         let mut table_b = Table::new("b".to_string());
@@ -638,6 +686,8 @@ mod tests {
             columns: vec!["a_id".to_string()],
             referenced_table: "a".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         diff.added_tables.push(table_a);
@@ -661,6 +711,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(), // usersは追加テーブルに含まれない
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         diff.added_tables.push(posts_table);
@@ -931,6 +983,8 @@ mod tests {
             columns: vec!["a_id".to_string()],
             referenced_table: "a".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         let mut table_c = Table::new("c".to_string());
@@ -938,6 +992,8 @@ mod tests {
             columns: vec!["b_id".to_string()],
             referenced_table: "b".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         all_tables.insert("a".to_string(), table_a);
@@ -967,6 +1023,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         all_tables.insert("users".to_string(), users_table);
@@ -993,5 +1051,79 @@ mod tests {
         let sorted = diff.sort_removed_tables_by_dependency(&all_tables);
 
         assert_eq!(sorted.len(), 2);
+    }
+
+    // ==========================================
+    // IndexDiff テスト
+    // ==========================================
+
+    #[test]
+    fn test_index_diff_new() {
+        let old_index = Index::new(
+            "idx_users_email".to_string(),
+            vec!["email".to_string()],
+            false,
+        );
+        let new_index = Index::new(
+            "idx_users_email".to_string(),
+            vec!["email".to_string(), "name".to_string()],
+            true,
+        );
+
+        let diff = IndexDiff {
+            index_name: "idx_users_email".to_string(),
+            old_index: old_index.clone(),
+            new_index: new_index.clone(),
+        };
+
+        assert_eq!(diff.index_name, "idx_users_email");
+        assert_eq!(diff.old_index.columns.len(), 1);
+        assert_eq!(diff.new_index.columns.len(), 2);
+        assert!(!diff.old_index.unique);
+        assert!(diff.new_index.unique);
+    }
+
+    #[test]
+    fn test_table_diff_with_modified_indexes() {
+        let mut table_diff = TableDiff::new("users".to_string());
+
+        let old_index = Index::new("idx_email".to_string(), vec!["email".to_string()], false);
+        let new_index = Index::new("idx_email".to_string(), vec!["email".to_string()], true);
+
+        table_diff.modified_indexes.push(IndexDiff {
+            index_name: "idx_email".to_string(),
+            old_index,
+            new_index,
+        });
+
+        assert!(!table_diff.is_empty());
+        assert_eq!(table_diff.modified_indexes.len(), 1);
+    }
+
+    #[test]
+    fn test_table_diff_modified_indexes_serialization() {
+        let mut table_diff = TableDiff::new("users".to_string());
+
+        let old_index = Index::new("idx_email".to_string(), vec!["email".to_string()], false);
+        let new_index = Index::new("idx_email".to_string(), vec!["email".to_string()], true);
+
+        table_diff.modified_indexes.push(IndexDiff {
+            index_name: "idx_email".to_string(),
+            old_index,
+            new_index,
+        });
+
+        let json = serde_json::to_string(&table_diff).unwrap();
+        assert!(json.contains("modified_indexes"));
+        assert!(json.contains("idx_email"));
+    }
+
+    #[test]
+    fn test_table_diff_empty_modified_indexes_not_serialized() {
+        let table_diff = TableDiff::new("users".to_string());
+
+        let json = serde_json::to_string(&table_diff).unwrap();
+        // skip_serializing_if により空の場合はシリアライズされない
+        assert!(!json.contains("modified_indexes"));
     }
 }

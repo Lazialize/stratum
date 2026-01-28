@@ -11,7 +11,7 @@ mod table_comparator;
 
 use crate::core::error::ValidationWarning;
 use crate::core::schema::Schema;
-use crate::core::schema_diff::SchemaDiff;
+use crate::core::schema_diff::{RenamedTable, SchemaDiff};
 use std::collections::HashSet;
 
 /// スキーマ差分検出サービス
@@ -44,16 +44,32 @@ impl SchemaDiffDetectorService {
         let old_table_names: HashSet<&String> = old_schema.tables.keys().collect();
         let new_table_names: HashSet<&String> = new_schema.tables.keys().collect();
 
-        // 追加されたテーブル
+        // リネームされたテーブルの旧名を追跡
+        let mut renamed_old_names: HashSet<String> = HashSet::new();
+
+        // 追加されたテーブル（リネームを含む可能性）
         for table_name in new_table_names.difference(&old_table_names) {
             if let Some(table) = new_schema.tables.get(*table_name) {
+                // renamed_from がある場合はリネームとして処理
+                if let Some(ref old_name) = table.renamed_from {
+                    if old_schema.tables.contains_key(old_name) {
+                        diff.renamed_tables.push(RenamedTable {
+                            old_name: old_name.clone(),
+                            new_table: table.clone(),
+                        });
+                        renamed_old_names.insert(old_name.clone());
+                        continue;
+                    }
+                }
                 diff.added_tables.push(table.clone());
             }
         }
 
-        // 削除されたテーブル
+        // 削除されたテーブル（リネームされたものを除外）
         for table_name in old_table_names.difference(&new_table_names) {
-            diff.removed_tables.push((*table_name).clone());
+            if !renamed_old_names.contains(*table_name) {
+                diff.removed_tables.push((*table_name).clone());
+            }
         }
 
         // 変更されたテーブル
@@ -97,16 +113,32 @@ impl SchemaDiffDetectorService {
         let old_table_names: HashSet<&String> = old_schema.tables.keys().collect();
         let new_table_names: HashSet<&String> = new_schema.tables.keys().collect();
 
-        // 追加されたテーブル
+        // リネームされたテーブルの旧名を追跡
+        let mut renamed_old_names: HashSet<String> = HashSet::new();
+
+        // 追加されたテーブル（リネームを含む可能性）
         for table_name in new_table_names.difference(&old_table_names) {
             if let Some(table) = new_schema.tables.get(*table_name) {
+                // renamed_from がある場合はリネームとして処理
+                if let Some(ref old_name) = table.renamed_from {
+                    if old_schema.tables.contains_key(old_name) {
+                        diff.renamed_tables.push(RenamedTable {
+                            old_name: old_name.clone(),
+                            new_table: table.clone(),
+                        });
+                        renamed_old_names.insert(old_name.clone());
+                        continue;
+                    }
+                }
                 diff.added_tables.push(table.clone());
             }
         }
 
-        // 削除されたテーブル
+        // 削除されたテーブル（リネームされたものを除外）
         for table_name in old_table_names.difference(&new_table_names) {
-            diff.removed_tables.push((*table_name).clone());
+            if !renamed_old_names.contains(*table_name) {
+                diff.removed_tables.push((*table_name).clone());
+            }
         }
 
         // 変更されたテーブル（警告付き）

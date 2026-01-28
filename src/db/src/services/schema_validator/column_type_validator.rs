@@ -1,7 +1,27 @@
 // カラム型の検証
 
-use crate::core::error::{ErrorLocation, ValidationError, ValidationResult};
+use crate::core::error::{ErrorLocation, ValidationError, ValidationResult, ValidationWarning};
 use crate::core::schema::{ColumnType, Schema};
+
+/// 既知のColumnType kind値（大文字）
+const KNOWN_COLUMN_TYPES: &[&str] = &[
+    "INTEGER",
+    "VARCHAR",
+    "TEXT",
+    "BOOLEAN",
+    "TIMESTAMP",
+    "JSON",
+    "DECIMAL",
+    "FLOAT",
+    "DOUBLE",
+    "CHAR",
+    "DATE",
+    "TIME",
+    "BLOB",
+    "UUID",
+    "JSONB",
+    "ENUM",
+];
 
 /// カラム型の検証
 ///
@@ -37,6 +57,20 @@ pub fn validate_column_types(schema: &Schema) -> ValidationResult {
                             name
                         )),
                     });
+                }
+            }
+
+            // DialectSpecificのkind値が既知の型と一致する場合に警告
+            if let ColumnType::DialectSpecific { kind, .. } = &column.column_type {
+                let kind_upper = kind.to_uppercase();
+                if KNOWN_COLUMN_TYPES.contains(&kind_upper.as_str()) {
+                    result.add_warning(ValidationWarning::possible_typo(
+                        format!(
+                            "Column '{}.{}' uses DialectSpecific with kind '{}' which matches a known type. Did you mean to use ColumnType::{}?",
+                            table_name, column.name, kind, kind_upper
+                        ),
+                        Some(ErrorLocation::with_table_and_column(table_name, &column.name)),
+                    ));
                 }
             }
         }
@@ -110,6 +144,38 @@ fn validate_column_type_internal(
                         column_name,
                     )),
                     suggestion: Some("Set precision to at least 1".to_string()),
+                });
+            }
+        }
+        ColumnType::VARCHAR { length } => {
+            // length の範囲チェック（1-65535）
+            if *length == 0 {
+                result.add_error(ValidationError::Constraint {
+                    message: format!(
+                        "VARCHAR type in column '{}.{}' has invalid length (0)",
+                        table_name, column_name
+                    ),
+                    location: Some(ErrorLocation::with_table_and_column(
+                        table_name,
+                        column_name,
+                    )),
+                    suggestion: Some("Set length to at least 1".to_string()),
+                });
+            }
+
+            if *length > 65535 {
+                result.add_error(ValidationError::Constraint {
+                    message: format!(
+                        "VARCHAR type in column '{}.{}' has length ({}) exceeding maximum (65535)",
+                        table_name, column_name, length
+                    ),
+                    location: Some(ErrorLocation::with_table_and_column(
+                        table_name,
+                        column_name,
+                    )),
+                    suggestion: Some(
+                        "Set length to 65535 or less, or use TEXT for longer strings".to_string(),
+                    ),
                 });
             }
         }
@@ -327,5 +393,118 @@ mod tests {
         assert!(result.errors[0]
             .to_string()
             .contains("length (300) exceeding maximum (255)"));
+    }
+
+    #[test]
+    fn test_validate_varchar_type_zero_length() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 0 }, // length = 0 はエラー
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let result = validate_column_types(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result.error_count() > 0);
+        assert!(result.errors[0].to_string().contains("invalid length (0)"));
+    }
+
+    #[test]
+    fn test_validate_varchar_type_excessive_length() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 70000 }, // length > 65535 はエラー
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let result = validate_column_types(&schema);
+
+        assert!(!result.is_valid());
+        assert!(result.error_count() > 0);
+        assert!(result.errors[0]
+            .to_string()
+            .contains("length (70000) exceeding maximum (65535)"));
+    }
+
+    #[test]
+    fn test_validate_varchar_type_valid() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 255 }, // 有効な長さ
+            false,
+        ));
+        table.add_constraint(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+        schema.add_table(table);
+
+        let result = validate_column_types(&schema);
+
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_dialect_specific_with_known_type_warns() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        // "INTGER"のようなタイプミスはDialectSpecificとしてパースされるが、
+        // "INTEGER"と類似しているため警告を出すべき
+        // ここでは"INTEGER"（既知の型）をDialectSpecificとして指定した場合を検証
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "integer".to_string(), // 小文字でも既知の型として検出
+                params: serde_json::json!({}),
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let result = validate_column_types(&schema);
+
+        assert!(result.is_valid()); // エラーではない
+        assert!(result.warning_count() > 0);
+        assert!(result.warnings[0].message.contains("matches a known type"));
+    }
+
+    #[test]
+    fn test_validate_dialect_specific_with_unknown_type_no_warning() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        // "SERIAL"のような方言固有の型は警告なし
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "SERIAL".to_string(),
+                params: serde_json::json!({}),
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let result = validate_column_types(&schema);
+
+        assert!(result.is_valid());
+        assert_eq!(result.warning_count(), 0);
     }
 }

@@ -67,14 +67,25 @@ impl SqlGenerator for SqliteSqlGenerator {
                 columns,
                 referenced_table,
                 referenced_columns,
+                on_delete,
+                on_update,
             } => {
                 // SQLiteではFOREIGN KEYをCREATE TABLE内で定義
-                format!(
+                let mut sql = format!(
                     "FOREIGN KEY ({}) REFERENCES {} ({})",
                     quote_columns_sqlite(columns),
                     quote_identifier_sqlite(referenced_table),
                     quote_columns_sqlite(referenced_columns)
-                )
+                );
+
+                if let Some(action) = on_delete {
+                    sql.push_str(&format!(" ON DELETE {}", action.as_sql()));
+                }
+                if let Some(action) = on_update {
+                    sql.push_str(&format!(" ON UPDATE {}", action.as_sql()));
+                }
+
+                sql
             }
         }
     }
@@ -301,6 +312,8 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         };
 
         let def = generator.generate_constraint_definition(&constraint);

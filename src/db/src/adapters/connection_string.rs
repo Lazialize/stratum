@@ -22,9 +22,10 @@ pub fn build_connection_string(dialect: Dialect, config: &DatabaseConfig) -> Str
                 }
                 _ => encoded_user.to_string(),
             };
+            let port = config.resolved_port(dialect);
             format!(
                 "postgresql://{}@{}:{}/{}",
-                auth, config.host, config.port, config.database
+                auth, config.host, port, config.database
             )
         }
         Dialect::MySQL => {
@@ -37,9 +38,10 @@ pub fn build_connection_string(dialect: Dialect, config: &DatabaseConfig) -> Str
                 }
                 _ => encoded_user.to_string(),
             };
+            let port = config.resolved_port(dialect);
             format!(
                 "mysql://{}@{}:{}/{}",
-                auth, config.host, config.port, config.database
+                auth, config.host, port, config.database
             )
         }
         Dialect::SQLite => format!("sqlite://{}", config.database),
@@ -54,7 +56,7 @@ mod tests {
     fn test_build_connection_string_postgres() {
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 5432,
+            port: Some(5432),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: Some("testpass".to_string()),
@@ -75,7 +77,7 @@ mod tests {
     fn test_build_connection_string_mysql() {
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 3306,
+            port: Some(3306),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: Some("testpass".to_string()),
@@ -95,7 +97,7 @@ mod tests {
     fn test_build_connection_string_sqlite() {
         let config = DatabaseConfig {
             host: "".to_string(),
-            port: 0,
+            port: None,
             database: "/path/to/test.db".to_string(),
             user: None,
             password: None,
@@ -113,7 +115,7 @@ mod tests {
         // パスワードに @, :, /, #, ? などの特殊文字を含むケース
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 5432,
+            port: Some(5432),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: Some("p@ss:word/test#query?".to_string()),
@@ -135,7 +137,7 @@ mod tests {
         // パスワードに @, :, /, #, ? などの特殊文字を含むケース
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 3306,
+            port: Some(3306),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: Some("p@ss:word".to_string()),
@@ -154,7 +156,7 @@ mod tests {
         // ユーザー名に特殊文字を含むケース
         let config = DatabaseConfig {
             host: "localhost".to_string(),
-            port: 5432,
+            port: Some(5432),
             database: "testdb".to_string(),
             user: Some("user@domain".to_string()),
             password: Some("password".to_string()),

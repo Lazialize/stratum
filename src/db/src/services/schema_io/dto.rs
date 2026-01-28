@@ -3,7 +3,7 @@
 // YAML構造と内部モデルを分離するためのDTO層。
 // 新構文のYAML（テーブル名はキー名、primary_keyは独立フィールド）をサポートします。
 
-use crate::core::schema::{Column, EnumDefinition, Index};
+use crate::core::schema::{Column, EnumDefinition, Index, ReferentialAction};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -54,6 +54,10 @@ pub struct TableDto {
     /// PRIMARY_KEYはここに含まない
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub constraints: Vec<ConstraintDto>,
+
+    /// リネーム元のテーブル名（オプショナル）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
 }
 
 /// 制約DTO（PRIMARY_KEY以外）
@@ -72,6 +76,12 @@ pub enum ConstraintDto {
         referenced_table: String,
         /// 参照先カラム
         referenced_columns: Vec<String>,
+        /// 参照先レコード削除時のアクション
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on_delete: Option<ReferentialAction>,
+        /// 参照先レコード更新時のアクション
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        on_update: Option<ReferentialAction>,
     },
     /// ユニーク制約
     UNIQUE {
@@ -266,6 +276,7 @@ indexes:
             primary_key: None,
             indexes: vec![],
             constraints: vec![],
+            renamed_from: None,
         };
 
         let yaml = serde_saphyr::to_string(&dto).unwrap();
@@ -287,6 +298,7 @@ indexes:
             primary_key: Some(vec!["id".to_string()]),
             indexes: vec![],
             constraints: vec![],
+            renamed_from: None,
         };
 
         let yaml = serde_saphyr::to_string(&dto).unwrap();
@@ -314,6 +326,7 @@ referenced_columns:
             columns,
             referenced_table,
             referenced_columns,
+            ..
         } = dto
         {
             assert_eq!(columns, vec!["user_id"]);
@@ -368,6 +381,8 @@ check_expression: "age >= 0"
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         };
 
         let yaml = serde_saphyr::to_string(&dto).unwrap();
@@ -502,6 +517,7 @@ tables:
                         primary_key: Some(vec!["id".to_string()]),
                         indexes: vec![],
                         constraints: vec![],
+                        renamed_from: None,
                     },
                 );
                 tables

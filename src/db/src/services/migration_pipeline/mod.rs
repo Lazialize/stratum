@@ -309,6 +309,14 @@ impl<'a> MigrationPipeline<'a> {
             }
         }
 
+        // リネームされたテーブルの逆処理（new_name → old_name）
+        for renamed_table in &self.diff.renamed_tables {
+            statements.push(generator.generate_rename_table(
+                &renamed_table.new_table.name,
+                &renamed_table.old_name,
+            ));
+        }
+
         // 削除されたテーブルを再作成（手動対応が必要）
         for table_name in &self.diff.removed_tables {
             statements.push(generator.generate_missing_table_notice(table_name));
@@ -427,6 +435,8 @@ mod tests {
             columns: vec!["b_id".to_string()],
             referenced_table: "b".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         let mut table_b = Table::new("b".to_string());
@@ -434,6 +444,8 @@ mod tests {
             columns: vec!["a_id".to_string()],
             referenced_table: "a".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
+            on_update: None,
         });
 
         diff.added_tables.push(table_a);

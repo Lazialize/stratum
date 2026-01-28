@@ -252,13 +252,7 @@ impl crate::services::traits::MigrationGenerator for MigrationGeneratorService {
         dialect: Dialect,
         allow_destructive: bool,
     ) -> Result<(String, ValidationResult), String> {
-        self.generate_up_sql_with_schemas(
-            diff,
-            old_schema,
-            new_schema,
-            dialect,
-            allow_destructive,
-        )
+        self.generate_up_sql_with_schemas(diff, old_schema, new_schema, dialect, allow_destructive)
     }
 
     fn generate_down_sql_with_schemas(
@@ -543,8 +537,13 @@ mod tests {
         let (old_schema, new_schema) = create_test_schemas_for_type_change();
         let diff = create_diff_with_type_change();
 
-        let result =
-            generator.generate_up_sql_with_schemas(&diff, &old_schema, &new_schema, Dialect::MySQL, false);
+        let result = generator.generate_up_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::MySQL,
+            false,
+        );
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
@@ -792,8 +791,13 @@ mod tests {
         let (old_schema, new_schema) = create_test_schemas_for_rename();
         let diff = create_diff_with_rename();
 
-        let result =
-            generator.generate_up_sql_with_schemas(&diff, &old_schema, &new_schema, Dialect::MySQL, false);
+        let result = generator.generate_up_sql_with_schemas(
+            &diff,
+            &old_schema,
+            &new_schema,
+            Dialect::MySQL,
+            false,
+        );
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();

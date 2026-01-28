@@ -18,7 +18,7 @@ impl DatabaseConfigResolver {
         }
         if let Ok(port) = std::env::var("DB_PORT") {
             if let Ok(port_num) = port.parse::<u16>() {
-                config.port = port_num;
+                config.port = Some(port_num);
             }
         }
         if let Ok(database) = std::env::var("DB_DATABASE") {

@@ -31,8 +31,8 @@ impl CommandContext {
         project_path: PathBuf,
         custom_config_path: Option<PathBuf>,
     ) -> Result<Self> {
-        let config_path = custom_config_path
-            .unwrap_or_else(|| project_path.join(Config::DEFAULT_CONFIG_PATH));
+        let config_path =
+            custom_config_path.unwrap_or_else(|| project_path.join(Config::DEFAULT_CONFIG_PATH));
 
         if !config_path.exists() {
             return Err(anyhow!(

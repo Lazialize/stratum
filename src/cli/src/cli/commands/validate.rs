@@ -56,8 +56,10 @@ impl ValidateCommandHandler {
     /// 成功時は検証結果のサマリー、失敗時はエラーメッセージ
     pub fn execute(&self, command: &ValidateCommand) -> Result<String> {
         // 設定ファイルを読み込む
-        let context =
-            CommandContext::load_with_config(command.project_path.clone(), command.config_path.clone())?;
+        let context = CommandContext::load_with_config(
+            command.project_path.clone(),
+            command.config_path.clone(),
+        )?;
         let config = &context.config;
 
         // スキーマディレクトリのパスを解決
