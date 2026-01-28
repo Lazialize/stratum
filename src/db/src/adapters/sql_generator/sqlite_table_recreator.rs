@@ -15,12 +15,16 @@ use crate::core::schema_diff::ColumnDiff;
 ///
 /// テーブル再作成パターンによる型変更SQL生成を行います。
 /// 12ステップのテーブル再作成手順を生成します。
-pub struct SqliteTableRecreator;
+pub struct SqliteTableRecreator {
+    type_mapping: TypeMappingService,
+}
 
 impl SqliteTableRecreator {
     /// 新しいSqliteTableRecreatorを作成
     pub fn new() -> Self {
-        Self
+        Self {
+            type_mapping: TypeMappingService::new(Dialect::SQLite),
+        }
     }
 
     /// テーブル再作成SQLを生成
@@ -166,8 +170,7 @@ impl SqliteTableRecreator {
     ///
     /// TypeMappingServiceに委譲して型変換を行います。
     fn map_column_type(&self, column_type: &ColumnType) -> String {
-        let service = TypeMappingService::new(Dialect::SQLite);
-        service.to_sql_type(column_type)
+        self.type_mapping.to_sql_type(column_type)
     }
 
     /// 制約定義のSQL文字列を生成
@@ -327,12 +330,6 @@ mod tests {
             columns: vec!["id".to_string()],
         });
         table
-    }
-
-    #[test]
-    fn test_new_recreator() {
-        let recreator = SqliteTableRecreator::new();
-        assert!(std::mem::size_of_val(&recreator) == 0); // Zero-size struct
     }
 
     #[test]

@@ -15,20 +15,24 @@ use crate::core::type_category::TypeCategory;
 
 /// PostgreSQL用SQLジェネレーター
 #[derive(Debug, Clone)]
-pub struct PostgresSqlGenerator {}
+pub struct PostgresSqlGenerator {
+    type_mapping: TypeMappingService,
+}
 
 impl PostgresSqlGenerator {
     /// 新しいPostgresSqlGeneratorを作成
     pub fn new() -> Self {
-        Self {}
+        Self {
+            type_mapping: TypeMappingService::new(Dialect::PostgreSQL),
+        }
     }
 
     /// ColumnTypeをPostgreSQLの型文字列にマッピング
     ///
     /// TypeMappingServiceに委譲して型変換を行います。
     fn map_column_type(&self, column_type: &ColumnType, auto_increment: Option<bool>) -> String {
-        let service = TypeMappingService::new(Dialect::PostgreSQL);
-        service.to_sql_type_with_auto_increment(column_type, auto_increment)
+        self.type_mapping
+            .to_sql_type_with_auto_increment(column_type, auto_increment)
     }
 
     /// ENUM値をフォーマット

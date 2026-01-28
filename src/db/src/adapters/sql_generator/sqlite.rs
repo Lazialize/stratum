@@ -15,20 +15,23 @@ use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
 
 /// SQLite用SQLジェネレーター
 #[derive(Debug, Clone)]
-pub struct SqliteSqlGenerator {}
+pub struct SqliteSqlGenerator {
+    type_mapping: TypeMappingService,
+}
 
 impl SqliteSqlGenerator {
     /// 新しいSqliteSqlGeneratorを作成
     pub fn new() -> Self {
-        Self {}
+        Self {
+            type_mapping: TypeMappingService::new(Dialect::SQLite),
+        }
     }
 
     /// ColumnTypeをSQLiteの型文字列にマッピング
     ///
     /// TypeMappingServiceに委譲して型変換を行います。
     fn map_column_type(&self, column_type: &ColumnType) -> String {
-        let service = TypeMappingService::new(Dialect::SQLite);
-        service.to_sql_type(column_type)
+        self.type_mapping.to_sql_type(column_type)
     }
 }
 

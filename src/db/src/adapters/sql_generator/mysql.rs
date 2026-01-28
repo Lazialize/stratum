@@ -14,20 +14,24 @@ use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
 
 /// MySQL用SQLジェネレーター
 #[derive(Debug, Clone)]
-pub struct MysqlSqlGenerator {}
+pub struct MysqlSqlGenerator {
+    type_mapping: TypeMappingService,
+}
 
 impl MysqlSqlGenerator {
     /// 新しいMysqlSqlGeneratorを作成
     pub fn new() -> Self {
-        Self {}
+        Self {
+            type_mapping: TypeMappingService::new(Dialect::MySQL),
+        }
     }
 
     /// ColumnTypeをMySQLの型文字列にマッピング
     ///
     /// TypeMappingServiceに委譲して型変換を行います。
     fn map_column_type(&self, column_type: &ColumnType, auto_increment: Option<bool>) -> String {
-        let service = TypeMappingService::new(Dialect::MySQL);
-        service.to_sql_type_with_auto_increment(column_type, auto_increment)
+        self.type_mapping
+            .to_sql_type_with_auto_increment(column_type, auto_increment)
     }
 
     /// MODIFY COLUMN用のカラム定義を生成

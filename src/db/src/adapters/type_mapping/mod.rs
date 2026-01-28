@@ -78,6 +78,20 @@ pub struct TypeMappingService {
     mapper: Box<dyn TypeMapper>,
 }
 
+impl Clone for TypeMappingService {
+    fn clone(&self) -> Self {
+        Self::new(self.dialect)
+    }
+}
+
+impl std::fmt::Debug for TypeMappingService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TypeMappingService")
+            .field("dialect", &self.dialect)
+            .finish()
+    }
+}
+
 impl TypeMappingService {
     /// 新しいTypeMappingServiceを作成
     pub fn new(dialect: Dialect) -> Self {
