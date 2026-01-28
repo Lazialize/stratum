@@ -9,7 +9,7 @@ use crate::adapters::sql_generator::{
 };
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
-use crate::core::schema::{Column, ColumnType, Constraint, Index, Table};
+use crate::core::schema::{Column, ColumnType, Constraint, Table};
 use crate::core::schema_diff::{ColumnDiff, RenamedColumn};
 
 /// MySQL用SQLジェネレーター
@@ -97,10 +97,10 @@ impl SqlGenerator for MysqlSqlGenerator {
         }
     }
 
-    fn generate_drop_index(&self, table_name: &str, index: &Index) -> String {
+    fn generate_drop_index(&self, table_name: &str, index_name: &str) -> String {
         format!(
             "DROP INDEX {} ON {}",
-            quote_identifier_mysql(&index.name),
+            quote_identifier_mysql(index_name),
             quote_identifier_mysql(table_name)
         )
     }

@@ -254,8 +254,10 @@ impl DatabaseIntrospector for PostgresIntrospector {
         }
 
         // FOREIGN KEY
+        // 制約名でグループ化して、同一テーブルへの複数FKを正しく区別する
         let fk_sql = r#"
             SELECT
+                tc.constraint_name,
                 kcu.column_name,
                 ccu.table_name AS referenced_table,
                 ccu.column_name AS referenced_column
@@ -269,27 +271,29 @@ impl DatabaseIntrospector for PostgresIntrospector {
             WHERE tc.constraint_type = 'FOREIGN KEY'
                 AND tc.table_name = $1
                 AND tc.table_schema = 'public'
+            ORDER BY tc.constraint_name, kcu.ordinal_position
         "#;
 
         let fk_rows = sqlx::query(fk_sql).bind(table_name).fetch_all(pool).await?;
 
-        // 制約ごとにグループ化（複合外部キー対応）
-        let mut fk_map: std::collections::HashMap<String, (Vec<String>, Vec<String>)> =
+        // 制約名でグループ化（複合外部キー対応）
+        let mut fk_map: std::collections::HashMap<String, (String, Vec<String>, Vec<String>)> =
             std::collections::HashMap::new();
 
         for row in &fk_rows {
-            let column: String = row.get(0);
-            let ref_table: String = row.get(1);
-            let ref_column: String = row.get(2);
+            let constraint_name: String = row.get(0);
+            let column: String = row.get(1);
+            let ref_table: String = row.get(2);
+            let ref_column: String = row.get(3);
 
             let entry = fk_map
-                .entry(ref_table.clone())
-                .or_insert_with(|| (Vec::new(), Vec::new()));
-            entry.0.push(column);
-            entry.1.push(ref_column);
+                .entry(constraint_name)
+                .or_insert_with(|| (ref_table.clone(), Vec::new(), Vec::new()));
+            entry.1.push(column);
+            entry.2.push(ref_column);
         }
 
-        for (ref_table, (columns, ref_columns)) in fk_map {
+        for (_constraint_name, (ref_table, columns, ref_columns)) in fk_map {
             constraints.push(RawConstraintInfo::ForeignKey {
                 columns,
                 referenced_table: ref_table,
@@ -298,8 +302,9 @@ impl DatabaseIntrospector for PostgresIntrospector {
         }
 
         // UNIQUE (インデックスとは別の制約として取得)
+        // 制約名でグループ化して、複数のUNIQUE制約を正しく区別する
         let unique_sql = r#"
-            SELECT kcu.column_name
+            SELECT tc.constraint_name, kcu.column_name
             FROM information_schema.table_constraints tc
             JOIN information_schema.key_column_usage kcu
                 ON tc.constraint_name = kcu.constraint_name
@@ -315,13 +320,22 @@ impl DatabaseIntrospector for PostgresIntrospector {
             .fetch_all(pool)
             .await?;
 
-        if !unique_rows.is_empty() {
-            // 制約名でグループ化する場合はより複雑なクエリが必要
-            // 簡略化のため、各カラムを個別のUNIQUE制約として扱う
-            let unique_columns: Vec<String> = unique_rows.iter().map(|row| row.get(0)).collect();
-            constraints.push(RawConstraintInfo::Unique {
-                columns: unique_columns,
-            });
+        // 制約名でグループ化
+        let mut unique_map: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        for row in unique_rows {
+            let constraint_name: String = row.get(0);
+            let column: String = row.get(1);
+
+            unique_map
+                .entry(constraint_name)
+                .or_default()
+                .push(column);
+        }
+
+        for (_constraint_name, columns) in unique_map {
+            constraints.push(RawConstraintInfo::Unique { columns });
         }
 
         Ok(constraints)
@@ -496,8 +510,10 @@ impl DatabaseIntrospector for MySqlIntrospector {
         }
 
         // FOREIGN KEY
+        // 制約名でグループ化して、同一テーブルへの複数FKを正しく区別する
         let fk_sql = r#"
             SELECT
+                kcu.constraint_name,
                 kcu.column_name,
                 kcu.referenced_table_name,
                 kcu.referenced_column_name
@@ -509,22 +525,24 @@ impl DatabaseIntrospector for MySqlIntrospector {
 
         let fk_rows = sqlx::query(fk_sql).bind(table_name).fetch_all(pool).await?;
 
-        let mut fk_map: std::collections::HashMap<String, (Vec<String>, Vec<String>)> =
+        // 制約名でグループ化（複合外部キー対応）
+        let mut fk_map: std::collections::HashMap<String, (String, Vec<String>, Vec<String>)> =
             std::collections::HashMap::new();
 
         for row in &fk_rows {
-            let column: String = row.get(0);
-            let ref_table: String = row.get(1);
-            let ref_column: String = row.get(2);
+            let constraint_name: String = row.get(0);
+            let column: String = row.get(1);
+            let ref_table: String = row.get(2);
+            let ref_column: String = row.get(3);
 
             let entry = fk_map
-                .entry(ref_table.clone())
-                .or_insert_with(|| (Vec::new(), Vec::new()));
-            entry.0.push(column);
-            entry.1.push(ref_column);
+                .entry(constraint_name)
+                .or_insert_with(|| (ref_table.clone(), Vec::new(), Vec::new()));
+            entry.1.push(column);
+            entry.2.push(ref_column);
         }
 
-        for (ref_table, (columns, ref_columns)) in fk_map {
+        for (_constraint_name, (ref_table, columns, ref_columns)) in fk_map {
             constraints.push(RawConstraintInfo::ForeignKey {
                 columns,
                 referenced_table: ref_table,
@@ -533,8 +551,9 @@ impl DatabaseIntrospector for MySqlIntrospector {
         }
 
         // UNIQUE
+        // インデックス名でグループ化して、複数のUNIQUE制約を正しく区別する
         let unique_sql = r#"
-            SELECT column_name
+            SELECT index_name, column_name
             FROM information_schema.statistics
             WHERE table_name = ? AND table_schema = DATABASE()
                 AND non_unique = 0
@@ -547,11 +566,19 @@ impl DatabaseIntrospector for MySqlIntrospector {
             .fetch_all(pool)
             .await?;
 
-        if !unique_rows.is_empty() {
-            let unique_columns: Vec<String> = unique_rows.iter().map(|row| row.get(0)).collect();
-            constraints.push(RawConstraintInfo::Unique {
-                columns: unique_columns,
-            });
+        // インデックス名でグループ化
+        let mut unique_map: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        for row in unique_rows {
+            let index_name: String = row.get(0);
+            let column: String = row.get(1);
+
+            unique_map.entry(index_name).or_default().push(column);
+        }
+
+        for (_index_name, columns) in unique_map {
+            constraints.push(RawConstraintInfo::Unique { columns });
         }
 
         Ok(constraints)
@@ -589,9 +616,11 @@ impl DatabaseIntrospector for SqliteIntrospector {
     }
 
     async fn get_columns(&self, pool: &AnyPool, table_name: &str) -> Result<Vec<RawColumnInfo>> {
+        use crate::adapters::sql_quote::quote_identifier_sqlite;
         use sqlx::Row;
 
-        let sql = format!("PRAGMA table_info({})", table_name);
+        let quoted_name = quote_identifier_sqlite(table_name);
+        let sql = format!("PRAGMA table_info({})", quoted_name);
         let rows = sqlx::query(&sql).fetch_all(pool).await?;
 
         let columns = rows
@@ -615,9 +644,11 @@ impl DatabaseIntrospector for SqliteIntrospector {
     }
 
     async fn get_indexes(&self, pool: &AnyPool, table_name: &str) -> Result<Vec<RawIndexInfo>> {
+        use crate::adapters::sql_quote::quote_identifier_sqlite;
         use sqlx::Row;
 
-        let sql = format!("PRAGMA index_list({})", table_name);
+        let quoted_table = quote_identifier_sqlite(table_name);
+        let sql = format!("PRAGMA index_list({})", quoted_table);
         let rows = sqlx::query(&sql).fetch_all(pool).await?;
 
         let mut indexes = Vec::new();
@@ -632,7 +663,8 @@ impl DatabaseIntrospector for SqliteIntrospector {
             }
 
             // インデックスのカラムを取得
-            let info_sql = format!("PRAGMA index_info({})", index_name);
+            let quoted_index = quote_identifier_sqlite(&index_name);
+            let info_sql = format!("PRAGMA index_info({})", quoted_index);
             let info_rows = sqlx::query(&info_sql).fetch_all(pool).await?;
 
             let columns: Vec<String> = info_rows.iter().map(|r| r.get::<String, _>(2)).collect();
@@ -652,12 +684,14 @@ impl DatabaseIntrospector for SqliteIntrospector {
         pool: &AnyPool,
         table_name: &str,
     ) -> Result<Vec<RawConstraintInfo>> {
+        use crate::adapters::sql_quote::quote_identifier_sqlite;
         use sqlx::Row;
 
         let mut constraints = Vec::new();
 
         // PRIMARY KEY
-        let table_info_sql = format!("PRAGMA table_info({})", table_name);
+        let quoted_table = quote_identifier_sqlite(table_name);
+        let table_info_sql = format!("PRAGMA table_info({})", quoted_table);
         let rows = sqlx::query(&table_info_sql).fetch_all(pool).await?;
 
         let pk_columns: Vec<String> = rows
@@ -673,7 +707,7 @@ impl DatabaseIntrospector for SqliteIntrospector {
         }
 
         // FOREIGN KEY
-        let fk_sql = format!("PRAGMA foreign_key_list({})", table_name);
+        let fk_sql = format!("PRAGMA foreign_key_list({})", quoted_table);
         let fk_rows = sqlx::query(&fk_sql).fetch_all(pool).await?;
 
         let mut fk_map: std::collections::HashMap<i32, (String, Vec<String>, Vec<String>)> =

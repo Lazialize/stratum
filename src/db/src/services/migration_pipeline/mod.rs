@@ -246,7 +246,7 @@ impl<'a> MigrationPipeline<'a> {
 
             // 追加されたインデックスを削除
             for index in &table_diff.added_indexes {
-                statements.push(generator.generate_drop_index(&table_diff.table_name, index));
+                statements.push(generator.generate_drop_index(&table_diff.table_name, &index.name));
             }
 
             // 制約の逆操作（Down方向）

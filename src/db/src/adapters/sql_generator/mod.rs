@@ -285,8 +285,8 @@ pub trait SqlGenerator {
     /// DROP INDEX文を生成
     ///
     /// MySQLは `ON table_name` が必要なためオーバーライド。
-    fn generate_drop_index(&self, _table_name: &str, index: &Index) -> String {
-        format!("DROP INDEX {}", self.quote_identifier(&index.name))
+    fn generate_drop_index(&self, _table_name: &str, index_name: &str) -> String {
+        format!("DROP INDEX {}", self.quote_identifier(index_name))
     }
 
     /// DOWN時に復元が必要なテーブルの注意コメントを生成

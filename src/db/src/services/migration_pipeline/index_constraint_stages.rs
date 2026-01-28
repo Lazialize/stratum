@@ -8,11 +8,20 @@ use crate::core::config::Dialect;
 use super::{MigrationPipeline, PipelineStageError};
 
 impl<'a> MigrationPipeline<'a> {
-    /// ステージ4: index_statements - CREATE INDEX
+    /// ステージ4: index_statements - CREATE INDEX / DROP INDEX
+    ///
+    /// 追加されたインデックスのCREATE INDEX文と、
+    /// 削除されたインデックスのDROP INDEX文を生成します。
     pub(super) fn stage_index_statements(&self, generator: &dyn SqlGenerator) -> Vec<String> {
         let mut statements = Vec::new();
 
         for table_diff in &self.diff.modified_tables {
+            // 削除されたインデックスのDROP INDEX
+            for index in &table_diff.removed_indexes {
+                statements.push(generator.generate_drop_index(&table_diff.table_name, index));
+            }
+
+            // 追加されたインデックスのCREATE INDEX
             for index in &table_diff.added_indexes {
                 let table = crate::core::schema::Table::new(table_diff.table_name.clone());
                 statements.push(generator.generate_create_index(&table, index));
@@ -530,7 +539,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_add_column_and_unique_constraint_combined_postgres() {
-        use crate::core::schema::{Column, ColumnType, Schema, Table};
+        use crate::core::schema::{Column, ColumnType};
 
         let mut diff = SchemaDiff::new();
         let mut table_diff = TableDiff::new("users".to_string());
@@ -987,6 +996,107 @@ mod tests {
         assert!(
             sql.contains("fk_posts_user_id_users"),
             "Expected constraint name in down SQL: {}",
+            sql
+        );
+    }
+
+    // ==========================================
+    // P0-1.3: removed_indexes の DROP INDEX 生成テスト
+    // ==========================================
+
+    #[test]
+    fn test_pipeline_remove_index_generates_drop_index_postgres() {
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff
+            .removed_indexes
+            .push("idx_users_email".to_string());
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains(r#"DROP INDEX "idx_users_email""#),
+            "Expected DROP INDEX in UP SQL: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_remove_index_generates_drop_index_mysql() {
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff
+            .removed_indexes
+            .push("idx_users_email".to_string());
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::MySQL);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains("DROP INDEX `idx_users_email` ON `users`"),
+            "Expected DROP INDEX with ON clause in UP SQL: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_remove_index_generates_drop_index_sqlite() {
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff
+            .removed_indexes
+            .push("idx_users_email".to_string());
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::SQLite);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(
+            sql.contains(r#"DROP INDEX "idx_users_email""#),
+            "Expected DROP INDEX in UP SQL: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_pipeline_add_and_remove_indexes_combined() {
+        use crate::core::schema::Index;
+
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        // 削除（インデックス名のみ）
+        table_diff.removed_indexes.push("idx_users_old".to_string());
+        // 追加（完全なIndex構造体）
+        table_diff.added_indexes.push(Index {
+            name: "idx_users_new".to_string(),
+            columns: vec!["new_column".to_string()],
+            unique: true,
+        });
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_up();
+
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        // 削除が先、追加が後
+        assert!(
+            sql.contains(r#"DROP INDEX "idx_users_old""#),
+            "Expected DROP INDEX in UP SQL: {}",
+            sql
+        );
+        assert!(
+            sql.contains(r#"CREATE UNIQUE INDEX "idx_users_new""#),
+            "Expected CREATE INDEX in UP SQL: {}",
             sql
         );
     }
