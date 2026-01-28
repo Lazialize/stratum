@@ -99,10 +99,11 @@ async fn test_load_available_migrations() {
     )
     .unwrap();
 
-    let handler = RollbackCommandHandler::new();
     let migrations_dir = project_path.join("migrations");
 
-    let migrations = handler.load_available_migrations(&migrations_dir).unwrap();
+    let migrations =
+        strata::cli::commands::migration_loader::load_available_migrations(&migrations_dir)
+            .unwrap();
 
     assert_eq!(migrations.len(), 2);
     assert_eq!(migrations[0].0, "20260121120000");

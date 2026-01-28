@@ -3,7 +3,9 @@
 // 設定ファイル読み込みやパス解決の重複をCLI層で集約する。
 
 use crate::adapters::database::DatabaseConnectionService;
+use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::core::config::{Config, DatabaseConfig, Dialect};
+use crate::core::migration::MigrationRecord;
 use crate::services::config_loader::ConfigLoader;
 use crate::services::database_config_resolver::DatabaseConfigResolver;
 use anyhow::{anyhow, Context, Result};
@@ -101,5 +103,26 @@ impl CommandContext {
             .create_pool(self.config.dialect, &db_config)
             .await
             .with_context(|| "Failed to connect to database")
+    }
+
+    /// DB接続を確立し、マイグレーション履歴テーブルを作成（未作成の場合）、適用済みマイグレーションを取得
+    pub async fn connect_and_load_migrations(
+        &self,
+        env: &str,
+    ) -> Result<(AnyPool, Vec<MigrationRecord>)> {
+        let pool = self.connect_pool(env).await?;
+
+        let migrator = DatabaseMigratorService::new();
+        migrator
+            .create_migration_table(&pool, self.config.dialect)
+            .await
+            .with_context(|| "Failed to create migration history table")?;
+
+        let applied_migrations = migrator
+            .get_migrations(&pool, self.config.dialect)
+            .await
+            .with_context(|| "Failed to get applied migration history")?;
+
+        Ok((pool, applied_migrations))
     }
 }

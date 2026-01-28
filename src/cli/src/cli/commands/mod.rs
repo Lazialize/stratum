@@ -7,6 +7,7 @@ pub(crate) mod dry_run_formatter;
 pub mod export;
 pub mod generate;
 pub mod init;
+pub mod migration_loader;
 pub mod rollback;
 pub(crate) mod sql_parser;
 pub mod status;

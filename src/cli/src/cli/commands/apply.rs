@@ -10,6 +10,7 @@
 use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::destructive_change_formatter::DestructiveChangeFormatter;
+use crate::cli::commands::migration_loader;
 use crate::cli::commands::split_sql_statements;
 use crate::core::config::Dialect;
 use crate::core::migration::{
@@ -20,7 +21,7 @@ use chrono::Utc;
 use colored::Colorize;
 use regex::Regex;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::LazyLock;
 
 static DESTRUCTIVE_SQL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -71,7 +72,7 @@ impl ApplyCommandHandler {
         let migrations_dir = context.require_migrations_dir()?;
 
         // 利用可能なマイグレーションファイルを読み込む
-        let available_migrations = self.load_available_migrations(&migrations_dir)?;
+        let available_migrations = migration_loader::load_available_migrations(&migrations_dir)?;
 
         if available_migrations.is_empty() {
             return Err(anyhow!("No migration files found"));
@@ -83,21 +84,10 @@ impl ApplyCommandHandler {
             return self.execute_dry_run(&pending_migrations);
         }
 
-        // データベース接続を確立
-        let pool = context.connect_pool(&command.env).await?;
-
-        // マイグレーション履歴テーブルを作成（存在しない場合）
+        // データベース接続を確立し、マイグレーション履歴を取得
+        let (pool, applied_migrations) =
+            context.connect_and_load_migrations(&command.env).await?;
         let migrator = DatabaseMigratorService::new();
-        migrator
-            .create_migration_table(&pool, config.dialect)
-            .await
-            .with_context(|| "Failed to create migration history table")?;
-
-        // 適用済みマイグレーションを取得
-        let applied_migrations = migrator
-            .get_migrations(&pool, config.dialect)
-            .await
-            .with_context(|| "Failed to get applied migration history")?;
 
         // 未適用のマイグレーションを特定
         let pending_migrations: Vec<_> = available_migrations
@@ -184,51 +174,6 @@ impl ApplyCommandHandler {
         } else {
             Ok(format!("{}\n{}", warnings.join("\n"), summary))
         }
-    }
-
-    /// 利用可能なマイグレーションファイルを読み込む
-    ///
-    /// マイグレーションディレクトリをスキャンし、(version, description, path)のタプルを返す
-    fn load_available_migrations(
-        &self,
-        migrations_dir: &Path,
-    ) -> Result<Vec<(String, String, PathBuf)>> {
-        let mut migrations = Vec::new();
-
-        let entries = fs::read_dir(migrations_dir).with_context(|| {
-            format!("Failed to read migrations directory: {:?}", migrations_dir)
-        })?;
-
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_dir() {
-                let dir_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .ok_or_else(|| anyhow!("Invalid directory name"))?;
-
-                // .で始まるディレクトリはスキップ
-                if dir_name.starts_with('.') {
-                    continue;
-                }
-
-                // ディレクトリ名から version と description を抽出
-                // 形式: {timestamp}_{description}
-                let parts: Vec<&str> = dir_name.splitn(2, '_').collect();
-                if parts.len() == 2 {
-                    let version = parts[0].to_string();
-                    let description = parts[1].to_string();
-                    migrations.push((version, description, path));
-                }
-            }
-        }
-
-        // バージョン順にソート
-        migrations.sort_by(|a, b| a.0.cmp(&b.0));
-
-        Ok(migrations)
     }
 
     /// マイグレーションをトランザクション内で適用

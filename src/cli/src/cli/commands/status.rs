@@ -6,13 +6,13 @@
 // - 適用済み/未適用の状態表示（テーブル形式）
 // - チェックサム不一致の検出と警告
 
-use crate::adapters::database_migrator::DatabaseMigratorService;
 use crate::cli::command_context::CommandContext;
+use crate::cli::commands::migration_loader;
 use crate::core::migration::{Migration, MigrationRecord};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// statusコマンドの入力パラメータ
 #[derive(Debug, Clone)]
@@ -45,7 +45,6 @@ impl StatusCommandHandler {
     pub async fn execute(&self, command: &StatusCommand) -> Result<String> {
         // 設定ファイルを読み込む
         let context = CommandContext::load(command.project_path.clone())?;
-        let config = &context.config;
 
         // マイグレーションディレクトリのパスを解決
         let migrations_dir = context.require_migrations_dir()?;
@@ -58,22 +57,9 @@ impl StatusCommandHandler {
             return Ok(self.format_no_migrations());
         }
 
-        // データベースに接続して適用済みマイグレーションを取得
-        let pool = context.connect_pool(&command.env).await?;
-
-        let migrator = DatabaseMigratorService::new();
-
-        // マイグレーション履歴テーブルを作成（存在しない場合）
-        migrator
-            .create_migration_table(&pool, config.dialect)
-            .await
-            .with_context(|| "Failed to create migration history table")?;
-
-        // 適用済みマイグレーションを取得
-        let applied_migrations = migrator
-            .get_migrations(&pool, config.dialect)
-            .await
-            .with_context(|| "Failed to get applied migrations")?;
+        // データベースに接続し、マイグレーション履歴を取得
+        let (_pool, applied_migrations) =
+            context.connect_and_load_migrations(&command.env).await?;
 
         // マイグレーション状態を生成
         let status_list = self.build_migration_status(&local_migrations, &applied_migrations);
@@ -99,36 +85,11 @@ impl StatusCommandHandler {
     }
 
     /// ローカルマイグレーションファイルを読み込む
-    fn load_local_migrations(&self, migrations_dir: &PathBuf) -> Result<Vec<Migration>> {
+    fn load_local_migrations(&self, migrations_dir: &Path) -> Result<Vec<Migration>> {
+        let available = migration_loader::load_available_migrations(migrations_dir)?;
+
         let mut migrations = Vec::new();
-
-        let entries = fs::read_dir(migrations_dir).with_context(|| {
-            format!("Failed to read migrations directory: {:?}", migrations_dir)
-        })?;
-
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
-
-            if !path.is_dir() {
-                continue;
-            }
-
-            // ディレクトリ名から version と description を抽出
-            let dir_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .ok_or_else(|| anyhow!("Invalid directory name: {:?}", path))?;
-
-            // フォーマット: {version}_{description}
-            let parts: Vec<&str> = dir_name.splitn(2, '_').collect();
-            if parts.len() != 2 {
-                continue;
-            }
-
-            let version = parts[0].to_string();
-            let description = parts[1].to_string();
-
+        for (version, description, path) in available {
             // メタデータファイルからチェックサムを読み込む
             let meta_path = path.join(".meta.yaml");
             let checksum = if meta_path.exists() {
@@ -138,12 +99,8 @@ impl StatusCommandHandler {
                 "unknown".to_string()
             };
 
-            let migration = Migration::new(version, description, checksum);
-            migrations.push(migration);
+            migrations.push(Migration::new(version, description, checksum));
         }
-
-        // バージョン順にソート
-        migrations.sort_by(|a, b| a.version.cmp(&b.version));
 
         Ok(migrations)
     }
