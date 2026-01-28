@@ -8,6 +8,95 @@ use std::collections::{HashMap, HashSet};
 
 use crate::core::schema::{Column, Constraint, EnumDefinition, Index, Table};
 
+/// FK制約から依存関係グラフを構築
+///
+/// 各ノード（テーブル名）について、そのテーブルが参照しているテーブル名のリストを返します。
+/// `target_names` に含まれるテーブル間の依存関係のみを抽出します。
+fn build_dependency_graph<'a, F>(
+    target_names: &HashSet<&'a str>,
+    get_constraints: F,
+) -> HashMap<&'a str, Vec<&'a str>>
+where
+    F: Fn(&&'a str) -> Option<&'a Vec<Constraint>>,
+{
+    let mut dependencies: HashMap<&'a str, Vec<&'a str>> = HashMap::new();
+
+    for &table_name in target_names {
+        let mut deps = Vec::new();
+        if let Some(constraints) = get_constraints(&table_name) {
+            for constraint in constraints {
+                if let Constraint::FOREIGN_KEY {
+                    referenced_table, ..
+                } = constraint
+                {
+                    if target_names.contains(referenced_table.as_str()) {
+                        deps.push(referenced_table.as_str());
+                    }
+                }
+            }
+        }
+        dependencies.insert(table_name, deps);
+    }
+
+    dependencies
+}
+
+/// Kahnのアルゴリズムによるトポロジカルソート
+///
+/// 依存先（参照されるテーブル）が先に来るように並び替えます。
+/// 循環参照がある場合、残余ノードのリストを返します。
+///
+/// # Returns
+///
+/// (ソート済みノード名, 循環に含まれる残余ノード名)
+fn topological_sort_kahn<'a>(
+    nodes: &HashSet<&'a str>,
+    dependencies: &HashMap<&'a str, Vec<&'a str>>,
+) -> (Vec<&'a str>, Vec<&'a str>) {
+    // 入次数 = このテーブルが依存しているテーブルの数（未処理の依存先カウント）
+    let mut in_degree: HashMap<&str, usize> = HashMap::new();
+    for &node in nodes {
+        let deg = dependencies.get(node).map_or(0, |deps| deps.len());
+        in_degree.insert(node, deg);
+    }
+
+    // 入次数が0のノードをキューに追加（依存先がないテーブル = 先に処理すべき）
+    let mut queue: Vec<&str> = in_degree
+        .iter()
+        .filter(|(_, &degree)| degree == 0)
+        .map(|(&name, _)| name)
+        .collect();
+    queue.sort();
+
+    let mut sorted: Vec<&str> = Vec::new();
+
+    while let Some(node) = queue.pop() {
+        sorted.push(node);
+
+        // このノードに依存しているノードの入次数を減らす
+        for (&other, deps) in dependencies {
+            if deps.contains(&node) {
+                if let Some(degree) = in_degree.get_mut(other) {
+                    *degree -= 1;
+                    if *degree == 0 {
+                        queue.push(other);
+                        queue.sort();
+                    }
+                }
+            }
+        }
+    }
+
+    // 循環参照チェック: 処理されなかったノード
+    let remaining: Vec<&str> = in_degree
+        .iter()
+        .filter(|(_, &degree)| degree > 0)
+        .map(|(&name, _)| name)
+        .collect();
+
+    (sorted, remaining)
+}
+
 /// スキーマ差分
 ///
 /// 2つのスキーマ間の差分を表現します。
@@ -89,84 +178,26 @@ impl SchemaDiff {
             .map(|t| (t.name.as_str(), t))
             .collect();
 
-        // 追加されるテーブル名のセット
-        let added_table_names: HashSet<&str> = table_map.keys().copied().collect();
+        let table_names: HashSet<&str> = table_map.keys().copied().collect();
 
-        // 依存関係グラフを構築（テーブル名 -> このテーブルが依存している（参照している）テーブル名のリスト）
-        let mut dependencies: HashMap<&str, Vec<&str>> = HashMap::new();
+        let dependencies = build_dependency_graph(
+            &table_names,
+            |name| table_map.get(name).map(|t| &t.constraints),
+        );
 
-        for table in &self.added_tables {
-            let mut deps = Vec::new();
-            for constraint in &table.constraints {
-                if let Constraint::FOREIGN_KEY {
-                    referenced_table, ..
-                } = constraint
-                {
-                    // 参照先が追加されるテーブルに含まれる場合のみ依存関係として登録
-                    if added_table_names.contains(referenced_table.as_str()) {
-                        deps.push(referenced_table.as_str());
-                    }
-                }
-            }
-            dependencies.insert(table.name.as_str(), deps);
-        }
+        let (sorted_names, remaining) = topological_sort_kahn(&table_names, &dependencies);
 
-        // トポロジカルソート（Kahnのアルゴリズム）
-        // 入次数 = このテーブルが依存しているテーブルの数
-        let mut in_degree: HashMap<&str, usize> = HashMap::new();
-        for table_name in added_table_names.iter() {
-            in_degree.insert(*table_name, 0);
-        }
-
-        // 入次数を計算（各テーブルの依存先の数）
-        for (table_name, deps) in &dependencies {
-            in_degree.insert(*table_name, deps.len());
-        }
-
-        // 入次数が0のノードをキューに追加（依存先がないテーブル = 先に作成すべきテーブル）
-        let mut queue: Vec<&str> = in_degree
-            .iter()
-            .filter(|(_, &degree)| degree == 0)
-            .map(|(&name, _)| name)
-            .collect();
-
-        // 安定したソートのためにアルファベット順にソート
-        queue.sort();
-
-        let mut sorted: Vec<Table> = Vec::new();
-
-        while let Some(table_name) = queue.pop() {
-            if let Some(table) = table_map.get(table_name) {
-                sorted.push((*table).clone());
-            }
-
-            // このテーブルを参照している（このテーブルに依存している）テーブルの入次数を減らす
-            for (other_table, deps) in &dependencies {
-                if deps.contains(&table_name) {
-                    if let Some(degree) = in_degree.get_mut(other_table) {
-                        *degree -= 1;
-                        if *degree == 0 {
-                            queue.push(other_table);
-                            // 安定したソートのために再ソート
-                            queue.sort();
-                        }
-                    }
-                }
-            }
-        }
-
-        // 循環参照のチェック
-        if sorted.len() != self.added_tables.len() {
-            let remaining: Vec<&str> = in_degree
-                .iter()
-                .filter(|(_, &degree)| degree > 0)
-                .map(|(&name, _)| name)
-                .collect();
+        if !remaining.is_empty() {
             return Err(format!(
                 "Circular reference detected. The following tables have circular references: {:?}",
                 remaining
             ));
         }
+
+        let sorted = sorted_names
+            .into_iter()
+            .filter_map(|name| table_map.get(name).map(|t| (*t).clone()))
+            .collect();
 
         Ok(sorted)
     }
@@ -191,75 +222,19 @@ impl SchemaDiff {
             return Vec::new();
         }
 
-        // 削除されるテーブル名のセット
         let removed_table_names: HashSet<&str> =
             self.removed_tables.iter().map(|s| s.as_str()).collect();
 
-        // 依存関係グラフを構築
-        let mut dependencies: HashMap<&str, Vec<&str>> = HashMap::new();
+        let dependencies = build_dependency_graph(
+            &removed_table_names,
+            |name| all_tables.get(*name).map(|t| &t.constraints),
+        );
 
-        for table_name in &self.removed_tables {
-            if let Some(table) = all_tables.get(table_name) {
-                let mut deps = Vec::new();
-                for constraint in &table.constraints {
-                    if let Constraint::FOREIGN_KEY {
-                        referenced_table, ..
-                    } = constraint
-                    {
-                        // 参照先が削除されるテーブルに含まれる場合のみ
-                        if removed_table_names.contains(referenced_table.as_str()) {
-                            deps.push(referenced_table.as_str());
-                        }
-                    }
-                }
-                dependencies.insert(table_name.as_str(), deps);
-            } else {
-                dependencies.insert(table_name.as_str(), Vec::new());
-            }
-        }
+        let (mut sorted, _) = topological_sort_kahn(&removed_table_names, &dependencies);
 
-        // トポロジカルソート
-        let mut in_degree: HashMap<&str, usize> = HashMap::new();
-        for table_name in removed_table_names.iter() {
-            in_degree.insert(*table_name, 0);
-        }
-
-        for deps in dependencies.values() {
-            for dep in deps {
-                if let Some(degree) = in_degree.get_mut(dep) {
-                    *degree += 1;
-                }
-            }
-        }
-
-        let mut queue: Vec<&str> = in_degree
-            .iter()
-            .filter(|(_, &degree)| degree == 0)
-            .map(|(&name, _)| name)
-            .collect();
-        queue.sort();
-
-        let mut sorted: Vec<String> = Vec::new();
-
-        while let Some(table_name) = queue.pop() {
-            sorted.push(table_name.to_string());
-
-            for (dependent, deps) in &dependencies {
-                if deps.contains(&table_name) {
-                    if let Some(degree) = in_degree.get_mut(dependent) {
-                        *degree -= 1;
-                        if *degree == 0 {
-                            queue.push(dependent);
-                            queue.sort();
-                        }
-                    }
-                }
-            }
-        }
-
-        // 削除は逆順（参照元を先に削除）
+        // 作成順の逆 = 参照元テーブルを先に削除
         sorted.reverse();
-        sorted
+        sorted.into_iter().map(|s| s.to_string()).collect()
     }
 }
 
@@ -939,5 +914,90 @@ mod tests {
         let json = serde_json::to_string(&table_diff).unwrap();
         // 空のrenamed_columnsはシリアライズされない
         assert!(!json.contains("renamed_columns"));
+    }
+
+    #[test]
+    fn test_sort_removed_tables_chain_dependency() {
+        let mut diff = SchemaDiff::new();
+
+        // A -> B -> C の依存関係（CがBを参照、BがAを参照）
+        // 削除順: C, B, A（参照元を先に削除）
+        diff.removed_tables = vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ];
+
+        let mut all_tables: HashMap<String, Table> = HashMap::new();
+
+        let table_a = Table::new("a".to_string());
+
+        let mut table_b = Table::new("b".to_string());
+        table_b.constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["a_id".to_string()],
+            referenced_table: "a".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+
+        let mut table_c = Table::new("c".to_string());
+        table_c.constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["b_id".to_string()],
+            referenced_table: "b".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+
+        all_tables.insert("a".to_string(), table_a);
+        all_tables.insert("b".to_string(), table_b);
+        all_tables.insert("c".to_string(), table_c);
+
+        let sorted = diff.sort_removed_tables_by_dependency(&all_tables);
+
+        assert_eq!(sorted.len(), 3);
+        // 削除順: c（参照元）→ b → a（被参照先）
+        assert_eq!(sorted[0], "c");
+        assert_eq!(sorted[1], "b");
+        assert_eq!(sorted[2], "a");
+    }
+
+    #[test]
+    fn test_sort_removed_tables_with_foreign_key() {
+        let mut diff = SchemaDiff::new();
+
+        diff.removed_tables = vec!["users".to_string(), "posts".to_string()];
+
+        let mut all_tables: HashMap<String, Table> = HashMap::new();
+
+        let users_table = Table::new("users".to_string());
+        let mut posts_table = Table::new("posts".to_string());
+        posts_table.constraints.push(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+        });
+
+        all_tables.insert("users".to_string(), users_table);
+        all_tables.insert("posts".to_string(), posts_table);
+
+        let sorted = diff.sort_removed_tables_by_dependency(&all_tables);
+
+        assert_eq!(sorted.len(), 2);
+        // posts（参照元）が先に削除される
+        assert_eq!(sorted[0], "posts");
+        assert_eq!(sorted[1], "users");
+    }
+
+    #[test]
+    fn test_sort_removed_tables_no_dependencies() {
+        let mut diff = SchemaDiff::new();
+
+        diff.removed_tables = vec!["users".to_string(), "posts".to_string()];
+
+        let mut all_tables: HashMap<String, Table> = HashMap::new();
+        all_tables.insert("users".to_string(), Table::new("users".to_string()));
+        all_tables.insert("posts".to_string(), Table::new("posts".to_string()));
+
+        let sorted = diff.sort_removed_tables_by_dependency(&all_tables);
+
+        assert_eq!(sorted.len(), 2);
     }
 }
