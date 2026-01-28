@@ -29,7 +29,7 @@ pub struct RollbackCommand {
 }
 
 /// rollbackコマンドハンドラー
-#[derive(Debug, Clone)]
+#[derive(Debug, Default)]
 pub struct RollbackCommandHandler {}
 
 impl RollbackCommandHandler {
@@ -224,12 +224,6 @@ impl RollbackCommandHandler {
         summary.push_str(&format!("\nTotal execution time: {}ms\n", total_duration));
 
         summary
-    }
-}
-
-impl Default for RollbackCommandHandler {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

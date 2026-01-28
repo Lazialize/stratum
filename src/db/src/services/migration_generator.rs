@@ -86,32 +86,12 @@ impl MigrationGeneratorService {
     ///
     /// * `diff` - スキーマ差分
     /// * `dialect` - データベース方言
+    /// * `allow_destructive` - 破壊的変更を許可するか
     ///
     /// # Returns
     ///
     /// UP SQL文字列（エラーの場合はエラーメッセージ）
-    pub fn generate_up_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> Result<String, String> {
-        self.generate_up_sql_with_options(diff, dialect, false)
-    }
-
-    /// DOWN SQLを生成
-    ///
-    /// MigrationPipeline を使用してDOWN SQLを生成します。
-    ///
-    /// # Arguments
-    ///
-    /// * `diff` - スキーマ差分
-    /// * `dialect` - データベース方言
-    ///
-    /// # Returns
-    ///
-    /// DOWN SQL文字列（エラーの場合はエラーメッセージ）
-    pub fn generate_down_sql(&self, diff: &SchemaDiff, dialect: Dialect) -> Result<String, String> {
-        self.generate_down_sql_with_options(diff, dialect, false)
-    }
-
-    /// UP SQL文字列（破壊的変更許可付き）
-    pub fn generate_up_sql_with_options(
+    pub fn generate_up_sql(
         &self,
         diff: &SchemaDiff,
         dialect: Dialect,
@@ -125,8 +105,20 @@ impl MigrationGeneratorService {
             .map_err(|e| e.to_string())
     }
 
-    /// DOWN SQL文字列（破壊的変更許可付き）
-    pub fn generate_down_sql_with_options(
+    /// DOWN SQLを生成
+    ///
+    /// MigrationPipeline を使用してDOWN SQLを生成します。
+    ///
+    /// # Arguments
+    ///
+    /// * `diff` - スキーマ差分
+    /// * `dialect` - データベース方言
+    /// * `allow_destructive` - 破壊的変更を許可するか
+    ///
+    /// # Returns
+    ///
+    /// DOWN SQL文字列（エラーの場合はエラーメッセージ）
+    pub fn generate_down_sql(
         &self,
         diff: &SchemaDiff,
         dialect: Dialect,
@@ -183,49 +175,12 @@ impl MigrationGeneratorService {
     /// * `old_schema` - 変更前のスキーマ
     /// * `new_schema` - 変更後のスキーマ
     /// * `dialect` - データベース方言
+    /// * `allow_destructive` - 破壊的変更を許可するか
     ///
     /// # Returns
     ///
     /// UP SQL文字列と検証結果のタプル、または検証エラー
     pub fn generate_up_sql_with_schemas(
-        &self,
-        diff: &SchemaDiff,
-        old_schema: &Schema,
-        new_schema: &Schema,
-        dialect: Dialect,
-    ) -> Result<(String, ValidationResult), String> {
-        self.generate_up_sql_with_schemas_and_options(diff, old_schema, new_schema, dialect, false)
-    }
-
-    /// DOWN SQLを生成（スキーマ付き、型変更対応）
-    ///
-    /// MigrationPipeline を使用してDOWN SQLを生成します。
-    /// スキーマ情報を渡すことで、型変更の逆操作が可能になります。
-    ///
-    /// # Arguments
-    ///
-    /// * `diff` - スキーマ差分
-    /// * `old_schema` - 変更前のスキーマ
-    /// * `new_schema` - 変更後のスキーマ
-    /// * `dialect` - データベース方言
-    ///
-    /// # Returns
-    ///
-    /// DOWN SQL文字列と検証結果のタプル、またはエラー
-    pub fn generate_down_sql_with_schemas(
-        &self,
-        diff: &SchemaDiff,
-        old_schema: &Schema,
-        new_schema: &Schema,
-        dialect: Dialect,
-    ) -> Result<(String, ValidationResult), String> {
-        self.generate_down_sql_with_schemas_and_options(
-            diff, old_schema, new_schema, dialect, false,
-        )
-    }
-
-    /// UP SQLを生成（スキーマ付き、破壊的変更許可付き）
-    pub fn generate_up_sql_with_schemas_and_options(
         &self,
         diff: &SchemaDiff,
         old_schema: &Schema,
@@ -239,8 +194,23 @@ impl MigrationGeneratorService {
         pipeline.generate_up().map_err(|e| e.to_string())
     }
 
-    /// DOWN SQLを生成（スキーマ付き、破壊的変更許可付き）
-    pub fn generate_down_sql_with_schemas_and_options(
+    /// DOWN SQLを生成（スキーマ付き、型変更対応）
+    ///
+    /// MigrationPipeline を使用してDOWN SQLを生成します。
+    /// スキーマ情報を渡すことで、型変更の逆操作が可能になります。
+    ///
+    /// # Arguments
+    ///
+    /// * `diff` - スキーマ差分
+    /// * `old_schema` - 変更前のスキーマ
+    /// * `new_schema` - 変更後のスキーマ
+    /// * `dialect` - データベース方言
+    /// * `allow_destructive` - 破壊的変更を許可するか
+    ///
+    /// # Returns
+    ///
+    /// DOWN SQL文字列と検証結果のタプル、またはエラー
+    pub fn generate_down_sql_with_schemas(
         &self,
         diff: &SchemaDiff,
         old_schema: &Schema,
@@ -274,7 +244,7 @@ impl crate::services::traits::MigrationGenerator for MigrationGeneratorService {
         self.generate_migration_filename(timestamp, description)
     }
 
-    fn generate_up_sql_with_schemas_and_options(
+    fn generate_up_sql_with_schemas(
         &self,
         diff: &SchemaDiff,
         old_schema: &Schema,
@@ -282,7 +252,7 @@ impl crate::services::traits::MigrationGenerator for MigrationGeneratorService {
         dialect: Dialect,
         allow_destructive: bool,
     ) -> Result<(String, ValidationResult), String> {
-        self.generate_up_sql_with_schemas_and_options(
+        self.generate_up_sql_with_schemas(
             diff,
             old_schema,
             new_schema,
@@ -291,7 +261,7 @@ impl crate::services::traits::MigrationGenerator for MigrationGeneratorService {
         )
     }
 
-    fn generate_down_sql_with_schemas_and_options(
+    fn generate_down_sql_with_schemas(
         &self,
         diff: &SchemaDiff,
         old_schema: &Schema,
@@ -299,7 +269,7 @@ impl crate::services::traits::MigrationGenerator for MigrationGeneratorService {
         dialect: Dialect,
         allow_destructive: bool,
     ) -> Result<(String, ValidationResult), String> {
-        self.generate_down_sql_with_schemas_and_options(
+        self.generate_down_sql_with_schemas(
             diff,
             old_schema,
             new_schema,
@@ -396,7 +366,7 @@ mod tests {
         });
 
         let sql = generator
-            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .generate_up_sql(&diff, Dialect::PostgreSQL, false)
             .unwrap();
 
         assert!(sql.contains(r#"CREATE TYPE "status" AS ENUM ('active', 'inactive')"#));
@@ -417,7 +387,7 @@ mod tests {
         });
 
         let sql = generator
-            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .generate_up_sql(&diff, Dialect::PostgreSQL, false)
             .unwrap();
 
         assert!(sql.contains(r#"ALTER TYPE "status" ADD VALUE 'inactive'"#));
@@ -437,7 +407,7 @@ mod tests {
             columns: Vec::new(),
         });
 
-        let result = generator.generate_up_sql(&diff, Dialect::PostgreSQL);
+        let result = generator.generate_up_sql(&diff, Dialect::PostgreSQL, false);
 
         assert!(result.is_err());
     }
@@ -460,7 +430,7 @@ mod tests {
         });
 
         let sql = generator
-            .generate_up_sql_with_options(&diff, Dialect::PostgreSQL, true)
+            .generate_up_sql(&diff, Dialect::PostgreSQL, true)
             .unwrap();
 
         assert!(sql.contains(r#"ALTER TYPE "status" RENAME TO "status_old""#));
@@ -477,7 +447,7 @@ mod tests {
         let mut diff = SchemaDiff::new();
         diff.removed_enums.push("status".to_string());
 
-        let result = generator.generate_up_sql(&diff, Dialect::PostgreSQL);
+        let result = generator.generate_up_sql(&diff, Dialect::PostgreSQL, false);
 
         assert!(result.is_err());
     }
@@ -558,6 +528,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::PostgreSQL,
+            false,
         );
 
         assert!(result.is_ok());
@@ -573,7 +544,7 @@ mod tests {
         let diff = create_diff_with_type_change();
 
         let result =
-            generator.generate_up_sql_with_schemas(&diff, &old_schema, &new_schema, Dialect::MySQL);
+            generator.generate_up_sql_with_schemas(&diff, &old_schema, &new_schema, Dialect::MySQL, false);
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
@@ -591,6 +562,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::SQLite,
+            false,
         );
 
         assert!(result.is_ok());
@@ -612,6 +584,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::PostgreSQL,
+            false,
         );
 
         assert!(result.is_ok());
@@ -664,6 +637,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::PostgreSQL,
+            false,
         );
 
         assert!(result.is_ok());
@@ -711,6 +685,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::PostgreSQL,
+            false,
         );
 
         // エラーがある場合はErrが返される
@@ -799,6 +774,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::PostgreSQL,
+            false,
         );
 
         assert!(result.is_ok());
@@ -817,7 +793,7 @@ mod tests {
         let diff = create_diff_with_rename();
 
         let result =
-            generator.generate_up_sql_with_schemas(&diff, &old_schema, &new_schema, Dialect::MySQL);
+            generator.generate_up_sql_with_schemas(&diff, &old_schema, &new_schema, Dialect::MySQL, false);
 
         assert!(result.is_ok());
         let (sql, _) = result.unwrap();
@@ -840,6 +816,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::SQLite,
+            false,
         );
 
         assert!(result.is_ok());
@@ -862,6 +839,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::PostgreSQL,
+            false,
         );
 
         assert!(result.is_ok());
@@ -959,6 +937,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::PostgreSQL,
+            false,
         );
 
         assert!(result.is_ok());
@@ -997,6 +976,7 @@ mod tests {
             &old_schema,
             &new_schema,
             Dialect::PostgreSQL,
+            false,
         );
 
         assert!(result.is_ok());

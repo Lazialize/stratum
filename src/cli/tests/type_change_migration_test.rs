@@ -227,6 +227,7 @@ mod type_change_migration_tests {
                 &old_schema,
                 &new_schema,
                 Dialect::PostgreSQL,
+                false,
             );
 
             assert!(result.is_ok());
@@ -469,6 +470,7 @@ mod type_change_migration_tests {
                 &old_schema,
                 &new_schema,
                 Dialect::MySQL,
+                false,
             );
 
             assert!(result.is_ok());
@@ -779,6 +781,7 @@ mod type_change_migration_tests {
                 &old_schema,
                 &new_schema,
                 Dialect::SQLite,
+                false,
             );
 
             assert!(result.is_ok());
@@ -849,6 +852,7 @@ mod type_change_migration_tests {
                 &old_schema,
                 &new_schema,
                 Dialect::SQLite,
+                false,
             );
 
             assert!(result.is_ok());
@@ -1241,6 +1245,7 @@ mod type_change_migration_tests {
                 &old_schema,
                 &new_schema,
                 Dialect::PostgreSQL,
+                false,
             );
 
             // 検証エラーによりErrが返される

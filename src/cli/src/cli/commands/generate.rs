@@ -263,7 +263,7 @@ impl GenerateCommandHandler {
         let sql_result = self
             .services
             .generator
-            .generate_up_sql_with_schemas_and_options(
+            .generate_up_sql_with_schemas(
                 &dvr.diff,
                 previous_schema,
                 current_schema,
@@ -300,7 +300,7 @@ impl GenerateCommandHandler {
         let (down_sql, _) = self
             .services
             .generator
-            .generate_down_sql_with_schemas_and_options(
+            .generate_down_sql_with_schemas(
                 &dvr.diff,
                 previous_schema,
                 current_schema,

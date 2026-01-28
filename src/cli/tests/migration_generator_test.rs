@@ -65,7 +65,7 @@ mod migration_generator_tests {
         let diff = SchemaDiff::new();
 
         let up_sql = generator
-            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .generate_up_sql(&diff, Dialect::PostgreSQL, false)
             .unwrap();
 
         assert!(up_sql.is_empty() || up_sql.trim().is_empty());
@@ -86,7 +86,7 @@ mod migration_generator_tests {
         diff.added_tables.push(table);
 
         let up_sql = generator
-            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .generate_up_sql(&diff, Dialect::PostgreSQL, false)
             .unwrap();
 
         assert!(up_sql.contains(r#"CREATE TABLE "users""#));
@@ -101,7 +101,7 @@ mod migration_generator_tests {
         diff.removed_tables.push("users".to_string());
 
         let down_sql = generator
-            .generate_down_sql(&diff, Dialect::PostgreSQL)
+            .generate_down_sql(&diff, Dialect::PostgreSQL, false)
             .unwrap();
 
         // removed_tablesの場合、DOWNではテーブルを再作成する必要がある
@@ -128,7 +128,7 @@ mod migration_generator_tests {
 
         let diff = detector.detect_diff(&schema1, &schema2);
         let up_sql = generator
-            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .generate_up_sql(&diff, Dialect::PostgreSQL, false)
             .unwrap();
 
         assert!(up_sql.contains(r#"CREATE TABLE "users""#));
@@ -190,7 +190,7 @@ mod migration_generator_tests {
 
         // UP SQLの生成
         let up_sql = generator
-            .generate_up_sql(&diff, Dialect::PostgreSQL)
+            .generate_up_sql(&diff, Dialect::PostgreSQL, false)
             .unwrap();
         assert!(up_sql.contains(r#"CREATE TABLE "users""#));
         assert!(up_sql.contains(r#""id""#));
@@ -198,7 +198,7 @@ mod migration_generator_tests {
 
         // DOWN SQLの生成
         let down_sql = generator
-            .generate_down_sql(&diff, Dialect::PostgreSQL)
+            .generate_down_sql(&diff, Dialect::PostgreSQL, false)
             .unwrap();
         // usersテーブルが追加されたので、DOWNではDROP TABLE users
         // ただし、added_tablesからDOWN SQLを生成する場合
@@ -225,10 +225,10 @@ mod migration_generator_tests {
         });
 
         let without_allow =
-            generator.generate_up_sql_with_options(&diff, Dialect::PostgreSQL, false);
+            generator.generate_up_sql(&diff, Dialect::PostgreSQL, false);
         assert!(without_allow.is_err());
 
-        let with_allow = generator.generate_up_sql_with_options(&diff, Dialect::PostgreSQL, true);
+        let with_allow = generator.generate_up_sql(&diff, Dialect::PostgreSQL, true);
         assert!(with_allow.is_ok());
     }
 }

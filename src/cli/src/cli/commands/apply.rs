@@ -45,7 +45,7 @@ pub struct ApplyCommand {
 }
 
 /// applyコマンドハンドラー
-#[derive(Debug, Clone)]
+#[derive(Debug, Default)]
 pub struct ApplyCommandHandler {}
 
 impl ApplyCommandHandler {
@@ -317,12 +317,6 @@ impl ApplyCommandHandler {
         summary.push_str(&format!("\nTotal execution time: {}ms\n", total_duration));
 
         summary
-    }
-}
-
-impl Default for ApplyCommandHandler {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

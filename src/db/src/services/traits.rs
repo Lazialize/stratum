@@ -40,8 +40,8 @@ pub trait MigrationGenerator {
     /// マイグレーションファイル名を生成
     fn generate_migration_filename(&self, timestamp: &str, description: &str) -> String;
 
-    /// UP SQLを生成（スキーマ付き、破壊的変更許可付き）
-    fn generate_up_sql_with_schemas_and_options(
+    /// UP SQLを生成（スキーマ付き、型変更対応）
+    fn generate_up_sql_with_schemas(
         &self,
         diff: &SchemaDiff,
         old_schema: &Schema,
@@ -50,8 +50,8 @@ pub trait MigrationGenerator {
         allow_destructive: bool,
     ) -> Result<(String, ValidationResult), String>;
 
-    /// DOWN SQLを生成（スキーマ付き、破壊的変更許可付き）
-    fn generate_down_sql_with_schemas_and_options(
+    /// DOWN SQLを生成（スキーマ付き、型変更対応）
+    fn generate_down_sql_with_schemas(
         &self,
         diff: &SchemaDiff,
         old_schema: &Schema,

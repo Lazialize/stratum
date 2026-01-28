@@ -33,7 +33,7 @@ pub struct ExportCommand {
 ///
 /// 責務: CLI 層のオーケストレーション
 /// - 設定読み込み、DB接続、各サービスの呼び出し、出力処理
-#[derive(Debug, Clone)]
+#[derive(Debug, Default)]
 pub struct ExportCommandHandler {}
 
 impl ExportCommandHandler {
@@ -192,12 +192,6 @@ impl ExportCommandHandler {
         }
 
         output
-    }
-}
-
-impl Default for ExportCommandHandler {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

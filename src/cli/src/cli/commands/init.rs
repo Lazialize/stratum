@@ -45,7 +45,7 @@ pub struct InitCommand {
 }
 
 /// initコマンドハンドラー
-#[derive(Debug, Clone)]
+#[derive(Debug, Default)]
 pub struct InitCommandHandler {}
 
 impl InitCommandHandler {
@@ -176,12 +176,6 @@ impl InitCommandHandler {
             .with_context(|| format!("Failed to write config file: {:?}", config_path))?;
 
         Ok(())
-    }
-}
-
-impl Default for InitCommandHandler {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

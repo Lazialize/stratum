@@ -34,7 +34,7 @@ pub struct ValidateCommand {
 }
 
 /// validateコマンドハンドラー
-#[derive(Debug, Clone)]
+#[derive(Debug, Default)]
 pub struct ValidateCommandHandler {}
 
 impl ValidateCommandHandler {
@@ -216,12 +216,6 @@ impl ValidateCommandHandler {
         }
 
         output
-    }
-}
-
-impl Default for ValidateCommandHandler {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

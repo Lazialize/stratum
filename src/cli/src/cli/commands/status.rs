@@ -24,7 +24,7 @@ pub struct StatusCommand {
 }
 
 /// statusコマンドハンドラー
-#[derive(Debug, Clone)]
+#[derive(Debug, Default)]
 pub struct StatusCommandHandler {}
 
 impl StatusCommandHandler {
@@ -210,12 +210,6 @@ impl StatusCommandHandler {
         }
 
         output
-    }
-}
-
-impl Default for StatusCommandHandler {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
