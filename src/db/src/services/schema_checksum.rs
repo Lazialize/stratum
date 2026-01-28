@@ -46,6 +46,8 @@ impl SchemaChecksumService {
     /// スキーマを正規化された文字列表現に変換
     ///
     /// テーブルやカラムの順序に依存しない一貫した表現を生成します。
+    /// 安定したシリアライゼーション形式（serde_json）を使用し、
+    /// Rustコンパイラのバージョンに依存しない出力を保証します。
     ///
     /// # Arguments
     ///
@@ -55,11 +57,6 @@ impl SchemaChecksumService {
     ///
     /// 正規化されたJSON文字列
     pub fn normalize_schema(&self, schema: &Schema) -> String {
-        // BTreeMapを使用してテーブルを名前でソート
-        let mut normalized = BTreeMap::new();
-
-        normalized.insert("version", schema.version.clone());
-
         // テーブルを名前順にソート
         let mut sorted_tables = BTreeMap::new();
         for (table_name, table) in &schema.tables {
@@ -74,7 +71,10 @@ impl SchemaChecksumService {
                 .map(|col| {
                     let mut col_data = BTreeMap::new();
                     col_data.insert("name".to_string(), col.name.clone());
-                    col_data.insert("type".to_string(), format!("{:?}", col.column_type));
+                    col_data.insert(
+                        "type".to_string(),
+                        Self::column_type_to_stable_string(&col.column_type),
+                    );
                     col_data.insert("nullable".to_string(), col.nullable.to_string());
                     if let Some(ref default_value) = col.default_value {
                         col_data.insert("default_value".to_string(), default_value.clone());
@@ -158,40 +158,87 @@ impl SchemaChecksumService {
                     .then(a.get("columns").cmp(&b.get("columns")))
             });
 
-            // JSON風の文字列に変換
-            let columns_str = sorted_columns
-                .iter()
-                .map(|c| format!("{:?}", c))
-                .collect::<Vec<_>>()
-                .join(",");
-            let indexes_str = sorted_indexes
-                .iter()
-                .map(|i| format!("{:?}", i))
-                .collect::<Vec<_>>()
-                .join(",");
-            let constraints_str = sorted_constraints
-                .iter()
-                .map(|c| format!("{:?}", c))
-                .collect::<Vec<_>>()
-                .join(",");
+            // serde_jsonによる安定したシリアライゼーション
+            let columns_str = serde_json::to_string(&sorted_columns).unwrap_or_default();
+            let indexes_str = serde_json::to_string(&sorted_indexes).unwrap_or_default();
+            let constraints_str = serde_json::to_string(&sorted_constraints).unwrap_or_default();
 
             table_data.insert("columns".to_string(), columns_str);
             table_data.insert("indexes".to_string(), indexes_str);
             table_data.insert("constraints".to_string(), constraints_str);
 
-            sorted_tables.insert(table_name.clone(), format!("{:?}", table_data));
+            sorted_tables.insert(
+                table_name.clone(),
+                serde_json::to_string(&table_data).unwrap_or_default(),
+            );
+        }
+
+        // ENUM定義を名前順にソート
+        let mut sorted_enums = BTreeMap::new();
+        for (enum_name, enum_def) in &schema.enums {
+            let mut enum_data = BTreeMap::new();
+            enum_data.insert("name".to_string(), enum_def.name.clone());
+            enum_data.insert("values".to_string(), enum_def.values.join(","));
+            sorted_enums.insert(
+                enum_name.clone(),
+                serde_json::to_string(&enum_data).unwrap_or_default(),
+            );
         }
 
         // 最終的な正規化された文字列を生成
         format!(
-            "{{version:{},tables:{{{}}}}}",
+            "{{version:{},enums:{{{}}},tables:{{{}}}}}",
             schema.version,
+            sorted_enums
+                .iter()
+                .map(|(k, v)| format!("{}:{}", k, v))
+                .collect::<Vec<_>>()
+                .join(","),
             sorted_tables
                 .iter()
                 .map(|(k, v)| format!("{}:{}", k, v))
                 .collect::<Vec<_>>()
                 .join(",")
         )
+    }
+
+    /// ColumnTypeを安定した文字列表現に変換
+    ///
+    /// Debug フォーマットに依存せず、コンパイラバージョン間で安定した出力を生成する。
+    fn column_type_to_stable_string(column_type: &crate::core::schema::ColumnType) -> String {
+        use crate::core::schema::ColumnType;
+        match column_type {
+            ColumnType::INTEGER { precision } => match precision {
+                Some(p) => format!("INTEGER({})", p),
+                None => "INTEGER".to_string(),
+            },
+            ColumnType::VARCHAR { length } => format!("VARCHAR({})", length),
+            ColumnType::TEXT => "TEXT".to_string(),
+            ColumnType::BOOLEAN => "BOOLEAN".to_string(),
+            ColumnType::DATE => "DATE".to_string(),
+            ColumnType::TIMESTAMP { with_time_zone } => match with_time_zone {
+                Some(true) => "TIMESTAMP WITH TIME ZONE".to_string(),
+                _ => "TIMESTAMP".to_string(),
+            },
+            ColumnType::TIME { with_time_zone } => match with_time_zone {
+                Some(true) => "TIME WITH TIME ZONE".to_string(),
+                _ => "TIME".to_string(),
+            },
+            ColumnType::DECIMAL { precision, scale } => {
+                format!("DECIMAL({},{})", precision, scale)
+            }
+            ColumnType::FLOAT => "FLOAT".to_string(),
+            ColumnType::DOUBLE => "DOUBLE".to_string(),
+            ColumnType::CHAR { length } => format!("CHAR({})", length),
+            ColumnType::BLOB => "BLOB".to_string(),
+            ColumnType::UUID => "UUID".to_string(),
+            ColumnType::JSON => "JSON".to_string(),
+            ColumnType::JSONB => "JSONB".to_string(),
+            ColumnType::Enum { name } => format!("ENUM({})", name),
+            ColumnType::DialectSpecific { kind, params } => {
+                format!("DIALECT_SPECIFIC({},{})", kind, params)
+            }
+        }
     }
 
     /// チェックサムを比較
@@ -218,7 +265,7 @@ impl Default for SchemaChecksumService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::schema::{Column, ColumnType, Constraint, Table};
+    use crate::core::schema::{Column, ColumnType, Constraint, EnumDefinition, Table};
 
     #[test]
     fn test_new_service() {
@@ -290,5 +337,97 @@ mod tests {
         assert!(!normalized.is_empty());
         assert!(normalized.contains("users"));
         assert!(normalized.contains("id"));
+    }
+
+    #[test]
+    fn test_checksum_includes_enums() {
+        let service = SchemaChecksumService::new();
+
+        // ENUMなしのスキーマ
+        let schema_without_enums = Schema::new("1.0".to_string());
+
+        // ENUMありのスキーマ
+        let mut schema_with_enums = Schema::new("1.0".to_string());
+        schema_with_enums.enums.insert(
+            "status".to_string(),
+            EnumDefinition {
+                name: "status".to_string(),
+                values: vec!["active".to_string(), "inactive".to_string()],
+            },
+        );
+
+        let checksum1 = service.calculate_checksum(&schema_without_enums);
+        let checksum2 = service.calculate_checksum(&schema_with_enums);
+
+        // ENUM有無でチェックサムが異なること
+        assert_ne!(checksum1, checksum2);
+    }
+
+    #[test]
+    fn test_checksum_enum_order_independent() {
+        let service = SchemaChecksumService::new();
+
+        // ENUMを異なる挿入順序で追加
+        let mut schema1 = Schema::new("1.0".to_string());
+        schema1.enums.insert(
+            "status".to_string(),
+            EnumDefinition {
+                name: "status".to_string(),
+                values: vec!["active".to_string(), "inactive".to_string()],
+            },
+        );
+        schema1.enums.insert(
+            "role".to_string(),
+            EnumDefinition {
+                name: "role".to_string(),
+                values: vec!["admin".to_string(), "user".to_string()],
+            },
+        );
+
+        let mut schema2 = Schema::new("1.0".to_string());
+        schema2.enums.insert(
+            "role".to_string(),
+            EnumDefinition {
+                name: "role".to_string(),
+                values: vec!["admin".to_string(), "user".to_string()],
+            },
+        );
+        schema2.enums.insert(
+            "status".to_string(),
+            EnumDefinition {
+                name: "status".to_string(),
+                values: vec!["active".to_string(), "inactive".to_string()],
+            },
+        );
+
+        let checksum1 = service.calculate_checksum(&schema1);
+        let checksum2 = service.calculate_checksum(&schema2);
+
+        // 挿入順序に依存しないこと
+        assert_eq!(checksum1, checksum2);
+    }
+
+    #[test]
+    fn test_normalize_uses_stable_serialization() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        schema.add_table(table);
+
+        let service = SchemaChecksumService::new();
+        let normalized = service.normalize_schema(&schema);
+
+        // serde_jsonによるJSON形式が含まれること
+        // テーブルデータはserde_json::to_stringで生成されるため、エスケープされたダブルクォートを含む
+        assert!(
+            normalized.contains(r#"\"name\":\"id\""#),
+            "Expected serde_json-formatted output: {}",
+            normalized
+        );
     }
 }

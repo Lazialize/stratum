@@ -305,6 +305,43 @@ impl SqlGenerator for PostgresSqlGenerator {
         )]
     }
 
+    fn generate_alter_column_nullable(
+        &self,
+        table_name: &str,
+        column: &Column,
+        new_nullable: bool,
+    ) -> Vec<String> {
+        let action = if new_nullable {
+            "DROP NOT NULL"
+        } else {
+            "SET NOT NULL"
+        };
+        vec![format!(
+            "ALTER TABLE {} ALTER COLUMN {} {}",
+            quote_identifier_postgres(table_name),
+            quote_identifier_postgres(&column.name),
+            action
+        )]
+    }
+
+    fn generate_alter_column_default(
+        &self,
+        table_name: &str,
+        column: &Column,
+        new_default: Option<&str>,
+    ) -> Vec<String> {
+        let action = match new_default {
+            Some(val) => format!("SET DEFAULT {}", val),
+            None => "DROP DEFAULT".to_string(),
+        };
+        vec![format!(
+            "ALTER TABLE {} ALTER COLUMN {} {}",
+            quote_identifier_postgres(table_name),
+            quote_identifier_postgres(&column.name),
+            action
+        )]
+    }
+
     fn generate_alter_column_type(
         &self,
         table: &Table,

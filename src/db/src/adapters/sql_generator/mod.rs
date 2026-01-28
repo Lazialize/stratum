@@ -473,6 +473,38 @@ pub trait SqlGenerator {
         Vec::new()
     }
 
+    /// カラムのNULL制約変更SQL生成
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - テーブル名
+    /// * `column` - 変更対象のカラム（MySQL用の完全な定義を含む）
+    /// * `new_nullable` - 新しいnullable値
+    fn generate_alter_column_nullable(
+        &self,
+        _table_name: &str,
+        _column: &Column,
+        _new_nullable: bool,
+    ) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// カラムのデフォルト値変更SQL生成
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - テーブル名
+    /// * `column` - 変更対象のカラム（MySQL用の完全な定義を含む）
+    /// * `new_default` - 新しいデフォルト値（Noneの場合はDROP DEFAULT）
+    fn generate_alter_column_default(
+        &self,
+        _table_name: &str,
+        _column: &Column,
+        _new_default: Option<&str>,
+    ) -> Vec<String> {
+        Vec::new()
+    }
+
     /// ENUM型の作成（PostgreSQL専用）
     fn generate_create_enum_type(&self, _enum_def: &EnumDefinition) -> Vec<String> {
         Vec::new()

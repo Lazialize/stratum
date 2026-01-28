@@ -48,11 +48,15 @@ impl<'a> MigrationPipeline<'a> {
 
         for table_diff in &self.diff.modified_tables {
             if matches!(self.dialect, Dialect::SQLite) {
-                // SQLite: 制約変更がある場合はテーブル再作成で処理
+                // SQLite: 制約変更またはnullable/default変更がある場合はテーブル再作成で処理
                 let has_constraint_changes = !table_diff.added_constraints.is_empty()
                     || !table_diff.removed_constraints.is_empty();
+                let has_nullable_or_default_changes = table_diff
+                    .modified_columns
+                    .iter()
+                    .any(|cd| self.has_nullable_or_default_change(cd));
 
-                if has_constraint_changes {
+                if has_constraint_changes || has_nullable_or_default_changes {
                     // カラム型変更がある場合はステージ3で再作成済み → スキップ
                     let has_type_change = table_diff
                         .modified_columns

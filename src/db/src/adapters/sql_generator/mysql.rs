@@ -141,6 +141,44 @@ impl SqlGenerator for MysqlSqlGenerator {
         vec![sql]
     }
 
+    fn generate_alter_column_nullable(
+        &self,
+        table_name: &str,
+        column: &Column,
+        new_nullable: bool,
+    ) -> Vec<String> {
+        // MySQLではMODIFY COLUMNで完全なカラム定義を再指定する必要がある
+        let mut target_column = column.clone();
+        target_column.nullable = new_nullable;
+        let table = Table::new(table_name.to_string());
+        let col_def =
+            self.generate_column_definition_for_modify(&table, &column.name, &target_column);
+        vec![format!(
+            "ALTER TABLE {} MODIFY COLUMN {}",
+            quote_identifier_mysql(table_name),
+            col_def
+        )]
+    }
+
+    fn generate_alter_column_default(
+        &self,
+        table_name: &str,
+        column: &Column,
+        new_default: Option<&str>,
+    ) -> Vec<String> {
+        // MySQLではMODIFY COLUMNで完全なカラム定義を再指定する必要がある
+        let mut target_column = column.clone();
+        target_column.default_value = new_default.map(|s| s.to_string());
+        let table = Table::new(table_name.to_string());
+        let col_def =
+            self.generate_column_definition_for_modify(&table, &column.name, &target_column);
+        vec![format!(
+            "ALTER TABLE {} MODIFY COLUMN {}",
+            quote_identifier_mysql(table_name),
+            col_def
+        )]
+    }
+
     fn generate_rename_column(
         &self,
         table: &Table,

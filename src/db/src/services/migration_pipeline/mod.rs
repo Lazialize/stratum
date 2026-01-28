@@ -153,6 +153,7 @@ impl<'a> MigrationPipeline<'a> {
 
         // ステージ7: finalize - SQL結合
         let sql = self.stage_finalize(statements);
+        let sql = self.add_transaction_header(sql);
 
         Ok((sql, validation_result))
     }
@@ -167,6 +168,41 @@ impl<'a> MigrationPipeline<'a> {
     pub fn generate_down(&self) -> Result<(String, ValidationResult), PipelineStageError> {
         let generator = self.get_sql_generator();
         let mut statements = Vec::new();
+
+        // ENUM操作の逆処理（PostgreSQL）
+        if matches!(self.dialect, Dialect::PostgreSQL) {
+            // 追加されたENUMを削除
+            for enum_def in &self.diff.added_enums {
+                statements.extend(generator.generate_drop_enum_type(&enum_def.name));
+            }
+
+            // 変更されたENUMの逆処理（手動対応が必要）
+            for enum_diff in &self.diff.modified_enums {
+                statements.push(format!(
+                    "-- TODO: Reverse ENUM modification for '{}' (manual intervention required)",
+                    enum_diff.enum_name
+                ));
+            }
+
+            // 削除されたENUMを再作成
+            for enum_name in &self.diff.removed_enums {
+                if let Some(old_schema) = self.old_schema {
+                    if let Some(enum_def) = old_schema.enums.get(enum_name) {
+                        statements.extend(generator.generate_create_enum_type(enum_def));
+                    } else {
+                        statements.push(format!(
+                            "-- TODO: Recreate ENUM type '{}' (definition not available)",
+                            enum_name
+                        ));
+                    }
+                } else {
+                    statements.push(format!(
+                        "-- TODO: Recreate ENUM type '{}' (old schema not available)",
+                        enum_name
+                    ));
+                }
+            }
+        }
 
         // 追加されたテーブルを削除（依存関係の逆順）
         let sorted_tables = self
@@ -202,6 +238,37 @@ impl<'a> MigrationPipeline<'a> {
                                     MigrationDirection::Down,
                                 );
                             statements.extend(alter_statements);
+                        }
+                    }
+                }
+            }
+
+            // nullable/default変更の逆処理（型変更がないカラム、SQLite以外）
+            if !matches!(self.dialect, Dialect::SQLite) {
+                for column_diff in &table_diff.modified_columns {
+                    if !self.has_type_change(column_diff)
+                        && self.has_nullable_or_default_change(column_diff)
+                    {
+                        // DOWN: old_columnの値を使って逆操作を生成
+                        let target_column = &column_diff.old_column;
+                        for change in &column_diff.changes {
+                            match change {
+                                ColumnChange::NullableChanged { old_nullable, .. } => {
+                                    statements.extend(generator.generate_alter_column_nullable(
+                                        &table_diff.table_name,
+                                        target_column,
+                                        *old_nullable,
+                                    ));
+                                }
+                                ColumnChange::DefaultValueChanged { old_default, .. } => {
+                                    statements.extend(generator.generate_alter_column_default(
+                                        &table_diff.table_name,
+                                        target_column,
+                                        old_default.as_deref(),
+                                    ));
+                                }
+                                _ => {}
+                            }
                         }
                     }
                 }
@@ -251,11 +318,15 @@ impl<'a> MigrationPipeline<'a> {
 
             // 制約の逆操作（Down方向）
             if matches!(self.dialect, Dialect::SQLite) {
-                // SQLite: 制約変更がある場合はテーブル再作成
+                // SQLite: 制約変更またはnullable/default変更がある場合はテーブル再作成
                 let has_constraint_changes = !table_diff.added_constraints.is_empty()
                     || !table_diff.removed_constraints.is_empty();
+                let has_nullable_or_default_changes = table_diff
+                    .modified_columns
+                    .iter()
+                    .any(|cd| self.has_nullable_or_default_change(cd));
 
-                if has_constraint_changes {
+                if has_constraint_changes || has_nullable_or_default_changes {
                     let has_type_change = table_diff
                         .modified_columns
                         .iter()
@@ -311,18 +382,49 @@ impl<'a> MigrationPipeline<'a> {
 
         // リネームされたテーブルの逆処理（new_name → old_name）
         for renamed_table in &self.diff.renamed_tables {
-            statements.push(generator.generate_rename_table(
-                &renamed_table.new_table.name,
-                &renamed_table.old_name,
-            ));
+            statements.push(
+                generator
+                    .generate_rename_table(&renamed_table.new_table.name, &renamed_table.old_name),
+            );
         }
 
-        // 削除されたテーブルを再作成（手動対応が必要）
+        // 削除されたテーブルを再作成
         for table_name in &self.diff.removed_tables {
-            statements.push(generator.generate_missing_table_notice(table_name));
+            if let Some(old_schema) = self.old_schema {
+                if let Some(old_table) = old_schema.tables.get(table_name) {
+                    // old_schemaからCREATE TABLE文を生成
+                    statements.push(generator.generate_create_table(old_table));
+
+                    // インデックスも再作成
+                    for index in &old_table.indexes {
+                        statements.push(generator.generate_create_index(old_table, index));
+                    }
+
+                    // FOREIGN KEY制約も再作成（SQLite以外）
+                    if !matches!(self.dialect, Dialect::SQLite) {
+                        for (i, constraint) in old_table.constraints.iter().enumerate() {
+                            if matches!(
+                                constraint,
+                                crate::core::schema::Constraint::FOREIGN_KEY { .. }
+                            ) {
+                                let alter_sql =
+                                    generator.generate_alter_table_add_constraint(old_table, i);
+                                if !alter_sql.is_empty() {
+                                    statements.push(alter_sql);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    statements.push(generator.generate_missing_table_notice(table_name));
+                }
+            } else {
+                statements.push(generator.generate_missing_table_notice(table_name));
+            }
         }
 
         let sql = self.stage_finalize(statements);
+        let sql = self.add_transaction_header(sql);
 
         Ok((sql, ValidationResult::new()))
     }
@@ -341,6 +443,38 @@ impl<'a> MigrationPipeline<'a> {
         statements.join(";\n\n") + if statements.is_empty() { "" } else { ";" }
     }
 
+    /// トランザクションヘッダーコメントを追加
+    ///
+    /// apply コマンドが既にトランザクション内で SQL を実行するため、
+    /// SQL ファイルに BEGIN/COMMIT を直接含めない。
+    /// 代わりに手動実行時のガイダンスとしてコメントを追加する。
+    fn add_transaction_header(&self, sql: String) -> String {
+        if sql.is_empty() {
+            return sql;
+        }
+
+        match self.dialect {
+            Dialect::PostgreSQL => {
+                format!(
+                    "-- Transaction: strata apply wraps this in a transaction automatically.\n-- For manual execution: BEGIN; ... COMMIT;\n\n{}",
+                    sql
+                )
+            }
+            Dialect::MySQL => {
+                format!(
+                    "-- Transaction: strata apply wraps this in a transaction automatically.\n-- NOTE: MySQL DDL statements cause implicit commits.\n\n{}",
+                    sql
+                )
+            }
+            Dialect::SQLite => {
+                format!(
+                    "-- Transaction: strata apply wraps this in a transaction automatically.\n\n{}",
+                    sql
+                )
+            }
+        }
+    }
+
     /// カラム差分がTypeChangedまたはAutoIncrementChangedを含むかどうか
     ///
     /// PostgreSQLでは auto_increment の変更はSERIAL型への変換を伴うため、
@@ -350,6 +484,19 @@ impl<'a> MigrationPipeline<'a> {
             matches!(
                 change,
                 ColumnChange::TypeChanged { .. } | ColumnChange::AutoIncrementChanged { .. }
+            )
+        })
+    }
+
+    /// カラム差分がNullableChangedまたはDefaultValueChangedを含むかどうか
+    fn has_nullable_or_default_change(
+        &self,
+        column_diff: &crate::core::schema_diff::ColumnDiff,
+    ) -> bool {
+        column_diff.changes.iter().any(|change| {
+            matches!(
+                change,
+                ColumnChange::NullableChanged { .. } | ColumnChange::DefaultValueChanged { .. }
             )
         })
     }

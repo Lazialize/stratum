@@ -5,6 +5,7 @@
 use crate::adapters::sql_generator::{MigrationDirection, SqlGenerator};
 use crate::core::config::Dialect;
 use crate::core::error::ValidationResult;
+use crate::core::schema_diff::ColumnChange;
 use crate::services::type_change_validator::TypeChangeValidator;
 
 use super::{MigrationPipeline, PipelineStageError};
@@ -137,6 +138,37 @@ impl<'a> MigrationPipeline<'a> {
                                     MigrationDirection::Up,
                                 );
                             statements.extend(alter_statements);
+                        }
+                    }
+                }
+            }
+
+            // nullable/default変更の処理（型変更がないカラム、SQLite以外）
+            if !matches!(self.dialect, Dialect::SQLite) {
+                for column_diff in &table_diff.modified_columns {
+                    if !self.has_type_change(column_diff)
+                        && self.has_nullable_or_default_change(column_diff)
+                    {
+                        // new_columnの情報を使ってSQL生成
+                        let target_column = &column_diff.new_column;
+                        for change in &column_diff.changes {
+                            match change {
+                                ColumnChange::NullableChanged { new_nullable, .. } => {
+                                    statements.extend(generator.generate_alter_column_nullable(
+                                        &table_diff.table_name,
+                                        target_column,
+                                        *new_nullable,
+                                    ));
+                                }
+                                ColumnChange::DefaultValueChanged { new_default, .. } => {
+                                    statements.extend(generator.generate_alter_column_default(
+                                        &table_diff.table_name,
+                                        target_column,
+                                        new_default.as_deref(),
+                                    ));
+                                }
+                                _ => {}
+                            }
                         }
                     }
                 }

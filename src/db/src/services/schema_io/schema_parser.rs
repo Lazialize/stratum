@@ -87,6 +87,11 @@ impl SchemaParserService {
             for (table_name, table) in schema.tables {
                 merged_schema.tables.insert(table_name, table);
             }
+
+            // ENUMをマージ
+            for (enum_name, enum_def) in schema.enums {
+                merged_schema.enums.insert(enum_name, enum_def);
+            }
         }
 
         Ok(merged_schema)
@@ -584,6 +589,62 @@ tables:
         let schema = result.unwrap();
         let table = schema.get_table("users").unwrap();
         assert!(table.columns.is_empty());
+    }
+
+    #[test]
+    fn test_parse_directory_merges_enums_from_multiple_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir = temp_dir.path();
+
+        let file1 = r#"
+version: "1.0"
+enums:
+  status:
+    name: status
+    values: ["active", "inactive"]
+tables:
+  users:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - id
+"#;
+
+        let file2 = r#"
+version: "1.0"
+enums:
+  role:
+    name: role
+    values: ["admin", "user"]
+tables:
+  posts:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - id
+"#;
+
+        fs::write(dir.join("01_users.yaml"), file1).unwrap();
+        fs::write(dir.join("02_posts.yaml"), file2).unwrap();
+
+        let service = SchemaParserService::new();
+        let schema = service.parse_schema_directory(dir).unwrap();
+
+        // テーブルがマージされること
+        assert_eq!(schema.tables.len(), 2);
+        assert!(schema.has_table("users"));
+        assert!(schema.has_table("posts"));
+
+        // ENUMもマージされること
+        assert_eq!(schema.enums.len(), 2);
+        assert!(schema.enums.contains_key("status"));
+        assert!(schema.enums.contains_key("role"));
     }
 
     #[test]
