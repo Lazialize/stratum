@@ -58,8 +58,7 @@ impl StatusCommandHandler {
         }
 
         // データベースに接続し、マイグレーション履歴を取得
-        let (_pool, applied_migrations) =
-            context.connect_and_load_migrations(&command.env).await?;
+        let (_pool, applied_migrations) = context.connect_and_load_migrations(&command.env).await?;
 
         // マイグレーション状態を生成
         let status_list = self.build_migration_status(&local_migrations, &applied_migrations);

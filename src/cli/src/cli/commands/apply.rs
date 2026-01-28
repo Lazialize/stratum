@@ -85,8 +85,7 @@ impl ApplyCommandHandler {
         }
 
         // データベース接続を確立し、マイグレーション履歴を取得
-        let (pool, applied_migrations) =
-            context.connect_and_load_migrations(&command.env).await?;
+        let (pool, applied_migrations) = context.connect_and_load_migrations(&command.env).await?;
         let migrator = DatabaseMigratorService::new();
 
         // 未適用のマイグレーションを特定

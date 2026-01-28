@@ -45,6 +45,119 @@ impl PostgresSqlGenerator {
         value.replace('\'', "''")
     }
 
+    /// 型変更SQLを生成
+    ///
+    /// auto_incrementの変更と同時に型変更がある場合も処理する（例: INTEGER→BIGSERIAL）
+    #[allow(clippy::too_many_arguments)]
+    fn generate_type_change_sql(
+        &self,
+        source_type: &ColumnType,
+        target_type: &ColumnType,
+        target_is_auto: bool,
+        target_auto_increment: Option<bool>,
+        quoted_table: &str,
+        quoted_column: &str,
+        statements: &mut Vec<String>,
+    ) {
+        if source_type == target_type {
+            return;
+        }
+
+        // auto_incrementがtrueの場合、SERIAL系の型名ではなく基底の整数型を使用
+        // （シーケンス設定は別途処理）
+        let target_type_str = if target_is_auto {
+            self.map_column_type(target_type, Some(false))
+        } else {
+            self.map_column_type(target_type, target_auto_increment)
+        };
+
+        let needs_using = self.needs_using_clause(source_type, target_type);
+
+        let sql = if needs_using {
+            format!(
+                "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{}",
+                quoted_table, quoted_column, target_type_str, quoted_column, target_type_str
+            )
+        } else {
+            format!(
+                "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
+                quoted_table, quoted_column, target_type_str
+            )
+        };
+        statements.push(sql);
+    }
+
+    /// INTEGER → SERIAL (auto_increment: false → true) のSQL生成
+    ///
+    /// PostgreSQLではALTER COLUMN TYPE SERIALは使用できないため、
+    /// シーケンスの作成とDEFAULT設定で対応
+    #[allow(clippy::too_many_arguments)]
+    fn generate_add_auto_increment_sql(
+        &self,
+        source_is_auto: bool,
+        target_is_auto: bool,
+        table_name: &str,
+        column_name: &str,
+        quoted_table: &str,
+        quoted_column: &str,
+        statements: &mut Vec<String>,
+    ) {
+        if source_is_auto || !target_is_auto {
+            return;
+        }
+
+        let sequence_name = format!("{}_{}_seq", table_name, column_name);
+        let quoted_sequence = quote_identifier_postgres(&sequence_name);
+        let regclass_literal = quote_regclass_postgres(&sequence_name);
+        statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", quoted_sequence));
+        // 既存データがある場合に備えてシーケンスを最大値に初期化
+        // COALESCE(..., 0) により空テーブルでは nextval() が 1 を返す
+        // 第3引数 true により次の nextval() は max+1 を返す
+        statements.push(format!(
+            "SELECT setval({}, COALESCE((SELECT MAX({}) FROM {}), 0), true)",
+            regclass_literal, quoted_column, quoted_table
+        ));
+        statements.push(format!(
+            "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval({})",
+            quoted_table, quoted_column, regclass_literal
+        ));
+        statements.push(format!(
+            "ALTER SEQUENCE {} OWNED BY {}.{}",
+            quoted_sequence, quoted_table, quoted_column
+        ));
+    }
+
+    /// SERIAL → INTEGER (auto_increment: true → false) のSQL生成
+    ///
+    /// シーケンスはこのカラム専用として作成されたものと仮定し、
+    /// DROP SEQUENCE IF EXISTS CASCADE で安全に削除を試みる
+    #[allow(clippy::too_many_arguments)]
+    fn generate_remove_auto_increment_sql(
+        &self,
+        source_is_auto: bool,
+        target_is_auto: bool,
+        table_name: &str,
+        column_name: &str,
+        quoted_table: &str,
+        quoted_column: &str,
+        statements: &mut Vec<String>,
+    ) {
+        if !source_is_auto || target_is_auto {
+            return;
+        }
+
+        statements.push(format!(
+            "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
+            quoted_table, quoted_column
+        ));
+        let sequence_name = format!("{}_{}_seq", table_name, column_name);
+        let quoted_sequence = quote_identifier_postgres(&sequence_name);
+        statements.push(format!(
+            "DROP SEQUENCE IF EXISTS {} CASCADE",
+            quoted_sequence
+        ));
+    }
+
     /// USING句が必要かどうかを判定
     ///
     /// TypeCategoryベースでUSING句の自動生成を判定します。
@@ -217,80 +330,39 @@ impl SqlGenerator for PostgresSqlGenerator {
 
         let mut statements = Vec::new();
 
-        // auto_incrementの変更を検出
         let source_is_auto = source_auto_increment.unwrap_or(false);
         let target_is_auto = target_auto_increment.unwrap_or(false);
 
-        // 型変更の処理
-        // auto_incrementの変更と同時に型変更がある場合も処理する（例: INTEGER→BIGSERIAL）
         // 型変更はシーケンス作成より先に実行（型の不一致を避けるため）
-        let has_type_change = source_type != target_type;
-        if has_type_change {
-            // auto_incrementがtrueの場合、SERIAL系の型名ではなく基底の整数型を使用
-            // （シーケンス設定は下記で別途処理）
-            let target_type_str = if target_is_auto {
-                // SERIAL変換時は基底型（INTEGER/BIGINT/SMALLINT）で型変更
-                self.map_column_type(target_type, Some(false))
-            } else {
-                self.map_column_type(target_type, target_auto_increment)
-            };
+        self.generate_type_change_sql(
+            source_type,
+            target_type,
+            target_is_auto,
+            target_auto_increment,
+            &quoted_table,
+            &quoted_column,
+            &mut statements,
+        );
 
-            let needs_using = self.needs_using_clause(source_type, target_type);
+        self.generate_add_auto_increment_sql(
+            source_is_auto,
+            target_is_auto,
+            &table.name,
+            column_name,
+            &quoted_table,
+            &quoted_column,
+            &mut statements,
+        );
 
-            let sql = if needs_using {
-                format!(
-                    "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{}",
-                    quoted_table, quoted_column, target_type_str, quoted_column, target_type_str
-                )
-            } else {
-                format!(
-                    "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
-                    quoted_table, quoted_column, target_type_str
-                )
-            };
-            statements.push(sql);
-        }
-
-        // INTEGER → SERIAL (auto_increment: false → true)
-        // PostgreSQLではALTER COLUMN TYPE SERIALは使用できないため、
-        // シーケンスの作成とDEFAULT設定で対応
-        if !source_is_auto && target_is_auto {
-            let sequence_name = format!("{}_{}_seq", table.name, column_name);
-            let quoted_sequence = quote_identifier_postgres(&sequence_name);
-            let regclass_literal = quote_regclass_postgres(&sequence_name);
-            statements.push(format!("CREATE SEQUENCE IF NOT EXISTS {}", quoted_sequence));
-            // 既存データがある場合に備えてシーケンスを最大値に初期化
-            // COALESCE(..., 0) により空テーブルでは nextval() が 1 を返す
-            // 第3引数 true により次の nextval() は max+1 を返す
-            statements.push(format!(
-                "SELECT setval({}, COALESCE((SELECT MAX({}) FROM {}), 0), true)",
-                regclass_literal, quoted_column, quoted_table
-            ));
-            statements.push(format!(
-                "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT nextval({})",
-                quoted_table, quoted_column, regclass_literal
-            ));
-            statements.push(format!(
-                "ALTER SEQUENCE {} OWNED BY {}.{}",
-                quoted_sequence, quoted_table, quoted_column
-            ));
-        }
-
-        // SERIAL → INTEGER (auto_increment: true → false)
-        // シーケンスはこのカラム専用として作成されたものと仮定し、
-        // DROP SEQUENCE IF EXISTS CASCADE で安全に削除を試みる
-        if source_is_auto && !target_is_auto {
-            statements.push(format!(
-                "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT",
-                quoted_table, quoted_column
-            ));
-            let sequence_name = format!("{}_{}_seq", table.name, column_name);
-            let quoted_sequence = quote_identifier_postgres(&sequence_name);
-            statements.push(format!(
-                "DROP SEQUENCE IF EXISTS {} CASCADE",
-                quoted_sequence
-            ));
-        }
+        self.generate_remove_auto_increment_sql(
+            source_is_auto,
+            target_is_auto,
+            &table.name,
+            column_name,
+            &quoted_table,
+            &quoted_column,
+            &mut statements,
+        );
 
         statements
     }

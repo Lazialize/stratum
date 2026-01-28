@@ -13,14 +13,11 @@ use std::path::{Path, PathBuf};
 /// - `.` で始まるディレクトリはスキップ
 /// - `_` で分割できないディレクトリはスキップ
 /// - バージョン順（昇順）にソートして返す
-pub fn load_available_migrations(
-    migrations_dir: &Path,
-) -> Result<Vec<(String, String, PathBuf)>> {
+pub fn load_available_migrations(migrations_dir: &Path) -> Result<Vec<(String, String, PathBuf)>> {
     let mut migrations = Vec::new();
 
-    let entries = fs::read_dir(migrations_dir).with_context(|| {
-        format!("Failed to read migrations directory: {:?}", migrations_dir)
-    })?;
+    let entries = fs::read_dir(migrations_dir)
+        .with_context(|| format!("Failed to read migrations directory: {:?}", migrations_dir))?;
 
     for entry in entries {
         let entry = entry?;

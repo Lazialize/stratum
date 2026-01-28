@@ -180,10 +180,9 @@ impl SchemaDiff {
 
         let table_names: HashSet<&str> = table_map.keys().copied().collect();
 
-        let dependencies = build_dependency_graph(
-            &table_names,
-            |name| table_map.get(name).map(|t| &t.constraints),
-        );
+        let dependencies = build_dependency_graph(&table_names, |name| {
+            table_map.get(name).map(|t| &t.constraints)
+        });
 
         let (sorted_names, remaining) = topological_sort_kahn(&table_names, &dependencies);
 
@@ -225,10 +224,9 @@ impl SchemaDiff {
         let removed_table_names: HashSet<&str> =
             self.removed_tables.iter().map(|s| s.as_str()).collect();
 
-        let dependencies = build_dependency_graph(
-            &removed_table_names,
-            |name| all_tables.get(*name).map(|t| &t.constraints),
-        );
+        let dependencies = build_dependency_graph(&removed_table_names, |name| {
+            all_tables.get(*name).map(|t| &t.constraints)
+        });
 
         let (mut sorted, _) = topological_sort_kahn(&removed_table_names, &dependencies);
 
@@ -922,11 +920,7 @@ mod tests {
 
         // A -> B -> C の依存関係（CがBを参照、BがAを参照）
         // 削除順: C, B, A（参照元を先に削除）
-        diff.removed_tables = vec![
-            "a".to_string(),
-            "b".to_string(),
-            "c".to_string(),
-        ];
+        diff.removed_tables = vec!["a".to_string(), "b".to_string(), "c".to_string()];
 
         let mut all_tables: HashMap<String, Table> = HashMap::new();
 
