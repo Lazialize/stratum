@@ -37,9 +37,8 @@ pub trait CommandOutput: Serialize {
 pub fn render_output<T: CommandOutput>(output: &T, format: &OutputFormat) -> Result<String> {
     match format {
         OutputFormat::Text => Ok(output.to_text()),
-        OutputFormat::Json => {
-            serde_json::to_string_pretty(output).map_err(|e| anyhow::anyhow!("JSON serialization error: {}", e))
-        }
+        OutputFormat::Json => serde_json::to_string_pretty(output)
+            .map_err(|e| anyhow::anyhow!("JSON serialization error: {}", e)),
     }
 }
 
@@ -60,7 +59,8 @@ impl ErrorOutput {
 
     /// JSON 文字列にシリアライズ
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|_| format!("{{\"error\": \"{}\"}}", self.error))
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|_| format!("{{\"error\": \"{}\"}}", self.error))
     }
 }
 

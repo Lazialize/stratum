@@ -8,13 +8,13 @@
 // - 実行ログの表示
 
 use crate::adapters::database_migrator::DatabaseMigratorService;
-use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::destructive_change_formatter::DestructiveChangeFormatter;
 use crate::cli::commands::migration_loader;
 use crate::cli::commands::split_sql_statements;
 use crate::cli::commands::DESTRUCTIVE_SQL_REGEX;
-use crate::cli::commands::{CommandOutput, render_output};
+use crate::cli::commands::{render_output, CommandOutput};
+use crate::cli::OutputFormat;
 use crate::core::config::Dialect;
 use crate::core::migration::{
     AppliedMigration, DestructiveChangeStatus, Migration, MigrationMetadata, MigrationRecord,
@@ -25,6 +25,7 @@ use colored::Colorize;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+use tracing::{debug, info, warn};
 
 /// applyコマンドの出力構造体
 #[derive(Debug, Clone, Serialize)]
@@ -108,9 +109,14 @@ impl ApplyCommandHandler {
 
         // マイグレーションディレクトリのパスを解決
         let migrations_dir = context.require_migrations_dir()?;
+        debug!(migrations_dir = %migrations_dir.display(), "Resolved migrations directory");
 
         // 利用可能なマイグレーションファイルを読み込む
         let available_migrations = migration_loader::load_available_migrations(&migrations_dir)?;
+        debug!(
+            count = available_migrations.len(),
+            "Loaded available migrations"
+        );
 
         if available_migrations.is_empty() {
             let output = ApplyOutput {
@@ -139,6 +145,11 @@ impl ApplyCommandHandler {
                     .any(|record| &record.version == version)
             })
             .collect();
+        debug!(
+            pending = pending_migrations.len(),
+            applied = applied_migrations.len(),
+            "Migration status"
+        );
 
         if pending_migrations.is_empty() {
             let output = ApplyOutput {
@@ -156,6 +167,7 @@ impl ApplyCommandHandler {
         let checksum_warnings =
             self.verify_applied_checksums(&available_migrations, &applied_migrations);
         for warning in &checksum_warnings {
+            warn!("{}", warning);
             eprintln!("{}", warning.yellow());
         }
 
@@ -171,6 +183,7 @@ impl ApplyCommandHandler {
         let mut warnings = Vec::new();
         for (version, description, migration_dir) in pending_migrations {
             let start_time = Utc::now();
+            info!(version = %version, description = %description, "Applying migration");
 
             // up.sqlを読み込み
             let up_sql_path = migration_dir.join("up.sql");
@@ -329,7 +342,11 @@ impl ApplyCommandHandler {
     }
 
     /// Dry runモードの実行
-    fn execute_dry_run(&self, pending_migrations: &[&(String, String, PathBuf)], format: &OutputFormat) -> Result<String> {
+    fn execute_dry_run(
+        &self,
+        pending_migrations: &[&(String, String, PathBuf)],
+        format: &OutputFormat,
+    ) -> Result<String> {
         let mut text_output = String::from("=== DRY RUN MODE ===\n");
         text_output.push_str(&format!(
             "The following {} migration(s) will be applied:\n\n",

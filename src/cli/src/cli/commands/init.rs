@@ -5,8 +5,8 @@
 // - デフォルト設定ファイルの生成（.strata.yaml）
 // - 初期化済みプロジェクトの検出と警告
 
+use crate::cli::commands::{render_output, CommandOutput};
 use crate::cli::OutputFormat;
-use crate::cli::commands::{CommandOutput, render_output};
 use crate::core::config::{Config, DatabaseConfig, Dialect};
 use crate::services::config_serializer::ConfigSerializer;
 use anyhow::{anyhow, Context, Result};
@@ -14,6 +14,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tracing::debug;
 
 /// initコマンドの出力構造体
 #[derive(Debug, Clone, Serialize)]
@@ -88,6 +89,7 @@ impl InitCommandHandler {
     ///
     /// 成功時は出力文字列、失敗時はエラーメッセージ
     pub fn execute(&self, command: &InitCommand) -> Result<String> {
+        debug!(project_path = %command.project_path.display(), dialect = ?command.dialect, force = command.force, "Initializing project");
         // 初期化済みチェック
         if self.is_already_initialized(&command.project_path) && !command.force {
             return Err(anyhow!(

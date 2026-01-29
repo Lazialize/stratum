@@ -4,7 +4,6 @@ use colored::control as color_control;
 use std::env;
 use std::path::PathBuf;
 use std::process;
-use strata::cli::commands::ErrorOutput;
 use strata::cli::commands::apply::{ApplyCommand, ApplyCommandHandler};
 use strata::cli::commands::export::{ExportCommand, ExportCommandHandler};
 use strata::cli::commands::generate::{GenerateCommand, GenerateCommandHandler};
@@ -12,8 +11,11 @@ use strata::cli::commands::init::{InitCommand, InitCommandHandler};
 use strata::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
 use strata::cli::commands::status::{StatusCommand, StatusCommandHandler};
 use strata::cli::commands::validate::{ValidateCommand, ValidateCommandHandler};
+use strata::cli::commands::ErrorOutput;
 use strata::cli::{Cli, Commands, OutputFormat};
 use strata::core::config::Dialect;
+use tracing::debug;
+use tracing_subscriber::EnvFilter;
 
 fn main() {
     sqlx::any::install_default_drivers();
@@ -58,11 +60,26 @@ async fn run_command(cli: Cli) -> Result<String> {
         color_control::set_override(false);
     }
 
-    // --verbose フラグの処理
-    // 環境変数を設定して、ハンドラーや他のコンポーネントで参照可能にする
+    // --verbose フラグの処理: tracing subscriber を初期化
+    // STRATA_LOG 環境変数が設定されている場合はそちらを優先する
+    // 例: STRATA_LOG=info strata status
+    let filter = if let Ok(env_filter) = env::var("STRATA_LOG") {
+        EnvFilter::new(env_filter)
+    } else if cli.verbose {
+        EnvFilter::new("debug")
+    } else {
+        EnvFilter::new("warn")
+    };
+    // try_init() を使用して二重登録時のパニックを防止
+    // （テストや他のコンテキストで既にsubscriberが登録されている場合がある）
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .with_writer(std::io::stderr)
+        .try_init();
+
     if cli.verbose {
-        env::set_var("STRATA_VERBOSE", "1");
-        eprintln!("Verbose mode enabled");
+        debug!("Verbose mode enabled");
     }
 
     // プロジェクトのルートパスを取得
@@ -79,8 +96,14 @@ async fn run_command(cli: Cli) -> Result<String> {
 
     let format = cli.format;
 
+    debug!(project_path = %project_path.display(), "Resolved project path");
+    if let Some(ref cp) = config_path {
+        debug!(config_path = %cp.display(), "Using custom config path");
+    }
+
     match cli.command {
         Commands::Init { dialect, force } => {
+            debug!(dialect = ?dialect, force = force, "Executing init command");
             let dialect = parse_dialect(dialect.as_deref())?;
             let handler = InitCommandHandler::new();
             let command = InitCommand {
@@ -102,6 +125,7 @@ async fn run_command(cli: Cli) -> Result<String> {
             dry_run,
             allow_destructive,
         } => {
+            debug!(description = ?description, dry_run = dry_run, allow_destructive = allow_destructive, "Executing generate command");
             let handler = GenerateCommandHandler::new();
             let command = GenerateCommand {
                 project_path,
@@ -120,6 +144,7 @@ async fn run_command(cli: Cli) -> Result<String> {
             timeout,
             allow_destructive,
         } => {
+            debug!(env = %env, dry_run = dry_run, timeout = ?timeout, allow_destructive = allow_destructive, "Executing apply command");
             let handler = ApplyCommandHandler::new();
             let command = ApplyCommand {
                 project_path,
@@ -139,6 +164,7 @@ async fn run_command(cli: Cli) -> Result<String> {
             dry_run,
             allow_destructive,
         } => {
+            debug!(env = %env, steps = ?steps, dry_run = dry_run, allow_destructive = allow_destructive, "Executing rollback command");
             let handler = RollbackCommandHandler::new();
             let command = RollbackCommand {
                 project_path,
@@ -153,6 +179,7 @@ async fn run_command(cli: Cli) -> Result<String> {
         }
 
         Commands::Validate { schema_dir } => {
+            debug!(schema_dir = ?schema_dir, "Executing validate command");
             let handler = ValidateCommandHandler::new();
             let command = ValidateCommand {
                 project_path,
@@ -164,6 +191,7 @@ async fn run_command(cli: Cli) -> Result<String> {
         }
 
         Commands::Status { env } => {
+            debug!(env = %env, "Executing status command");
             let handler = StatusCommandHandler::new();
             let command = StatusCommand {
                 project_path,
@@ -175,6 +203,7 @@ async fn run_command(cli: Cli) -> Result<String> {
         }
 
         Commands::Export { output, env, force } => {
+            debug!(env = %env, output = ?output, force = force, "Executing export command");
             let handler = ExportCommandHandler::new();
             let command = ExportCommand {
                 project_path,

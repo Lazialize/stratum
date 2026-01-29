@@ -6,14 +6,15 @@
 // - エラーと警告のフォーマットされた表示
 // - 検証結果のサマリー表示
 
-use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
-use crate::cli::commands::{CommandOutput, render_output};
+use crate::cli::commands::{render_output, CommandOutput};
+use crate::cli::OutputFormat;
 use crate::services::schema_io::schema_parser::SchemaParserService;
 use crate::services::schema_validator::SchemaValidatorService;
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use std::path::PathBuf;
+use tracing::debug;
 
 /// validateコマンドの出力構造体
 #[derive(Debug, Clone, Serialize)]
@@ -112,16 +113,23 @@ impl ValidateCommandHandler {
 
         // スキーマディレクトリのパスを解決
         let schema_dir = context.resolve_schema_dir(command.schema_dir.as_ref())?;
+        debug!(schema_dir = %schema_dir.display(), "Resolved schema directory");
 
         // スキーマ定義を読み込む
         let parser = SchemaParserService::new();
         let schema = parser
             .parse_schema_directory(&schema_dir)
             .with_context(|| "Failed to parse schema")?;
+        debug!(tables = schema.table_count(), "Schema parsed successfully");
 
         // スキーマを検証
         let validator = SchemaValidatorService::new();
         let validation_result = validator.validate_with_dialect(&schema, config.dialect);
+        debug!(
+            errors = validation_result.errors.len(),
+            warnings = validation_result.warnings.len(),
+            "Validation completed"
+        );
 
         // 検証結果を表示用にフォーマット
         let text_message = self.format_validation_result(&validation_result, &schema);

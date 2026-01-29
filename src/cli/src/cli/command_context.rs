@@ -11,6 +11,7 @@ use crate::services::database_config_resolver::DatabaseConfigResolver;
 use anyhow::{anyhow, Context, Result};
 use sqlx::AnyPool;
 use std::path::PathBuf;
+use tracing::debug;
 
 /// CLIコマンド共通の実行コンテキスト
 #[derive(Debug, Clone)]
@@ -34,6 +35,8 @@ impl CommandContext {
         let config_path =
             custom_config_path.unwrap_or_else(|| project_path.join(Config::DEFAULT_CONFIG_PATH));
 
+        debug!(config_path = %config_path.display(), "Loading config file");
+
         if !config_path.exists() {
             return Err(anyhow!(
                 "Config file not found: {:?}. Please initialize the project first with the `init` command.",
@@ -43,6 +46,8 @@ impl CommandContext {
 
         let config =
             ConfigLoader::from_file(&config_path).with_context(|| "Failed to read config file")?;
+
+        debug!(dialect = ?config.dialect, schema_dir = %config.schema_dir.display(), migrations_dir = %config.migrations_dir.display(), "Config loaded successfully");
 
         Ok(Self {
             project_path,
@@ -120,11 +125,14 @@ impl CommandContext {
         if let Some(t) = timeout {
             db_config.timeout = Some(t);
         }
+        debug!(env = %env, dialect = ?self.config.dialect, host = %db_config.host, database = %db_config.database, "Connecting to database");
         let db_service = DatabaseConnectionService::new();
-        db_service
+        let pool = db_service
             .create_pool(self.config.dialect, &db_config)
             .await
-            .with_context(|| "Failed to connect to database")
+            .with_context(|| "Failed to connect to database")?;
+        debug!("Database connection established");
+        Ok(pool)
     }
 
     /// DB接続を確立し、マイグレーション履歴テーブルを作成（未作成の場合）、適用済みマイグレーションを取得

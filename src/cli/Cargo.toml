@@ -32,6 +32,10 @@ anyhow = "1"                                       # アプリケーションレ
 serde = { version = "1", features = ["derive"] }   # シリアライゼーションフレームワーク
 serde_json = "1"                                    # JSON シリアライゼーション
 
+# Logging / Tracing
+tracing = "0.1"                                     # 構造化トレーシング
+tracing-subscriber = { version = "0.3", features = ["env-filter"] } # トレーシングサブスクライバー
+
 # Additional utilities
 chrono = { version = "0.4", features = ["serde"] } # 日時処理
 serde-saphyr = "0.0.16"                            # YAMLパーサー（パニックフリー）

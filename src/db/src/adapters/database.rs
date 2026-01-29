@@ -9,6 +9,7 @@ use crate::core::error::DatabaseError;
 use sqlx::pool::PoolOptions;
 use sqlx::{Any, AnyPool};
 use std::time::Duration;
+use tracing::debug;
 
 /// データベース接続サービス
 ///
@@ -54,18 +55,21 @@ impl DatabaseConnectionService {
         config: &DatabaseConfig,
     ) -> Result<AnyPool, DatabaseError> {
         let connection_string = self.build_connection_string(dialect, config);
+        debug!(dialect = ?dialect, host = %config.host, database = %config.database, "Creating database connection pool");
 
         // プールオプションを作成
         let pool_options = self.create_pool_options_from_config(config);
 
         // 接続プールを作成
-        pool_options
+        let pool = pool_options
             .connect(&connection_string)
             .await
             .map_err(|e| DatabaseError::Connection {
                 message: format!("Failed to create database connection pool: {}", dialect),
                 cause: e.to_string(),
-            })
+            })?;
+        debug!("Database connection pool created successfully");
+        Ok(pool)
     }
 
     /// 接続テストを実行

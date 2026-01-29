@@ -7,9 +7,9 @@
 // - 出力: このモジュール（CLI層、YAMLシリアライズとファイル/標準出力）
 
 use crate::adapters::database_introspector::{create_introspector, DatabaseIntrospector};
-use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
-use crate::cli::commands::{CommandOutput, render_output};
+use crate::cli::commands::{render_output, CommandOutput};
+use crate::cli::OutputFormat;
 use crate::core::config::Dialect;
 use crate::core::schema::Schema;
 use crate::services::schema_conversion::{RawTableInfo, SchemaConversionService};
@@ -20,6 +20,7 @@ use sqlx::AnyPool;
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
+use tracing::debug;
 
 /// exportコマンドの出力構造体
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +92,7 @@ impl ExportCommandHandler {
         let pool = context.connect_pool(&command.env).await?;
 
         // データベースからスキーマ情報を取得
+        debug!(dialect = ?config.dialect, "Extracting schema from database");
         let schema = self
             .extract_schema_from_database(&pool, config.dialect)
             .await
@@ -98,6 +100,7 @@ impl ExportCommandHandler {
 
         // テーブル名のリストを取得
         let table_names: Vec<String> = schema.tables.keys().cloned().collect();
+        debug!(tables = table_names.len(), "Schema extracted successfully");
 
         // YAML形式にシリアライズ（新構文形式を使用）
         let serializer = SchemaSerializerService::new();

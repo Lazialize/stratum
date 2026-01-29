@@ -6,11 +6,11 @@
 // - 差分検出とマイグレーションファイル生成
 // - 生成されたファイルパスの表示
 
-use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::destructive_change_formatter::DestructiveChangeFormatter;
 use crate::cli::commands::dry_run_formatter::DryRunFormatter;
-use crate::cli::commands::{CommandOutput, render_output};
+use crate::cli::commands::{render_output, CommandOutput};
+use crate::cli::OutputFormat;
 use crate::core::config::Config;
 use crate::core::schema::Schema;
 use crate::services::destructive_change_detector::DestructiveChangeDetector;
@@ -25,6 +25,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tracing::debug;
 
 /// generateコマンドの出力構造体
 #[derive(Debug, Clone, Serialize)]
@@ -154,10 +155,17 @@ impl GenerateCommandHandler {
         let config = &context.config;
 
         // スキーマの読み込み
+        debug!("Loading current and previous schemas");
         let (current_schema, previous_schema) =
             self.load_schemas(&context, &command.project_path, config)?;
+        debug!(
+            current_tables = current_schema.table_count(),
+            previous_tables = previous_schema.table_count(),
+            "Schemas loaded"
+        );
 
         // 差分検出・バリデーション
+        debug!("Detecting schema differences");
         let dvr = match self.detect_and_validate_diff(command, &current_schema, &previous_schema)? {
             Some(dvr) => dvr,
             None => {
@@ -202,6 +210,7 @@ impl GenerateCommandHandler {
         }
 
         // ファイル書き出し
+        debug!(migration_name = %dvr.migration_name, "Writing migration files");
         let (migration_name, migration_dir) = self.write_migration_files(
             &context,
             config,

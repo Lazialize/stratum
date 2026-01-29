@@ -7,12 +7,12 @@
 // - ロールバック結果の表示
 
 use crate::adapters::database_migrator::DatabaseMigratorService;
-use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::migration_loader;
 use crate::cli::commands::split_sql_statements;
 use crate::cli::commands::DESTRUCTIVE_SQL_REGEX;
-use crate::cli::commands::{CommandOutput, render_output};
+use crate::cli::commands::{render_output, CommandOutput};
+use crate::cli::OutputFormat;
 use crate::core::config::Dialect;
 use crate::core::migration::AppliedMigration;
 use anyhow::{anyhow, Context, Result};
@@ -21,6 +21,7 @@ use colored::Colorize;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+use tracing::{debug, info};
 
 /// rollbackコマンドの出力構造体
 #[derive(Debug, Clone, Serialize)]
@@ -102,9 +103,14 @@ impl RollbackCommandHandler {
 
         // マイグレーションディレクトリのパスを解決
         let migrations_dir = context.require_migrations_dir()?;
+        debug!(migrations_dir = %migrations_dir.display(), "Resolved migrations directory");
 
         // 利用可能なマイグレーションファイルを読み込む
         let available_migrations = migration_loader::load_available_migrations(&migrations_dir)?;
+        debug!(
+            count = available_migrations.len(),
+            "Loaded available migrations"
+        );
 
         if available_migrations.is_empty() {
             let output = RollbackOutput {
@@ -208,13 +214,18 @@ impl RollbackCommandHandler {
 
         // Dry run モードの場合は SQL を表示して終了
         if command.dry_run {
-            return self.execute_dry_run_with_format(&rollback_items, has_destructive, &command.format);
+            return self.execute_dry_run_with_format(
+                &rollback_items,
+                has_destructive,
+                &command.format,
+            );
         }
 
         // マイグレーションを順次ロールバック
         let mut rolled_back = Vec::new();
         for (record, down_sql, _) in rollback_items {
             let start_time = Utc::now();
+            info!(version = %record.version, description = %record.description, "Rolling back migration");
 
             // トランザクション内でロールバックを実行
             let result = self

@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use regex::Regex;
 use sqlx::{any::AnyQueryResult, AnyPool, Row};
 use std::sync::LazyLock;
+use tracing::debug;
 
 /// 許可されるマイグレーションテーブル名のパターン（コンパイル済み正規表現）
 ///
@@ -130,6 +131,7 @@ impl DatabaseMigratorService {
         pool: &AnyPool,
         dialect: Dialect,
     ) -> Result<(), DatabaseError> {
+        debug!(dialect = ?dialect, "Ensuring migration history table exists");
         let sql = self.generate_create_migration_table_sql(dialect);
 
         sqlx::query(&sql)
@@ -324,6 +326,7 @@ impl DatabaseMigratorService {
         pool: &AnyPool,
         dialect: Dialect,
     ) -> Result<Vec<MigrationRecord>, DatabaseError> {
+        debug!("Fetching migration history from database");
         let sql = self.generate_get_migrations_sql(dialect);
 
         let rows = sqlx::query(&sql)
@@ -333,6 +336,7 @@ impl DatabaseMigratorService {
                 message: format!("Failed to get migration history: {}", e),
                 sql: Some(sql),
             })?;
+        debug!(count = rows.len(), "Fetched migration records");
 
         let records: Vec<MigrationRecord> = rows
             .iter()

@@ -6,16 +6,17 @@
 // - 適用済み/未適用の状態表示（テーブル形式）
 // - チェックサム不一致の検出と警告
 
-use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::migration_loader;
-use crate::cli::commands::{CommandOutput, render_output};
+use crate::cli::commands::{render_output, CommandOutput};
+use crate::cli::OutputFormat;
 use crate::core::migration::{Migration, MigrationMetadata, MigrationRecord};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tracing::debug;
 
 /// statusコマンドの出力構造体
 #[derive(Debug, Clone, Serialize)]
@@ -110,6 +111,7 @@ impl StatusCommandHandler {
 
         // ローカルマイグレーションファイルを読み込む
         let local_migrations = self.load_local_migrations(&migrations_dir)?;
+        debug!(count = local_migrations.len(), "Loaded local migrations");
 
         // マイグレーションが存在しない場合
         if local_migrations.is_empty() {
@@ -173,7 +175,10 @@ impl StatusCommandHandler {
             })
             .collect();
 
-        if migration_entries.iter().any(|e| e.status == MigrationStatusValue::AppliedChecksumMismatch) {
+        if migration_entries
+            .iter()
+            .any(|e| e.status == MigrationStatusValue::AppliedChecksumMismatch)
+        {
             warnings.push("Some migrations have mismatched checksums. Migration files may have been modified after being applied.".to_string());
         }
         if orphaned_count > 0 {
@@ -186,7 +191,12 @@ impl StatusCommandHandler {
             .map(|(v, d, s)| (v.as_str(), d.as_str(), s.as_str()))
             .collect();
 
-        let text_message = self.format_migration_status(&status_list_refs, applied_count, pending_count, orphaned_count);
+        let text_message = self.format_migration_status(
+            &status_list_refs,
+            applied_count,
+            pending_count,
+            orphaned_count,
+        );
 
         let output = StatusOutput {
             migrations: migration_entries,
@@ -226,8 +236,8 @@ impl StatusCommandHandler {
 
     /// メタデータファイルからチェックサムを抽出
     fn extract_checksum_from_meta(&self, meta_content: &str) -> Result<String> {
-        let metadata: MigrationMetadata =
-            serde_saphyr::from_str(meta_content).with_context(|| "Failed to parse metadata YAML")?;
+        let metadata: MigrationMetadata = serde_saphyr::from_str(meta_content)
+            .with_context(|| "Failed to parse metadata YAML")?;
         Ok(metadata.checksum)
     }
 
@@ -264,11 +274,7 @@ impl StatusCommandHandler {
                     "Pending".to_string()
                 };
 
-                (
-                    local.version.clone(),
-                    local.description.clone(),
-                    status,
-                )
+                (local.version.clone(), local.description.clone(), status)
             })
             .collect();
 
@@ -366,7 +372,9 @@ impl StatusCommandHandler {
         // 孤立マイグレーションの警告
         if orphaned_count > 0 {
             output.push_str("\n⚠️  Warning: Orphaned migrations detected.\n");
-            output.push_str("   These migrations exist in the database but their local files are missing.\n");
+            output.push_str(
+                "   These migrations exist in the database but their local files are missing.\n",
+            );
         }
 
         output
@@ -569,7 +577,10 @@ destructive_changes: {}
         // ステータスが snake_case で出力される
         assert_eq!(parsed["migrations"][0]["status"], "applied");
         assert_eq!(parsed["migrations"][1]["status"], "pending");
-        assert_eq!(parsed["migrations"][2]["status"], "applied_checksum_mismatch");
+        assert_eq!(
+            parsed["migrations"][2]["status"],
+            "applied_checksum_mismatch"
+        );
         // サマリー
         assert_eq!(parsed["summary"]["total"], 3);
         assert_eq!(parsed["summary"]["applied"], 1);
