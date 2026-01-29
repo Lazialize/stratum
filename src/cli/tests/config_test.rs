@@ -160,12 +160,10 @@ environments:
     #[test]
     fn test_database_config_with_env_vars() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
             port: Some(5432),
             database: "strata_dev".to_string(),
             user: Some("postgres".to_string()),
-            password: None,
-            timeout: None,
+            ..Default::default()
         };
 
         // 環境変数を模擬（実際のテストでは std::env を使用）

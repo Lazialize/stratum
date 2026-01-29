@@ -8,6 +8,32 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// SSL接続モード
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SslMode {
+    Disable,
+    #[serde(rename = "prefer")]
+    Prefer,
+    Require,
+    #[serde(rename = "verify-ca")]
+    VerifyCa,
+    #[serde(rename = "verify-full")]
+    VerifyFull,
+}
+
+impl std::fmt::Display for SslMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SslMode::Disable => write!(f, "disable"),
+            SslMode::Prefer => write!(f, "prefer"),
+            SslMode::Require => write!(f, "require"),
+            SslMode::VerifyCa => write!(f, "verify-ca"),
+            SslMode::VerifyFull => write!(f, "verify-full"),
+        }
+    }
+}
+
 /// データベース方言
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -136,10 +162,48 @@ pub struct DatabaseConfig {
 
     /// 接続タイムアウト（秒）
     pub timeout: Option<u64>,
+
+    /// SSL接続モード
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssl_mode: Option<SslMode>,
+
+    /// 最大コネクション数
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connections: Option<u32>,
+
+    /// 最小コネクション数
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_connections: Option<u32>,
+
+    /// アイドルタイムアウト（秒）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_timeout: Option<u64>,
+
+    /// 追加接続オプション（クエリパラメータとして付与）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<HashMap<String, String>>,
 }
 
 fn default_host() -> String {
     "localhost".to_string()
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            host: default_host(),
+            port: None,
+            database: String::new(),
+            user: None,
+            password: None,
+            timeout: None,
+            ssl_mode: None,
+            max_connections: None,
+            min_connections: None,
+            idle_timeout: None,
+            options: None,
+        }
+    }
 }
 
 impl DatabaseConfig {
@@ -183,12 +247,9 @@ mod tests {
     #[test]
     fn test_resolved_port_with_explicit_port() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
             port: Some(5433),
             database: "test".to_string(),
-            user: None,
-            password: None,
-            timeout: None,
+            ..Default::default()
         };
 
         // 明示的に設定したポートは常にその値を返す
@@ -199,12 +260,8 @@ mod tests {
     #[test]
     fn test_resolved_port_without_explicit_port() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
-            port: None,
             database: "test".to_string(),
-            user: None,
-            password: None,
-            timeout: None,
+            ..Default::default()
         };
 
         // Noneの場合はDialectのデフォルトポートを返す
@@ -217,12 +274,9 @@ mod tests {
     fn test_explicit_port_5432_for_mysql_not_overwritten() {
         // ユーザーが意図的にMySQLにポート5432を設定した場合、上書きされない
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
             port: Some(5432),
             database: "test".to_string(),
-            user: None,
-            password: None,
-            timeout: None,
+            ..Default::default()
         };
 
         assert_eq!(config.resolved_port(Dialect::MySQL), 5432);

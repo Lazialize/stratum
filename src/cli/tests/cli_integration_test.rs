@@ -70,20 +70,16 @@ mod cli_integration_tests {
             let db_config = if let Some(ref db_path) = self.db_path {
                 DatabaseConfig {
                     host: String::new(),
-                    port: None,
                     database: db_path.to_string_lossy().to_string(),
-                    user: None,
-                    password: None,
-                    timeout: None,
+                    ..Default::default()
                 }
             } else {
                 DatabaseConfig {
-                    host: "localhost".to_string(),
                     port: Some(5432),
                     database: "testdb".to_string(),
                     user: Some("postgres".to_string()),
                     password: Some("postgres".to_string()),
-                    timeout: None,
+                    ..Default::default()
                 }
             };
 
@@ -114,6 +110,7 @@ mod cli_integration_tests {
                 user: Some("postgres".to_string()),
                 password: Some("postgres".to_string()),
                 timeout: Some(30),
+                ..Default::default()
             };
 
             let mut environments = HashMap::new();
@@ -141,8 +138,8 @@ mod cli_integration_tests {
                 port: Some(port),
                 database: database.to_string(),
                 user: Some("root".to_string()),
-                password: None,
                 timeout: Some(30),
+                ..Default::default()
             };
 
             let mut environments = HashMap::new();

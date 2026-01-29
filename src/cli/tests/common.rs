@@ -14,11 +14,8 @@ pub fn create_test_config(dialect: Dialect, database_path: Option<&str>) -> Conf
 
     let db_config = DatabaseConfig {
         host: String::new(),
-        port: None,
         database: database_path.unwrap_or(":memory:").to_string(),
-        user: None,
-        password: None,
-        timeout: None,
+        ..Default::default()
     };
 
     environments.insert("development".to_string(), db_config);

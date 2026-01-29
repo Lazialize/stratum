@@ -85,6 +85,9 @@ impl InitCommandHandler {
         };
         self.generate_config_file(&command.project_path, config_params)?;
 
+        // .gitignoreに設定ファイルが含まれていない場合は警告
+        self.warn_gitignore(&command.project_path);
+
         Ok(())
     }
 
@@ -125,6 +128,28 @@ impl InitCommandHandler {
         Ok(())
     }
 
+    /// .gitignoreに設定ファイルが含まれているかチェックし、警告を出力
+    fn warn_gitignore(&self, project_path: &Path) {
+        let config_file_name = Config::DEFAULT_CONFIG_PATH;
+        let gitignore_path = project_path.join(".gitignore");
+
+        if gitignore_path.exists() {
+            if let Ok(content) = fs::read_to_string(&gitignore_path) {
+                if content.lines().any(|line| {
+                    let trimmed = line.trim();
+                    trimmed == config_file_name || trimmed == format!("/{}", config_file_name)
+                }) {
+                    return; // 既に含まれている
+                }
+            }
+        }
+
+        eprintln!(
+            "Warning: '{}' is not listed in .gitignore. The config file may contain sensitive information (e.g., database passwords). Consider adding '{}' to your .gitignore file or using environment variable references (e.g., password: \"${{DB_PASSWORD}}\").",
+            config_file_name, config_file_name
+        );
+    }
+
     /// 設定ファイルを生成
     ///
     /// # Arguments
@@ -148,6 +173,11 @@ impl InitCommandHandler {
             user: params.user,
             password: params.password,
             timeout: Some(30),
+            ssl_mode: None,
+            max_connections: None,
+            min_connections: None,
+            idle_timeout: None,
+            options: None,
         };
 
         // 環境設定を作成
@@ -214,5 +244,48 @@ mod tests {
 
         assert!(project_path.join("schema").exists());
         assert!(project_path.join("migrations").exists());
+    }
+
+    #[test]
+    fn test_warn_gitignore_no_gitignore_file() {
+        // .gitignoreが存在しない場合 → 警告が出力される（パニックしないことを確認）
+        let temp_dir = TempDir::new().unwrap();
+        let handler = InitCommandHandler::new();
+        handler.warn_gitignore(temp_dir.path()); // パニックしなければOK
+    }
+
+    #[test]
+    fn test_warn_gitignore_not_listed() {
+        // .gitignoreが存在するが .strata.yaml が含まれていない場合
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(temp_dir.path().join(".gitignore"), "target/\n").unwrap();
+        let handler = InitCommandHandler::new();
+        handler.warn_gitignore(temp_dir.path()); // パニックしなければOK
+    }
+
+    #[test]
+    fn test_warn_gitignore_already_listed() {
+        // .gitignoreに .strata.yaml が含まれている場合 → 警告なし
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(
+            temp_dir.path().join(".gitignore"),
+            format!("target/\n{}\n", Config::DEFAULT_CONFIG_PATH),
+        )
+        .unwrap();
+        let handler = InitCommandHandler::new();
+        handler.warn_gitignore(temp_dir.path()); // パニックしなければOK
+    }
+
+    #[test]
+    fn test_warn_gitignore_listed_with_slash_prefix() {
+        // .gitignoreに /.strata.yaml が含まれている場合 → 警告なし
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(
+            temp_dir.path().join(".gitignore"),
+            format!("target/\n/{}\n", Config::DEFAULT_CONFIG_PATH),
+        )
+        .unwrap();
+        let handler = InitCommandHandler::new();
+        handler.warn_gitignore(temp_dir.path()); // パニックしなければOK
     }
 }

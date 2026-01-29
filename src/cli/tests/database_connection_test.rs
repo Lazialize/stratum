@@ -17,12 +17,11 @@ mod database_connection_tests {
     #[test]
     fn test_build_connection_string_postgres() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
             port: Some(5432),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: Some("testpass".to_string()),
-            timeout: None,
+            ..Default::default()
         };
 
         let service = DatabaseConnectionService::new();
@@ -39,12 +38,11 @@ mod database_connection_tests {
     #[test]
     fn test_build_connection_string_mysql() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
             port: Some(3306),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
             password: Some("testpass".to_string()),
-            timeout: None,
+            ..Default::default()
         };
 
         let service = DatabaseConnectionService::new();
@@ -62,11 +60,8 @@ mod database_connection_tests {
     fn test_build_connection_string_sqlite() {
         let config = DatabaseConfig {
             host: "".to_string(),
-            port: None,
             database: "/path/to/test.db".to_string(),
-            user: None,
-            password: None,
-            timeout: None,
+            ..Default::default()
         };
 
         let service = DatabaseConnectionService::new();
@@ -85,7 +80,7 @@ mod database_connection_tests {
             database: "proddb".to_string(),
             user: Some("admin".to_string()),
             password: Some("secret123".to_string()),
-            timeout: None,
+            ..Default::default()
         };
 
         let service = DatabaseConnectionService::new();
@@ -99,12 +94,10 @@ mod database_connection_tests {
     #[test]
     fn test_connection_string_without_password() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
             port: Some(5432),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
-            password: None,
-            timeout: None,
+            ..Default::default()
         };
 
         let service = DatabaseConnectionService::new();
@@ -119,12 +112,9 @@ mod database_connection_tests {
     #[test]
     fn test_default_username_postgres() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
             port: Some(5432),
             database: "testdb".to_string(),
-            user: None,
-            password: None,
-            timeout: None,
+            ..Default::default()
         };
 
         let service = DatabaseConnectionService::new();
@@ -138,12 +128,9 @@ mod database_connection_tests {
     #[test]
     fn test_default_username_mysql() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
             port: Some(3306),
             database: "testdb".to_string(),
-            user: None,
-            password: None,
-            timeout: None,
+            ..Default::default()
         };
 
         let service = DatabaseConnectionService::new();
@@ -153,32 +140,39 @@ mod database_connection_tests {
         assert!(conn_str.contains("root"));
     }
 
-    /// プールオプションの設定テスト
+    /// プールオプションの設定テスト（デフォルト）
     #[test]
-    fn test_pool_options() {
+    fn test_pool_options_default() {
         let service = DatabaseConnectionService::new();
-        let pool_options = service.create_pool_options();
+        let config = DatabaseConfig {
+            port: Some(5432),
+            database: "testdb".to_string(),
+            ..Default::default()
+        };
+        let pool_options = service.create_pool_options_from_config(&config);
 
         // プールオプションが作成されることを確認
         assert!(format!("{:?}", pool_options).contains("PoolOptions"));
     }
 
-    /// 接続タイムアウトの設定テスト
+    /// 接続タイムアウト・プール設定のテスト
     #[test]
-    fn test_connection_timeout() {
+    fn test_pool_options_with_config() {
         let config = DatabaseConfig {
-            host: "localhost".to_string(),
             port: Some(5432),
             database: "testdb".to_string(),
             user: Some("testuser".to_string()),
-            password: None,
             timeout: Some(30),
+            max_connections: Some(20),
+            min_connections: Some(2),
+            idle_timeout: Some(300),
+            ..Default::default()
         };
 
         let service = DatabaseConnectionService::new();
-        let pool_options = service.create_pool_options_with_timeout(config.timeout);
+        let pool_options = service.create_pool_options_from_config(&config);
 
-        // タイムアウトが設定されることを確認
+        // プールオプションが作成されることを確認
         assert!(format!("{:?}", pool_options).contains("PoolOptions"));
     }
 }

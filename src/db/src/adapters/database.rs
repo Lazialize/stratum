@@ -56,11 +56,7 @@ impl DatabaseConnectionService {
         let connection_string = self.build_connection_string(dialect, config);
 
         // プールオプションを作成
-        let pool_options = if let Some(timeout_secs) = config.timeout {
-            self.create_pool_options_with_timeout(Some(timeout_secs))
-        } else {
-            self.create_pool_options()
-        };
+        let pool_options = self.create_pool_options_from_config(config);
 
         // 接続プールを作成
         pool_options
@@ -93,31 +89,27 @@ impl DatabaseConnectionService {
             })
     }
 
-    /// デフォルトのプールオプションを作成
+    /// DatabaseConfigからプールオプションを作成
     ///
-    /// # Returns
-    ///
-    /// プールオプション
-    pub fn create_pool_options(&self) -> PoolOptions<Any> {
-        PoolOptions::new()
-            .max_connections(5)
-            .acquire_timeout(Duration::from_secs(30))
-    }
+    /// max_connections, min_connections, idle_timeout, timeout の設定を反映します。
+    /// 未設定の場合はデフォルト値（max_connections=5, timeout=30秒）を使用します。
+    pub fn create_pool_options_from_config(&self, config: &DatabaseConfig) -> PoolOptions<Any> {
+        let max_conn = config.max_connections.unwrap_or(5);
+        let timeout = config.timeout.unwrap_or(30);
 
-    /// タイムアウト付きのプールオプションを作成
-    ///
-    /// # Arguments
-    ///
-    /// * `timeout_secs` - タイムアウト秒数
-    ///
-    /// # Returns
-    ///
-    /// プールオプション
-    pub fn create_pool_options_with_timeout(&self, timeout_secs: Option<u64>) -> PoolOptions<Any> {
-        let timeout = timeout_secs.unwrap_or(30);
-        PoolOptions::new()
-            .max_connections(5)
-            .acquire_timeout(Duration::from_secs(timeout))
+        let mut opts = PoolOptions::new()
+            .max_connections(max_conn)
+            .acquire_timeout(Duration::from_secs(timeout));
+
+        if let Some(min_conn) = config.min_connections {
+            opts = opts.min_connections(min_conn);
+        }
+
+        if let Some(idle_secs) = config.idle_timeout {
+            opts = opts.idle_timeout(Duration::from_secs(idle_secs));
+        }
+
+        opts
     }
 
     /// 接続プールを閉じる
@@ -147,17 +139,29 @@ mod tests {
     }
 
     #[test]
-    fn test_create_pool_options() {
+    fn test_create_pool_options_from_config_defaults() {
         let service = DatabaseConnectionService::new();
-        let pool_options = service.create_pool_options();
+        let config = DatabaseConfig {
+            database: "test".to_string(),
+            ..Default::default()
+        };
+        let pool_options = service.create_pool_options_from_config(&config);
 
         assert!(format!("{:?}", pool_options).contains("PoolOptions"));
     }
 
     #[test]
-    fn test_create_pool_options_with_timeout() {
+    fn test_create_pool_options_from_config_custom() {
         let service = DatabaseConnectionService::new();
-        let pool_options = service.create_pool_options_with_timeout(Some(60));
+        let config = DatabaseConfig {
+            database: "test".to_string(),
+            timeout: Some(60),
+            max_connections: Some(20),
+            min_connections: Some(2),
+            idle_timeout: Some(300),
+            ..Default::default()
+        };
+        let pool_options = service.create_pool_options_from_config(&config);
 
         assert!(format!("{:?}", pool_options).contains("PoolOptions"));
     }
