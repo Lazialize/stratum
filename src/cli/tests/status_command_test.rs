@@ -235,7 +235,7 @@ fn test_format_migration_status() {
     let handler = StatusCommandHandler::new();
 
     let summary =
-        handler.format_migration_status(&[("20260121120000", "create_users", "Applied")], 1, 0);
+        handler.format_migration_status(&[("20260121120000", "create_users", "Applied")], 1, 0, 0);
 
     assert!(summary.contains("Migration Status"));
     assert!(summary.contains("20260121120000"));

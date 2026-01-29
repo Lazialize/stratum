@@ -169,7 +169,7 @@ impl InitCommandHandler {
         let db_config = DatabaseConfig {
             host,
             port: params.port,
-            database: params.database_name,
+            database: params.database_name.clone(),
             user: params.user,
             password: params.password,
             timeout: Some(30),
@@ -182,7 +182,20 @@ impl InitCommandHandler {
 
         // 環境設定を作成
         let mut environments = HashMap::new();
-        environments.insert("development".to_string(), db_config);
+        environments.insert("development".to_string(), db_config.clone());
+
+        // staging/production 環境のプレースホルダーを追加
+        let staging_config = DatabaseConfig {
+            database: format!("{}_staging", params.database_name),
+            ..db_config.clone()
+        };
+        environments.insert("staging".to_string(), staging_config);
+
+        let production_config = DatabaseConfig {
+            database: format!("{}_production", params.database_name),
+            ..db_config
+        };
+        environments.insert("production".to_string(), production_config);
 
         // 設定オブジェクトを作成
         let config = Config {

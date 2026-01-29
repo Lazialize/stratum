@@ -167,11 +167,10 @@ tables:
     };
 
     let result = handler.execute(&command);
-    assert!(result.is_ok());
+    assert!(result.is_err());
 
-    let summary = result.unwrap();
-    assert!(summary.contains("Validation Statistics"));
-    assert!(summary.contains("error(s) found"));
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("Validation failed"));
 }
 
 #[test]
@@ -213,11 +212,10 @@ tables:
     };
 
     let result = handler.execute(&command);
-    assert!(result.is_ok());
+    assert!(result.is_err());
 
-    let summary = result.unwrap();
-    assert!(summary.contains("Validation Statistics"));
-    assert!(summary.contains("error(s) found"));
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("Validation failed"));
 }
 
 #[test]

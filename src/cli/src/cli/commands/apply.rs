@@ -161,7 +161,13 @@ impl ApplyCommandHandler {
                 .await;
 
             if let Err(e) = result {
-                return Err(anyhow!("Failed to apply migration {}: {}", version, e));
+                return Err(anyhow!(
+                    "Failed to apply migration {} ({} applied, failed on migration #{}): {}",
+                    version,
+                    applied.len(),
+                    applied.len() + 1,
+                    e
+                ));
             }
 
             let end_time = Utc::now();

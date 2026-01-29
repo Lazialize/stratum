@@ -9,7 +9,7 @@
 use crate::cli::command_context::CommandContext;
 use crate::services::schema_io::schema_parser::SchemaParserService;
 use crate::services::schema_validator::SchemaValidatorService;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use std::path::PathBuf;
 
 /// 検証結果のサマリー情報
@@ -78,7 +78,16 @@ impl ValidateCommandHandler {
         // 検証結果を表示用にフォーマット
         let summary = self.format_validation_result(&validation_result, &schema);
 
-        Ok(summary)
+        if validation_result.is_valid() {
+            Ok(summary)
+        } else {
+            // サマリーを標準エラーに出力してからエラーを返す
+            eprintln!("{}", summary);
+            Err(anyhow!(
+                "Validation failed with {} error(s)",
+                validation_result.errors.len()
+            ))
+        }
     }
 
     /// 検証結果をフォーマット
@@ -111,6 +120,29 @@ impl ValidateCommandHandler {
                 // 修正案を表示
                 if let Some(suggestion) = self.get_error_suggestion(error) {
                     output.push_str(&format!("   Suggestion: {}\n", suggestion));
+                }
+
+                output.push('\n');
+            }
+        }
+
+        // 警告の表示
+        if !result.warnings.is_empty() {
+            output.push_str(&format!(
+                "⚠️  {} warning(s) found:\n\n",
+                result.warnings.len()
+            ));
+
+            for (i, warning) in result.warnings.iter().enumerate() {
+                output.push_str(&format!("{}. {}\n", i + 1, warning.message));
+
+                if let Some(location) = &warning.location {
+                    if let Some(table) = &location.table {
+                        output.push_str(&format!("   Location: table '{}'\n", table));
+                        if let Some(column) = &location.column {
+                            output.push_str(&format!("             column '{}'\n", column));
+                        }
+                    }
                 }
 
                 output.push('\n');

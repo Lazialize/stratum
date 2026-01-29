@@ -178,8 +178,10 @@ impl RollbackCommandHandler {
 
             if let Err(e) = result {
                 return Err(anyhow!(
-                    "Failed to rollback migration {}: {}",
+                    "Failed to rollback migration {} ({} rolled back, failed on rollback #{}): {}",
                     record.version,
+                    rolled_back.len(),
+                    rolled_back.len() + 1,
                     e
                 ));
             }
