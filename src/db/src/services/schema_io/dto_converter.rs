@@ -35,7 +35,11 @@ impl DtoConverterService {
         SchemaDto {
             version: schema.version.clone(),
             enum_recreate_allowed: schema.enum_recreate_allowed,
-            enums: schema.enums.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            enums: schema
+                .enums
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             tables,
         }
     }

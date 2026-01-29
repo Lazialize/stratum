@@ -205,10 +205,11 @@ impl<'a> MigrationPipeline<'a> {
         }
 
         // 追加されたテーブルを削除（依存関係の逆順）
-        let sorted_tables = self
-            .diff
-            .sort_added_tables_by_dependency()
-            .map_err(|e| PipelineStageError::CircularDependency { message: e.to_string() })?;
+        let sorted_tables = self.diff.sort_added_tables_by_dependency().map_err(|e| {
+            PipelineStageError::CircularDependency {
+                message: e.to_string(),
+            }
+        })?;
 
         for table in sorted_tables.iter().rev() {
             statements.push(generator.generate_drop_table(&table.name));

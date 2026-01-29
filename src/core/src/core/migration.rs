@@ -315,10 +315,7 @@ impl MigrationHistory {
 
     /// 最新のマイグレーションバージョンを取得
     pub fn get_latest_version(&self) -> Option<&str> {
-        self.records
-            .iter()
-            .map(|r| r.version.as_str())
-            .max()
+        self.records.iter().map(|r| r.version.as_str()).max()
     }
 
     /// 指定されたバージョンの記録を取得

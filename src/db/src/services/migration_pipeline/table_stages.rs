@@ -48,10 +48,11 @@ impl<'a> MigrationPipeline<'a> {
         }
 
         // 外部キー依存関係を考慮してテーブルをソート
-        let sorted_tables = self
-            .diff
-            .sort_added_tables_by_dependency()
-            .map_err(|e| PipelineStageError::CircularDependency { message: e.to_string() })?;
+        let sorted_tables = self.diff.sort_added_tables_by_dependency().map_err(|e| {
+            PipelineStageError::CircularDependency {
+                message: e.to_string(),
+            }
+        })?;
 
         // 追加されたテーブルのCREATE TABLE文を生成
         for table in &sorted_tables {

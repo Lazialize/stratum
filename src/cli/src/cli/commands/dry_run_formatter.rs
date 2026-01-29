@@ -470,8 +470,14 @@ mod tests {
         let validation = ValidationResult::new();
         let report = DestructiveChangeReport::new();
 
-        let output =
-            DryRunFormatter::format("test_migration", "SELECT 1;", "SELECT 2;", &diff, &validation, &report);
+        let output = DryRunFormatter::format(
+            "test_migration",
+            "SELECT 1;",
+            "SELECT 2;",
+            &diff,
+            &validation,
+            &report,
+        );
         assert!(output.contains("Dry Run: Migration Preview"));
         assert!(output.contains("test_migration"));
     }

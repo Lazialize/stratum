@@ -429,17 +429,13 @@ impl GenerateCommandHandler {
         let checksum_calculator = SchemaChecksumService::new();
         let checksum = checksum_calculator.calculate_checksum(current_schema);
 
-        let metadata = self
-            .services
-            .generator
-            .generate_migration_metadata(
-                &dvr.timestamp,
-                &dvr.sanitized_description,
-                config.dialect,
-                &checksum,
-                dvr.destructive_report.clone(),
-            )
-?;
+        let metadata = self.services.generator.generate_migration_metadata(
+            &dvr.timestamp,
+            &dvr.sanitized_description,
+            config.dialect,
+            &checksum,
+            dvr.destructive_report.clone(),
+        )?;
         let meta_path = migration_dir.join(".meta.yaml");
         fs::write(&meta_path, metadata)
             .with_context(|| format!("Failed to write metadata: {:?}", meta_path))?;
