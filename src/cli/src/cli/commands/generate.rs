@@ -356,8 +356,9 @@ impl GenerateCommandHandler {
         // 型変更検証エラーの処理
         if let Err(e) = &sql_result {
             if command.dry_run {
+                let error_msg = e.to_string();
                 return Err(self
-                    .execute_dry_run_with_error(&dvr.migration_name, e, &dvr.diff)
+                    .execute_dry_run_with_error(&dvr.migration_name, &error_msg, &dvr.diff)
                     .unwrap_err());
             }
             return Err(anyhow::anyhow!("{}", e));
@@ -389,7 +390,7 @@ impl GenerateCommandHandler {
                 config.dialect,
                 allow_destructive_for_sql,
             )
-            .map_err(|e| anyhow::anyhow!("Failed to generate DOWN SQL: {}", e))?;
+            .context("Failed to generate DOWN SQL")?;
 
         Ok(GeneratedSql {
             up_sql,
@@ -438,7 +439,7 @@ impl GenerateCommandHandler {
                 &checksum,
                 dvr.destructive_report.clone(),
             )
-            .map_err(|e| anyhow::anyhow!(e))?;
+?;
         let meta_path = migration_dir.join(".meta.yaml");
         fs::write(&meta_path, metadata)
             .with_context(|| format!("Failed to write metadata: {:?}", meta_path))?;

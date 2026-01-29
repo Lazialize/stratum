@@ -67,6 +67,7 @@ impl SchemaValidatorService {
         // テーブル構造の検証
         result.merge_all([
             self.validate_table_structure(schema),
+            self.validate_duplicate_column_names(schema),
             self.validate_column_types(schema),
             self.validate_primary_keys(schema),
             self.validate_index_references(schema),
@@ -90,6 +91,32 @@ impl SchemaValidatorService {
     /// テーブル構造の検証（カラムの存在確認）
     fn validate_table_structure(&self, schema: &Schema) -> ValidationResult {
         table_validator::validate_table_structure(schema)
+    }
+
+    /// 重複カラム名の検証
+    fn validate_duplicate_column_names(&self, schema: &Schema) -> ValidationResult {
+        let mut result = ValidationResult::new();
+
+        for (table_name, table) in &schema.tables {
+            let mut seen = std::collections::HashSet::new();
+            for column in &table.columns {
+                if !seen.insert(&column.name) {
+                    result.add_error(ValidationError::Constraint {
+                        message: format!(
+                            "Table '{}' has duplicate column name '{}'",
+                            table_name, column.name
+                        ),
+                        location: Some(crate::core::error::ErrorLocation::with_table_and_column(
+                            table_name,
+                            &column.name,
+                        )),
+                        suggestion: Some("Remove the duplicate column definition".to_string()),
+                    });
+                }
+            }
+        }
+
+        result
     }
 
     /// カラム型の検証

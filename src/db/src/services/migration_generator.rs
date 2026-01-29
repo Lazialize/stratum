@@ -3,6 +3,8 @@
 // スキーマ差分からマイグレーションファイル（up.sql, down.sql, .meta.yaml）を生成するサービス。
 // 内部では MigrationPipeline を使用してSQL生成を行う。
 
+use anyhow::Result;
+
 use crate::core::config::Dialect;
 use crate::core::destructive_change_report::DestructiveChangeReport;
 use crate::core::error::ValidationResult;
@@ -151,7 +153,7 @@ impl MigrationGeneratorService {
         dialect: Dialect,
         checksum: &str,
         destructive_changes: DestructiveChangeReport,
-    ) -> Result<String, String> {
+    ) -> Result<String> {
         let metadata = MigrationMetadata {
             version: version.to_string(),
             description: description.to_string(),
@@ -161,7 +163,7 @@ impl MigrationGeneratorService {
         };
 
         serde_saphyr::to_string(&metadata)
-            .map_err(|e| format!("Failed to serialize metadata: {}", e))
+            .map_err(|e| anyhow::anyhow!("Failed to serialize metadata: {}", e))
     }
 
     /// UP SQLを生成（スキーマ付き、型変更対応）
@@ -187,11 +189,11 @@ impl MigrationGeneratorService {
         new_schema: &Schema,
         dialect: Dialect,
         allow_destructive: bool,
-    ) -> Result<(String, ValidationResult), String> {
+    ) -> Result<(String, ValidationResult)> {
         let pipeline = MigrationPipeline::new(diff, dialect)
             .with_schemas(old_schema, new_schema)
             .with_allow_destructive(allow_destructive);
-        pipeline.generate_up().map_err(|e| e.to_string())
+        Ok(pipeline.generate_up()?)
     }
 
     /// DOWN SQLを生成（スキーマ付き、型変更対応）
@@ -217,11 +219,11 @@ impl MigrationGeneratorService {
         new_schema: &Schema,
         dialect: Dialect,
         allow_destructive: bool,
-    ) -> Result<(String, ValidationResult), String> {
+    ) -> Result<(String, ValidationResult)> {
         let pipeline = MigrationPipeline::new(diff, dialect)
             .with_schemas(old_schema, new_schema)
             .with_allow_destructive(allow_destructive);
-        pipeline.generate_down().map_err(|e| e.to_string())
+        Ok(pipeline.generate_down()?)
     }
 }
 
@@ -251,7 +253,7 @@ impl crate::services::traits::MigrationGenerator for MigrationGeneratorService {
         new_schema: &Schema,
         dialect: Dialect,
         allow_destructive: bool,
-    ) -> Result<(String, ValidationResult), String> {
+    ) -> Result<(String, ValidationResult)> {
         self.generate_up_sql_with_schemas(diff, old_schema, new_schema, dialect, allow_destructive)
     }
 
@@ -262,7 +264,7 @@ impl crate::services::traits::MigrationGenerator for MigrationGeneratorService {
         new_schema: &Schema,
         dialect: Dialect,
         allow_destructive: bool,
-    ) -> Result<(String, ValidationResult), String> {
+    ) -> Result<(String, ValidationResult)> {
         self.generate_down_sql_with_schemas(
             diff,
             old_schema,
@@ -279,7 +281,7 @@ impl crate::services::traits::MigrationGenerator for MigrationGeneratorService {
         dialect: Dialect,
         checksum: &str,
         destructive_changes: DestructiveChangeReport,
-    ) -> Result<String, String> {
+    ) -> Result<String> {
         self.generate_migration_metadata(
             version,
             description,

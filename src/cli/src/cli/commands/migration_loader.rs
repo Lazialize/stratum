@@ -158,4 +158,65 @@ mod tests {
         let migrations = load_available_migrations(temp_dir.path()).unwrap();
         assert_eq!(migrations.len(), 1);
     }
+
+    #[test]
+    fn test_empty_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let migrations = load_available_migrations(temp_dir.path()).unwrap();
+        assert!(migrations.is_empty());
+    }
+
+    #[test]
+    fn test_nonexistent_directory() {
+        let result = load_available_migrations(Path::new("/nonexistent/path"));
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to read migrations directory"));
+    }
+
+    #[test]
+    fn test_files_are_ignored() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir(temp_dir.path().join("20260121120000_valid")).unwrap();
+        fs::write(temp_dir.path().join("20260121120001_a_file.txt"), "content").unwrap();
+
+        let migrations = load_available_migrations(temp_dir.path()).unwrap();
+        assert_eq!(migrations.len(), 1);
+        assert_eq!(migrations[0].0, "20260121120000");
+    }
+
+    #[test]
+    fn test_sorted_by_version_ascending() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir(temp_dir.path().join("20260121130000_third")).unwrap();
+        fs::create_dir(temp_dir.path().join("20260121110000_first")).unwrap();
+        fs::create_dir(temp_dir.path().join("20260121120000_second")).unwrap();
+
+        let migrations = load_available_migrations(temp_dir.path()).unwrap();
+        assert_eq!(migrations.len(), 3);
+        assert_eq!(migrations[0].1, "first");
+        assert_eq!(migrations[1].1, "second");
+        assert_eq!(migrations[2].1, "third");
+    }
+
+    #[test]
+    fn test_description_extraction() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir(temp_dir.path().join("20260121120000_create_users_table")).unwrap();
+
+        let migrations = load_available_migrations(temp_dir.path()).unwrap();
+        assert_eq!(migrations[0].1, "create_users_table");
+    }
+
+    #[test]
+    fn test_path_is_preserved() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path().join("20260121120000_migration");
+        fs::create_dir(&dir_path).unwrap();
+
+        let migrations = load_available_migrations(temp_dir.path()).unwrap();
+        assert_eq!(migrations[0].2, dir_path);
+    }
 }

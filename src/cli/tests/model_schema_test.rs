@@ -4,7 +4,7 @@
 /// 正しく動作し、YAML形式とのシリアライズ/デシリアライズが可能であることを確認します。
 #[cfg(test)]
 mod schema_model_tests {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
     use strata::core::schema::{Column, ColumnType, Constraint, Index, Schema, Table};
 
     /// Schema構造体が正しくデシリアライズできることを確認
@@ -218,7 +218,7 @@ check_expression: "age >= 0"
     /// 複数テーブルのスキーマが正しく扱えることを確認
     #[test]
     fn test_multi_table_schema() {
-        let mut tables = HashMap::new();
+        let mut tables = BTreeMap::new();
 
         tables.insert(
             "users".to_string(),
@@ -275,7 +275,7 @@ check_expression: "age >= 0"
         let schema = Schema {
             version: "1.0".to_string(),
             enum_recreate_allowed: false,
-            enums: HashMap::new(),
+            enums: BTreeMap::new(),
             tables,
         };
 
@@ -287,7 +287,7 @@ check_expression: "age >= 0"
     /// Schemaのヘルパーメソッドが正しく動作することを確認
     #[test]
     fn test_schema_helper_methods() {
-        let mut tables = HashMap::new();
+        let mut tables = BTreeMap::new();
         tables.insert(
             "users".to_string(),
             Table {
@@ -302,7 +302,7 @@ check_expression: "age >= 0"
         let schema = Schema {
             version: "1.0".to_string(),
             enum_recreate_allowed: false,
-            enums: HashMap::new(),
+            enums: BTreeMap::new(),
             tables,
         };
 

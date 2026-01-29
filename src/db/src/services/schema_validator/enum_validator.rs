@@ -45,7 +45,6 @@ pub fn validate_enums(schema: &Schema, dialect: Option<Dialect>) -> ValidationRe
                     location: None,
                     suggestion: Some("Remove duplicate values".to_string()),
                 });
-                break;
             }
         }
     }

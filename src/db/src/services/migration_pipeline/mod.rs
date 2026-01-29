@@ -208,7 +208,7 @@ impl<'a> MigrationPipeline<'a> {
         let sorted_tables = self
             .diff
             .sort_added_tables_by_dependency()
-            .map_err(|message| PipelineStageError::CircularDependency { message })?;
+            .map_err(|e| PipelineStageError::CircularDependency { message: e.to_string() })?;
 
         for table in sorted_tables.iter().rev() {
             statements.push(generator.generate_drop_table(&table.name));

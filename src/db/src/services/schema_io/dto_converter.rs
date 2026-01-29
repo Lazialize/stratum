@@ -5,8 +5,7 @@
 
 use crate::core::schema::{Constraint, Schema, Table};
 use crate::services::schema_io::dto::{ConstraintDto, SchemaDto, TableDto};
-use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// DTO変換サービス
 ///
@@ -26,7 +25,7 @@ impl DtoConverterService {
     /// 内部スキーマモデルをDTO形式に変換します。
     /// PRIMARY_KEY制約は primary_key フィールドに抽出されます。
     pub fn schema_to_dto(&self, schema: &Schema) -> SchemaDto {
-        let mut tables = HashMap::new();
+        let mut tables = BTreeMap::new();
 
         for (table_name, table) in &schema.tables {
             let table_dto = self.table_to_dto(table);
@@ -36,7 +35,7 @@ impl DtoConverterService {
         SchemaDto {
             version: schema.version.clone(),
             enum_recreate_allowed: schema.enum_recreate_allowed,
-            enums: schema.enums.clone(),
+            enums: schema.enums.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             tables,
         }
     }
@@ -45,7 +44,7 @@ impl DtoConverterService {
     ///
     /// DTO形式を内部スキーマモデルに変換します。
     /// primary_key フィールドは Constraint::PRIMARY_KEY に変換されます。
-    pub fn dto_to_schema(&self, dto: &SchemaDto) -> Result<Schema> {
+    pub fn dto_to_schema(&self, dto: &SchemaDto) -> Schema {
         let mut schema = Schema::new(dto.version.clone());
         schema.enum_recreate_allowed = dto.enum_recreate_allowed;
 
@@ -56,11 +55,11 @@ impl DtoConverterService {
 
         // テーブルを変換
         for (table_name, table_dto) in &dto.tables {
-            let table = self.dto_to_table(table_name, table_dto)?;
+            let table = self.dto_to_table(table_name, table_dto);
             schema.add_table(table);
         }
 
-        Ok(schema)
+        schema
     }
 
     /// Table → TableDto 変換
@@ -80,7 +79,7 @@ impl DtoConverterService {
     /// TableDto → Table 変換
     ///
     /// テーブル名をキーから取得し、primary_key を Constraint::PRIMARY_KEY に変換します。
-    pub fn dto_to_table(&self, name: &str, dto: &TableDto) -> Result<Table> {
+    pub fn dto_to_table(&self, name: &str, dto: &TableDto) -> Table {
         let mut table = Table::new(name.to_string());
 
         // カラムをコピー
@@ -105,7 +104,7 @@ impl DtoConverterService {
         // renamed_from をコピー
         table.renamed_from = dto.renamed_from.clone();
 
-        Ok(table)
+        table
     }
 
     /// Constraint → ConstraintDto 変換
@@ -264,12 +263,12 @@ mod tests {
         let dto = SchemaDto {
             version: "1.0".to_string(),
             enum_recreate_allowed: false,
-            enums: HashMap::new(),
-            tables: HashMap::new(),
+            enums: BTreeMap::new(),
+            tables: BTreeMap::new(),
         };
         let service = DtoConverterService::new();
 
-        let schema = service.dto_to_schema(&dto).unwrap();
+        let schema = service.dto_to_schema(&dto);
 
         assert_eq!(schema.version, "1.0");
         assert!(!schema.enum_recreate_allowed);
@@ -282,12 +281,12 @@ mod tests {
         let dto = SchemaDto {
             version: "1.0".to_string(),
             enum_recreate_allowed: true,
-            enums: HashMap::new(),
-            tables: HashMap::new(),
+            enums: BTreeMap::new(),
+            tables: BTreeMap::new(),
         };
         let service = DtoConverterService::new();
 
-        let schema = service.dto_to_schema(&dto).unwrap();
+        let schema = service.dto_to_schema(&dto);
 
         assert!(schema.enum_recreate_allowed);
     }
@@ -398,7 +397,7 @@ mod tests {
         };
         let service = DtoConverterService::new();
 
-        let table = service.dto_to_table("users", &dto).unwrap();
+        let table = service.dto_to_table("users", &dto);
 
         assert_eq!(table.name, "users");
         assert_eq!(table.columns.len(), 1);
@@ -420,7 +419,7 @@ mod tests {
         };
         let service = DtoConverterService::new();
 
-        let table = service.dto_to_table("users", &dto).unwrap();
+        let table = service.dto_to_table("users", &dto);
 
         let pk_columns = table.get_primary_key_columns();
         assert!(pk_columns.is_some());
@@ -585,7 +584,7 @@ mod tests {
         let service = DtoConverterService::new();
 
         let dto = service.schema_to_dto(&original);
-        let restored = service.dto_to_schema(&dto).unwrap();
+        let restored = service.dto_to_schema(&dto);
 
         assert_eq!(original.version, restored.version);
         assert_eq!(
@@ -611,7 +610,7 @@ mod tests {
         let service = DtoConverterService::new();
 
         let dto = service.schema_to_dto(&original);
-        let restored = service.dto_to_schema(&dto).unwrap();
+        let restored = service.dto_to_schema(&dto);
 
         assert_eq!(original.tables.len(), restored.tables.len());
         let original_table = original.get_table("users").unwrap();
@@ -684,7 +683,7 @@ mod tests {
         let service = DtoConverterService::new();
 
         let dto = service.schema_to_dto(&original);
-        let restored = service.dto_to_schema(&dto).unwrap();
+        let restored = service.dto_to_schema(&dto);
 
         // 基本プロパティ
         assert_eq!(original.version, restored.version);
@@ -758,7 +757,7 @@ mod tests {
         let service = DtoConverterService::new();
 
         let dto = service.table_to_dto(&original);
-        let restored = service.dto_to_table("test_table", &dto).unwrap();
+        let restored = service.dto_to_table("test_table", &dto);
 
         assert_eq!(original.name, restored.name);
         assert_eq!(original.columns.len(), restored.columns.len());

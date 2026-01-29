@@ -7,6 +7,7 @@ pub mod postgres;
 pub mod sqlite;
 pub mod sqlite_table_recreator;
 
+use crate::core::error::ValidationError;
 use crate::core::schema::{Column, ColumnType, Constraint, EnumDefinition, Index, Table};
 use crate::core::schema_diff::{ColumnDiff, EnumDiff, RenamedColumn};
 use sha2::{Digest, Sha256};
@@ -105,7 +106,7 @@ pub(crate) fn generate_ck_constraint_name(table_name: &str, columns: &[String]) 
 /// # Returns
 ///
 /// バリデーションに失敗した場合はエラーメッセージを返します。
-pub(crate) fn validate_check_expression(expr: &str) -> Result<(), String> {
+pub(crate) fn validate_check_expression(expr: &str) -> Result<(), ValidationError> {
     // 大文字に正規化してキーワードを検査
     let upper = expr.to_uppercase();
     // トークン境界を考慮するため、単語単位で検出
@@ -121,17 +122,25 @@ pub(crate) fn validate_check_expression(expr: &str) -> Result<(), String> {
         let clean_token = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
         for keyword in FORBIDDEN_KEYWORDS {
             if clean_token == *keyword {
-                return Err(format!(
-                    "CHECK式に禁止キーワード '{}' が含まれています: {}",
-                    keyword, expr
-                ));
+                return Err(ValidationError::Constraint {
+                    message: format!(
+                        "CHECK式に禁止キーワード '{}' が含まれています: {}",
+                        keyword, expr
+                    ),
+                    location: None,
+                    suggestion: Some("CHECK式からDML/DDLキーワードを除去してください".to_string()),
+                });
             }
         }
     }
 
     // セミコロンの検出（ステートメント区切りによるインジェクション防止）
     if expr.contains(';') {
-        return Err(format!("CHECK式にセミコロンが含まれています: {}", expr));
+        return Err(ValidationError::Constraint {
+            message: format!("CHECK式にセミコロンが含まれています: {}", expr),
+            location: None,
+            suggestion: Some("CHECK式からセミコロンを除去してください".to_string()),
+        });
     }
 
     Ok(())
@@ -142,8 +151,8 @@ pub(crate) fn validate_check_expression(expr: &str) -> Result<(), String> {
 /// バリデーションに失敗した場合はコメント付きのSQLを生成し、
 /// 不正なCHECK式がそのまま実行されることを防ぎます。
 pub(crate) fn format_check_constraint(expr: &str) -> String {
-    if let Err(msg) = validate_check_expression(expr) {
-        let sanitized_msg = sanitize_sql_comment(&msg);
+    if let Err(err) = validate_check_expression(expr) {
+        let sanitized_msg = sanitize_sql_comment(&err.to_string());
         format!("/* ERROR: {} */ CHECK (FALSE)", sanitized_msg)
     } else {
         format!("CHECK ({})", expr)
@@ -921,56 +930,56 @@ mod tests {
     fn test_validate_check_expression_rejects_insert() {
         let result = validate_check_expression("1); INSERT INTO t VALUES (1");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("INSERT"));
+        assert!(result.unwrap_err().to_string().contains("INSERT"));
     }
 
     #[test]
     fn test_validate_check_expression_rejects_update() {
         let result = validate_check_expression("1); UPDATE t SET x = 1");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("UPDATE"));
+        assert!(result.unwrap_err().to_string().contains("UPDATE"));
     }
 
     #[test]
     fn test_validate_check_expression_rejects_delete() {
         let result = validate_check_expression("1); DELETE FROM t");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("DELETE"));
+        assert!(result.unwrap_err().to_string().contains("DELETE"));
     }
 
     #[test]
     fn test_validate_check_expression_rejects_drop() {
         let result = validate_check_expression("1); DROP TABLE users");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("DROP"));
+        assert!(result.unwrap_err().to_string().contains("DROP"));
     }
 
     #[test]
     fn test_validate_check_expression_rejects_alter() {
         let result = validate_check_expression("1); ALTER TABLE users ADD COLUMN x INT");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("ALTER"));
+        assert!(result.unwrap_err().to_string().contains("ALTER"));
     }
 
     #[test]
     fn test_validate_check_expression_rejects_create() {
         let result = validate_check_expression("1); CREATE TABLE evil (id INT)");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("CREATE"));
+        assert!(result.unwrap_err().to_string().contains("CREATE"));
     }
 
     #[test]
     fn test_validate_check_expression_rejects_semicolon() {
         let result = validate_check_expression("age > 0; SELECT 1");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("セミコロン"));
+        assert!(result.unwrap_err().to_string().contains("セミコロン"));
     }
 
     #[test]
     fn test_validate_check_expression_rejects_truncate() {
         let result = validate_check_expression("1); TRUNCATE users");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("TRUNCATE"));
+        assert!(result.unwrap_err().to_string().contains("TRUNCATE"));
     }
 
     #[test]

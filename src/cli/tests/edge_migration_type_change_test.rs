@@ -1252,7 +1252,7 @@ mod type_change_migration_tests {
             // 検証エラーによりErrが返される
             assert!(result.is_err());
             let error = result.unwrap_err();
-            assert!(error.contains("Type change validation failed"));
+            assert!(error.to_string().contains("Type change validation failed"));
         }
     }
 }

@@ -5,7 +5,7 @@
 
 use crate::core::schema::{Column, EnumDefinition, Index, ReferentialAction};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// ENUM再作成許可フラグのシリアライズ判定用ヘルパー
 fn is_false(value: &bool) -> bool {
@@ -26,11 +26,11 @@ pub struct SchemaDto {
     pub enum_recreate_allowed: bool,
 
     /// ENUM定義のマップ（型名 -> EnumDefinition）
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub enums: HashMap<String, EnumDefinition>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub enums: BTreeMap<String, EnumDefinition>,
 
     /// テーブル定義のマップ（テーブル名 -> TableDto）
-    pub tables: HashMap<String, TableDto>,
+    pub tables: BTreeMap<String, TableDto>,
 }
 
 /// YAML テーブル定義用DTO
@@ -155,8 +155,8 @@ tables: {}
         let dto = SchemaDto {
             version: "1.0".to_string(),
             enum_recreate_allowed: false,
-            enums: HashMap::new(),
-            tables: HashMap::new(),
+            enums: BTreeMap::new(),
+            tables: BTreeMap::new(),
         };
 
         let yaml = serde_saphyr::to_string(&dto).unwrap();
@@ -172,8 +172,8 @@ tables: {}
         let dto = SchemaDto {
             version: "1.0".to_string(),
             enum_recreate_allowed: true,
-            enums: HashMap::new(),
-            tables: HashMap::new(),
+            enums: BTreeMap::new(),
+            tables: BTreeMap::new(),
         };
 
         let yaml = serde_saphyr::to_string(&dto).unwrap();
@@ -503,9 +503,9 @@ tables:
         let original = SchemaDto {
             version: "1.0".to_string(),
             enum_recreate_allowed: false,
-            enums: HashMap::new(),
+            enums: BTreeMap::new(),
             tables: {
-                let mut tables = HashMap::new();
+                let mut tables = BTreeMap::new();
                 tables.insert(
                     "users".to_string(),
                     TableDto {

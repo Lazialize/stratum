@@ -369,3 +369,251 @@ impl DryRunFormatter {
         renames
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::destructive_change_report::{DroppedColumn, RenamedColumnInfo};
+    use crate::core::error::{ErrorLocation, ValidationWarning, WarningKind};
+    use crate::core::schema::{Column, ColumnType};
+    use crate::core::schema_diff::{ColumnChange, ColumnDiff, RenamedColumn, TableDiff};
+
+    fn make_column(name: &str, col_type: ColumnType) -> Column {
+        Column::new(name.to_string(), col_type, false)
+    }
+
+    // --- collect_type_changes ---
+
+    #[test]
+    fn test_collect_type_changes_empty_diff() {
+        let diff = SchemaDiff::new();
+        let changes = DryRunFormatter::collect_type_changes(&diff);
+        assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn test_collect_type_changes_from_modified_columns() {
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_columns.push(ColumnDiff {
+            column_name: "age".to_string(),
+            old_column: make_column("age", ColumnType::INTEGER { precision: None }),
+            new_column: make_column("age", ColumnType::TEXT),
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "INTEGER".to_string(),
+                new_type: "TEXT".to_string(),
+            }],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let changes = DryRunFormatter::collect_type_changes(&diff);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].table, "users");
+        assert_eq!(changes[0].column, "age");
+        assert_eq!(changes[0].old_type, "INTEGER");
+        assert_eq!(changes[0].new_type, "TEXT");
+    }
+
+    #[test]
+    fn test_collect_type_changes_from_renamed_columns() {
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(RenamedColumn {
+            old_name: "old_col".to_string(),
+            old_column: make_column("old_col", ColumnType::INTEGER { precision: None }),
+            new_column: make_column("new_col", ColumnType::TEXT),
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "INTEGER".to_string(),
+                new_type: "TEXT".to_string(),
+            }],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let changes = DryRunFormatter::collect_type_changes(&diff);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].column, "new_col");
+    }
+
+    // --- collect_rename_changes ---
+
+    #[test]
+    fn test_collect_rename_changes_empty_diff() {
+        let diff = SchemaDiff::new();
+        let renames = DryRunFormatter::collect_rename_changes(&diff);
+        assert!(renames.is_empty());
+    }
+
+    #[test]
+    fn test_collect_rename_changes() {
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(RenamedColumn {
+            old_name: "username".to_string(),
+            old_column: make_column("username", ColumnType::VARCHAR { length: 255 }),
+            new_column: make_column("display_name", ColumnType::VARCHAR { length: 255 }),
+            changes: vec![],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let renames = DryRunFormatter::collect_rename_changes(&diff);
+        assert_eq!(renames.len(), 1);
+        assert_eq!(renames[0].table, "users");
+        assert_eq!(renames[0].old_name, "username");
+        assert_eq!(renames[0].new_name, "display_name");
+    }
+
+    // --- format ---
+
+    #[test]
+    fn test_format_contains_header() {
+        let diff = SchemaDiff::new();
+        let validation = ValidationResult::new();
+        let report = DestructiveChangeReport::new();
+
+        let output =
+            DryRunFormatter::format("test_migration", "SELECT 1;", "SELECT 2;", &diff, &validation, &report);
+        assert!(output.contains("Dry Run: Migration Preview"));
+        assert!(output.contains("test_migration"));
+    }
+
+    #[test]
+    fn test_format_contains_sql_sections() {
+        let diff = SchemaDiff::new();
+        let validation = ValidationResult::new();
+        let report = DestructiveChangeReport::new();
+
+        let output = DryRunFormatter::format(
+            "m",
+            "CREATE TABLE users;",
+            "DROP TABLE users;",
+            &diff,
+            &validation,
+            &report,
+        );
+        assert!(output.contains("UP SQL"));
+        assert!(output.contains("CREATE TABLE users;"));
+        assert!(output.contains("DOWN SQL"));
+        assert!(output.contains("DROP TABLE users;"));
+    }
+
+    #[test]
+    fn test_format_contains_summary() {
+        let diff = SchemaDiff::new();
+        let validation = ValidationResult::new();
+        let report = DestructiveChangeReport::new();
+
+        let output = DryRunFormatter::format("m", "", "", &diff, &validation, &report);
+        assert!(output.contains("Summary"));
+        assert!(output.contains("Warnings: 0"));
+        assert!(output.contains("No files were created (dry-run mode)"));
+    }
+
+    #[test]
+    fn test_format_with_warnings() {
+        let diff = SchemaDiff::new();
+        let mut validation = ValidationResult::new();
+        validation.add_warning(ValidationWarning {
+            message: "This is a test warning".to_string(),
+            location: Some(ErrorLocation {
+                table: Some("users".to_string()),
+                column: Some("name".to_string()),
+                line: None,
+            }),
+            kind: WarningKind::DialectSpecific,
+        });
+        let report = DestructiveChangeReport::new();
+
+        let output = DryRunFormatter::format("m", "", "", &diff, &validation, &report);
+        assert!(output.contains("Warnings (1)"));
+        assert!(output.contains("This is a test warning"));
+        assert!(output.contains("users.name"));
+    }
+
+    #[test]
+    fn test_format_with_destructive_changes() {
+        let diff = SchemaDiff::new();
+        let validation = ValidationResult::new();
+        let mut report = DestructiveChangeReport::new();
+        report.tables_dropped.push("old_table".to_string());
+        report.columns_dropped.push(DroppedColumn {
+            table: "users".to_string(),
+            columns: vec!["temp_col".to_string()],
+        });
+        report.columns_renamed.push(RenamedColumnInfo {
+            table: "users".to_string(),
+            old_name: "old_col".to_string(),
+            new_name: "new_col".to_string(),
+        });
+
+        let output = DryRunFormatter::format("m", "", "", &diff, &validation, &report);
+        assert!(output.contains("Destructive Changes Detected"));
+        assert!(output.contains("DROP TABLE: old_table"));
+        assert!(output.contains("DROP COLUMN: users.temp_col"));
+        assert!(output.contains("RENAME COLUMN: users.old_col -> new_col"));
+        assert!(output.contains("--allow-destructive"));
+    }
+
+    #[test]
+    fn test_format_no_destructive_section_when_empty() {
+        let diff = SchemaDiff::new();
+        let validation = ValidationResult::new();
+        let report = DestructiveChangeReport::new();
+
+        let output = DryRunFormatter::format("m", "", "", &diff, &validation, &report);
+        assert!(!output.contains("Destructive Changes Detected"));
+    }
+
+    // --- format_error ---
+
+    #[test]
+    fn test_format_error_contains_header_and_error() {
+        let diff = SchemaDiff::new();
+
+        let output = DryRunFormatter::format_error(
+            "error_migration",
+            "Type change validation failed:\nINTEGER to BOOLEAN is not allowed",
+            &diff,
+        );
+        assert!(output.contains("Dry Run: Migration Preview"));
+        assert!(output.contains("error_migration"));
+        assert!(output.contains("Errors"));
+        assert!(output.contains("Type change validation failed"));
+        assert!(output.contains("INTEGER to BOOLEAN is not allowed"));
+    }
+
+    #[test]
+    fn test_format_error_contains_suggestion() {
+        let diff = SchemaDiff::new();
+        let output = DryRunFormatter::format_error("m", "error", &diff);
+        assert!(output.contains("Suggestion"));
+        assert!(output.contains("TEXT as an intermediate type"));
+    }
+
+    #[test]
+    fn test_format_error_contains_error_summary() {
+        let diff = SchemaDiff::new();
+        let output = DryRunFormatter::format_error("m", "error", &diff);
+        assert!(output.contains("Errors: 1"));
+        assert!(output.contains("migration cannot be generated"));
+    }
+
+    #[test]
+    fn test_format_error_includes_type_changes() {
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.modified_columns.push(ColumnDiff {
+            column_name: "status".to_string(),
+            old_column: make_column("status", ColumnType::INTEGER { precision: None }),
+            new_column: make_column("status", ColumnType::BOOLEAN),
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "INTEGER".to_string(),
+                new_type: "BOOLEAN".to_string(),
+            }],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let output = DryRunFormatter::format_error("m", "type error", &diff);
+        assert!(output.contains("Type Changes"));
+        assert!(output.contains("users.status"));
+    }
+}

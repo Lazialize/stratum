@@ -63,6 +63,23 @@ pub fn validate_constraint_references(schema: &Schema) -> ValidationResult {
                         );
                     }
 
+                    // カラム数の一致確認
+                    if columns.len() != referenced_columns.len() {
+                        result.add_error(ValidationError::Constraint {
+                            message: format!(
+                                "Foreign key constraint in table '{}' has {} column(s) but references {} column(s)",
+                                table_name,
+                                columns.len(),
+                                referenced_columns.len()
+                            ),
+                            location: Some(ErrorLocation::with_table(table_name.clone())),
+                            suggestion: Some(
+                                "Ensure the number of columns matches the number of referenced columns"
+                                    .to_string(),
+                            ),
+                        });
+                    }
+
                     // 参照先テーブルの存在確認
                     if !schema.has_table(referenced_table) {
                         result.add_error(ValidationError::Reference {

@@ -499,8 +499,8 @@ impl SqlGenerator for PostgresSqlGenerator {
             } => {
                 let constraint_name = generate_ck_constraint_name(table_name, columns);
 
-                if let Err(msg) = validate_check_expression(check_expression) {
-                    let sanitized_msg = sanitize_sql_comment(&msg);
+                if let Err(err) = validate_check_expression(check_expression) {
+                    let sanitized_msg = sanitize_sql_comment(&err.to_string());
                     return format!(
                         "/* ERROR: {} */ ALTER TABLE {} ADD CONSTRAINT {} CHECK (FALSE)",
                         sanitized_msg,

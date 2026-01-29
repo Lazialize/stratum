@@ -132,7 +132,7 @@ impl SchemaParserService {
             serde_saphyr::from_str(&content).map_err(|e| self.format_parse_error(file_path, e))?;
 
         // DTOを内部モデルに変換（DtoConverterServiceに委譲）
-        self.dto_converter.dto_to_schema(&dto)
+        Ok(self.dto_converter.dto_to_schema(&dto))
     }
 
     /// serde_saphyrエラーから行番号を抽出

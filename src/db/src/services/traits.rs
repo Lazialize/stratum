@@ -3,6 +3,8 @@
 // テスト時のモック差し替えを可能にするためのトレイト群。
 // 各サービスの公開インターフェースを抽象化します。
 
+use anyhow::Result;
+
 use crate::core::config::Dialect;
 use crate::core::destructive_change_report::DestructiveChangeReport;
 use crate::core::error::{ValidationResult, ValidationWarning};
@@ -48,7 +50,7 @@ pub trait MigrationGenerator {
         new_schema: &Schema,
         dialect: Dialect,
         allow_destructive: bool,
-    ) -> Result<(String, ValidationResult), String>;
+    ) -> Result<(String, ValidationResult)>;
 
     /// DOWN SQLを生成（スキーマ付き、型変更対応）
     fn generate_down_sql_with_schemas(
@@ -58,7 +60,7 @@ pub trait MigrationGenerator {
         new_schema: &Schema,
         dialect: Dialect,
         allow_destructive: bool,
-    ) -> Result<(String, ValidationResult), String>;
+    ) -> Result<(String, ValidationResult)>;
 
     /// マイグレーションメタデータを生成
     fn generate_migration_metadata(
@@ -68,5 +70,5 @@ pub trait MigrationGenerator {
         dialect: Dialect,
         checksum: &str,
         destructive_changes: DestructiveChangeReport,
-    ) -> Result<String, String>;
+    ) -> Result<String>;
 }

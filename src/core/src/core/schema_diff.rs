@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+use crate::core::error::ValidationError;
 use crate::core::schema::{Column, Constraint, EnumDefinition, Index, Table};
 
 /// FK制約から依存関係グラフを構築
@@ -185,7 +186,7 @@ impl SchemaDiff {
     /// # Returns
     ///
     /// ソートされたテーブルのリスト、または循環参照エラー
-    pub fn sort_added_tables_by_dependency(&self) -> Result<Vec<Table>, String> {
+    pub fn sort_added_tables_by_dependency(&self) -> Result<Vec<Table>, ValidationError> {
         if self.added_tables.is_empty() {
             return Ok(Vec::new());
         }
@@ -206,10 +207,14 @@ impl SchemaDiff {
         let (sorted_names, remaining) = topological_sort_kahn(&table_names, &dependencies);
 
         if !remaining.is_empty() {
-            return Err(format!(
-                "Circular reference detected. The following tables have circular references: {:?}",
-                remaining
-            ));
+            return Err(ValidationError::Reference {
+                message: format!(
+                    "Circular reference detected. The following tables have circular references: {:?}",
+                    remaining
+                ),
+                location: None,
+                suggestion: Some("Remove or refactor circular foreign key dependencies".to_string()),
+            });
         }
 
         let sorted = sorted_names
@@ -697,7 +702,7 @@ mod tests {
 
         // Circular reference should result in an error
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Circular reference"));
+        assert!(result.unwrap_err().to_string().contains("Circular reference"));
     }
 
     #[test]

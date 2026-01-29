@@ -4,7 +4,7 @@
 // Schema, Table, Column, Index, Constraint などの構造体を提供します。
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// スキーマ定義
 ///
@@ -21,10 +21,10 @@ pub struct Schema {
 
     /// ENUM定義のマップ（型名 -> EnumDefinition）
     #[serde(default)]
-    pub enums: HashMap<String, EnumDefinition>,
+    pub enums: BTreeMap<String, EnumDefinition>,
 
     /// テーブル定義のマップ（テーブル名 -> Table）
-    pub tables: HashMap<String, Table>,
+    pub tables: BTreeMap<String, Table>,
 }
 
 impl Schema {
@@ -33,8 +33,8 @@ impl Schema {
         Self {
             version,
             enum_recreate_allowed: false,
-            enums: HashMap::new(),
-            tables: HashMap::new(),
+            enums: BTreeMap::new(),
+            tables: BTreeMap::new(),
         }
     }
 
@@ -301,7 +301,6 @@ pub enum ColumnType {
     },
 }
 
-impl ColumnType {}
 
 /// インデックス定義
 ///

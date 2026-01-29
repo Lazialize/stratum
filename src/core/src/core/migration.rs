@@ -102,9 +102,26 @@ impl MigrationFile {
     }
 
     /// バージョン形式が有効かどうかを検証
+    ///
+    /// YYYYMMDDHHmmss形式（14桁の数字）であることに加え、
+    /// 日付・時刻として妥当な値であることを確認します。
     pub fn validate_version(&self) -> bool {
         // YYYYMMDDHHmmss形式（14桁の数字）かどうかをチェック
-        self.version.len() == 14 && self.version.chars().all(|c| c.is_ascii_digit())
+        if self.version.len() != 14 || !self.version.chars().all(|c| c.is_ascii_digit()) {
+            return false;
+        }
+
+        let month: u32 = self.version[4..6].parse().unwrap_or(0);
+        let day: u32 = self.version[6..8].parse().unwrap_or(0);
+        let hour: u32 = self.version[8..10].parse().unwrap_or(99);
+        let minute: u32 = self.version[10..12].parse().unwrap_or(99);
+        let second: u32 = self.version[12..14].parse().unwrap_or(99);
+
+        (1..=12).contains(&month)
+            && (1..=31).contains(&day)
+            && hour <= 23
+            && minute <= 59
+            && second <= 59
     }
 }
 
@@ -213,6 +230,7 @@ impl AppliedMigration {
 }
 
 // chronoのDurationをシリアライズ/デシリアライズするためのヘルパー
+// ミリ秒単位で保持し、サブ秒精度を維持する
 mod duration_serde {
     use chrono::Duration;
     use serde::{Deserialize, Deserializer, Serializer};
@@ -221,15 +239,15 @@ mod duration_serde {
     where
         S: Serializer,
     {
-        serializer.serialize_i64(duration.num_seconds())
+        serializer.serialize_i64(duration.num_milliseconds())
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let seconds = i64::deserialize(deserializer)?;
-        Ok(Duration::seconds(seconds))
+        let millis = i64::deserialize(deserializer)?;
+        Ok(Duration::milliseconds(millis))
     }
 }
 
@@ -297,7 +315,10 @@ impl MigrationHistory {
 
     /// 最新のマイグレーションバージョンを取得
     pub fn get_latest_version(&self) -> Option<&str> {
-        self.records.last().map(|r| r.version.as_str())
+        self.records
+            .iter()
+            .map(|r| r.version.as_str())
+            .max()
     }
 
     /// 指定されたバージョンの記録を取得
