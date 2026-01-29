@@ -25,6 +25,9 @@ fn test_export_command_struct() {
         output_dir: Some(PathBuf::from("/test/output")),
         force: false,
         format: strata::cli::OutputFormat::Text,
+        split: false,
+        tables: vec![],
+        exclude_tables: vec![],
     };
 
     assert_eq!(command.project_path, PathBuf::from("/test/path"));
@@ -45,6 +48,9 @@ async fn test_export_no_config_file() {
         output_dir: None,
         force: false,
         format: strata::cli::OutputFormat::Text,
+        split: false,
+        tables: vec![],
+        exclude_tables: vec![],
     };
 
     let result = handler.execute(&command).await;
@@ -68,6 +74,9 @@ async fn test_export_invalid_environment() {
         output_dir: None,
         force: false,
         format: strata::cli::OutputFormat::Text,
+        split: false,
+        tables: vec![],
+        exclude_tables: vec![],
     };
 
     let result = handler.execute(&command).await;
@@ -148,6 +157,9 @@ async fn test_export_from_sqlite_database() {
         output_dir: Some(export_dir.clone()),
         force: true, // Allow overwrite in test
         format: strata::cli::OutputFormat::Text,
+        split: false,
+        tables: vec![],
+        exclude_tables: vec![],
     };
 
     let result = handler.execute(&command).await;
@@ -204,6 +216,9 @@ async fn test_export_to_stdout() {
         output_dir: None,
         force: false,
         format: strata::cli::OutputFormat::Text,
+        split: false,
+        tables: vec![],
+        exclude_tables: vec![],
     };
 
     let result = handler.execute(&command).await;
@@ -222,7 +237,7 @@ fn test_format_export_summary() {
     let table_names = vec!["users".to_string(), "posts".to_string()];
     let output_path = Some(PathBuf::from("/test/output"));
 
-    let summary = handler.format_export_summary(&table_names, output_path.as_ref());
+    let summary = handler.format_export_summary(&table_names, output_path.as_ref(), false);
 
     assert!(summary.contains("Export Complete"));
     assert!(summary.contains("Exported tables: 2"));
@@ -237,7 +252,7 @@ fn test_format_export_summary_stdout() {
 
     let table_names = vec!["users".to_string()];
 
-    let summary = handler.format_export_summary(&table_names, None);
+    let summary = handler.format_export_summary(&table_names, None, false);
 
     assert!(summary.contains("Export Complete"));
     assert!(summary.contains("Exported tables: 1"));

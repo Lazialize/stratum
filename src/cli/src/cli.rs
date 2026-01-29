@@ -259,6 +259,18 @@ pub enum Commands {
         /// Overwrite existing files without confirmation
         #[arg(long)]
         force: bool,
+
+        /// Split output into separate YAML files per table (e.g., users.yaml, posts.yaml)
+        #[arg(long)]
+        split: bool,
+
+        /// Export only specified tables (comma-separated)
+        #[arg(long, value_name = "TABLES", value_delimiter = ',')]
+        tables: Vec<String>,
+
+        /// Exclude specified tables from export (comma-separated)
+        #[arg(long, value_name = "TABLES", value_delimiter = ',')]
+        exclude_tables: Vec<String>,
     },
 }
 

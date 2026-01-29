@@ -202,8 +202,15 @@ async fn run_command(cli: Cli) -> Result<String> {
             handler.execute(&command).await
         }
 
-        Commands::Export { output, env, force } => {
-            debug!(env = %env, output = ?output, force = force, "Executing export command");
+        Commands::Export {
+            output,
+            env,
+            force,
+            split,
+            tables,
+            exclude_tables,
+        } => {
+            debug!(env = %env, output = ?output, force = force, split = split, tables = ?tables, exclude_tables = ?exclude_tables, "Executing export command");
             let handler = ExportCommandHandler::new();
             let command = ExportCommand {
                 project_path,
@@ -212,6 +219,9 @@ async fn run_command(cli: Cli) -> Result<String> {
                 output_dir: output,
                 force,
                 format,
+                split,
+                tables,
+                exclude_tables,
             };
             handler.execute(&command).await
         }

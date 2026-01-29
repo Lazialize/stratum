@@ -19,7 +19,7 @@ use serde::Serialize;
 use sqlx::AnyPool;
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::debug;
 
 /// exportコマンドの出力構造体
@@ -56,6 +56,12 @@ pub struct ExportCommand {
     pub force: bool,
     /// 出力フォーマット
     pub format: OutputFormat,
+    /// テーブルごとに個別のYAMLファイルに分割出力
+    pub split: bool,
+    /// エクスポート対象のテーブル（空の場合は全テーブル）
+    pub tables: Vec<String>,
+    /// エクスポートから除外するテーブル
+    pub exclude_tables: Vec<String>,
 }
 
 /// exportコマンドハンドラー
@@ -81,6 +87,20 @@ impl ExportCommandHandler {
     ///
     /// 成功時はエクスポート結果のサマリー（または標準出力用のYAML）、失敗時はエラーメッセージ
     pub async fn execute(&self, command: &ExportCommand) -> Result<String> {
+        // --tables と --exclude-tables の同時指定を禁止
+        if !command.tables.is_empty() && !command.exclude_tables.is_empty() {
+            return Err(anyhow!(
+                "Cannot use --tables and --exclude-tables together."
+            ));
+        }
+
+        // --split は --output と併用が必要
+        if command.split && command.output_dir.is_none() {
+            return Err(anyhow!(
+                "--split requires --output to specify the output directory."
+            ));
+        }
+
         // 設定ファイルを読み込む
         let context = CommandContext::load_with_config(
             command.project_path.clone(),
@@ -93,20 +113,20 @@ impl ExportCommandHandler {
 
         // データベースからスキーマ情報を取得
         debug!(dialect = ?config.dialect, "Extracting schema from database");
-        let schema = self
+        let mut schema = self
             .extract_schema_from_database(&pool, config.dialect)
             .await
             .with_context(|| "Failed to get schema information")?;
 
+        // テーブルフィルタリング
+        self.filter_tables(&mut schema, &command.tables, &command.exclude_tables)?;
+
         // テーブル名のリストを取得
-        let table_names: Vec<String> = schema.tables.keys().cloned().collect();
+        let mut table_names: Vec<String> = schema.tables.keys().cloned().collect();
+        table_names.sort();
         debug!(tables = table_names.len(), "Schema extracted successfully");
 
-        // YAML形式にシリアライズ（新構文形式を使用）
         let serializer = SchemaSerializerService::new();
-        let yaml_content = serializer
-            .serialize_to_string(&schema)
-            .with_context(|| "Failed to serialize schema to YAML")?;
 
         // 出力先に応じて処理
         if let Some(output_dir) = &command.output_dir {
@@ -114,28 +134,51 @@ impl ExportCommandHandler {
             fs::create_dir_all(output_dir)
                 .with_context(|| format!("Failed to create output directory: {:?}", output_dir))?;
 
-            let output_file = output_dir.join("schema.yaml");
+            if command.split {
+                // テーブルごとに個別ファイルに出力
+                self.write_split_files(&schema, &serializer, output_dir, command.force)
+                    .with_context(|| "Failed to write split schema files")?;
 
-            // 上書き確認
-            if output_file.exists() && !command.force {
-                return Err(anyhow!(
-                    "Output file already exists: {:?}\nUse --force to overwrite.",
-                    output_file
-                ));
+                let output = ExportOutput {
+                    tables: table_names.clone(),
+                    output_path: Some(output_dir.to_string_lossy().to_string()),
+                    text_message: self.format_export_summary(&table_names, Some(output_dir), true),
+                };
+
+                render_output(&output, &command.format)
+            } else {
+                // 単一ファイルに出力
+                let yaml_content = serializer
+                    .serialize_to_string(&schema)
+                    .with_context(|| "Failed to serialize schema to YAML")?;
+
+                let output_file = output_dir.join("schema.yaml");
+
+                // 上書き確認
+                if output_file.exists() && !command.force {
+                    return Err(anyhow!(
+                        "Output file already exists: {:?}\nUse --force to overwrite.",
+                        output_file
+                    ));
+                }
+
+                fs::write(&output_file, &yaml_content)
+                    .with_context(|| format!("Failed to write schema file: {:?}", output_file))?;
+
+                let output = ExportOutput {
+                    tables: table_names.clone(),
+                    output_path: Some(output_file.to_string_lossy().to_string()),
+                    text_message: self.format_export_summary(&table_names, Some(output_dir), false),
+                };
+
+                render_output(&output, &command.format)
             }
-
-            fs::write(&output_file, &yaml_content)
-                .with_context(|| format!("Failed to write schema file: {:?}", output_file))?;
-
-            let output = ExportOutput {
-                tables: table_names.clone(),
-                output_path: Some(output_file.to_string_lossy().to_string()),
-                text_message: self.format_export_summary(&table_names, Some(output_dir)),
-            };
-
-            render_output(&output, &command.format)
         } else {
             // 標準出力に出力
+            let yaml_content = serializer
+                .serialize_to_string(&schema)
+                .with_context(|| "Failed to serialize schema to YAML")?;
+
             let output = ExportOutput {
                 tables: table_names,
                 output_path: None,
@@ -144,6 +187,106 @@ impl ExportCommandHandler {
 
             render_output(&output, &command.format)
         }
+    }
+
+    /// テーブルフィルタリングを適用
+    fn filter_tables(
+        &self,
+        schema: &mut Schema,
+        tables: &[String],
+        exclude_tables: &[String],
+    ) -> Result<()> {
+        if !tables.is_empty() {
+            // --tables: 指定テーブルのみ残す
+            let include_set: HashSet<&str> = tables.iter().map(|s| s.as_str()).collect();
+
+            // 指定されたテーブルが存在するか確認
+            for name in tables {
+                if !schema.tables.contains_key(name) {
+                    return Err(anyhow!("Table '{}' not found in database.", name));
+                }
+            }
+
+            schema
+                .tables
+                .retain(|name, _| include_set.contains(name.as_str()));
+        } else if !exclude_tables.is_empty() {
+            // --exclude-tables: 指定テーブルを除外
+            let exclude_set: HashSet<&str> = exclude_tables.iter().map(|s| s.as_str()).collect();
+
+            // 指定されたテーブルが存在するか確認
+            for name in exclude_tables {
+                if !schema.tables.contains_key(name) {
+                    return Err(anyhow!("Table '{}' not found in database.", name));
+                }
+            }
+
+            schema
+                .tables
+                .retain(|name, _| !exclude_set.contains(name.as_str()));
+        }
+
+        Ok(())
+    }
+
+    /// テーブルごとに個別YAMLファイルに出力
+    ///
+    /// --force でない場合、書き込みを開始する前に全出力ファイルの存在を確認し、
+    /// 一部だけ書き換わる不整合状態を防ぎます。
+    fn write_split_files(
+        &self,
+        schema: &Schema,
+        serializer: &SchemaSerializerService,
+        output_dir: &Path,
+        force: bool,
+    ) -> Result<()> {
+        // テーブル名でソートして安定した出力順序を保証
+        let mut table_names: Vec<&String> = schema.tables.keys().collect();
+        table_names.sort();
+
+        // --force でない場合、書き込み前に全ファイルの存在を一括チェック
+        if !force {
+            let mut existing_files = Vec::new();
+            for table_name in &table_names {
+                let output_file = output_dir.join(format!("{}.yaml", table_name));
+                if output_file.exists() {
+                    existing_files.push(output_file);
+                }
+            }
+            if !existing_files.is_empty() {
+                let file_list: Vec<String> = existing_files
+                    .iter()
+                    .map(|f| format!("  - {:?}", f))
+                    .collect();
+                return Err(anyhow!(
+                    "Output files already exist:\n{}\nUse --force to overwrite.",
+                    file_list.join("\n")
+                ));
+            }
+        }
+
+        for table_name in table_names {
+            let table = schema.tables.get(table_name).unwrap();
+
+            // テーブル単体のSchemaを作成
+            let mut single_schema = Schema::new(schema.version.clone());
+            single_schema.enum_recreate_allowed = schema.enum_recreate_allowed;
+            single_schema.enums = schema.enums.clone();
+            single_schema.add_table(table.clone());
+
+            let yaml_content = serializer
+                .serialize_to_string(&single_schema)
+                .with_context(|| format!("Failed to serialize table '{}' to YAML", table_name))?;
+
+            let output_file = output_dir.join(format!("{}.yaml", table_name));
+
+            fs::write(&output_file, &yaml_content)
+                .with_context(|| format!("Failed to write schema file: {:?}", output_file))?;
+
+            debug!(table = table_name, file = ?output_file, "Wrote split schema file");
+        }
+
+        Ok(())
     }
 
     /// データベースからスキーマ情報を抽出
@@ -227,6 +370,7 @@ impl ExportCommandHandler {
         &self,
         table_names: &[String],
         output_dir: Option<&PathBuf>,
+        split: bool,
     ) -> String {
         let mut output = String::new();
 
@@ -241,7 +385,14 @@ impl ExportCommandHandler {
         output.push('\n');
 
         if let Some(dir) = output_dir {
-            output.push_str(&format!("Output: {:?}\n", dir.join("schema.yaml")));
+            if split {
+                output.push_str(&format!("Output: {:?} (split mode)\n", dir));
+                for table_name in table_names {
+                    output.push_str(&format!("  - {}.yaml\n", table_name));
+                }
+            } else {
+                output.push_str(&format!("Output: {:?}\n", dir.join("schema.yaml")));
+            }
         } else {
             output.push_str("Output: stdout\n");
         }
@@ -314,12 +465,13 @@ mod tests {
         let table_names = vec!["users".to_string(), "posts".to_string()];
         let output_path = Some(PathBuf::from("/test/output"));
 
-        let summary = handler.format_export_summary(&table_names, output_path.as_ref());
+        let summary = handler.format_export_summary(&table_names, output_path.as_ref(), false);
 
         assert!(summary.contains("Export Complete"));
         assert!(summary.contains("2"));
         assert!(summary.contains("users"));
         assert!(summary.contains("posts"));
+        assert!(summary.contains("schema.yaml"));
     }
 
     #[test]
@@ -328,9 +480,174 @@ mod tests {
 
         let table_names = vec!["users".to_string()];
 
-        let summary = handler.format_export_summary(&table_names, None);
+        let summary = handler.format_export_summary(&table_names, None, false);
 
         assert!(summary.contains("stdout"));
+    }
+
+    #[test]
+    fn test_format_export_summary_split() {
+        let handler = ExportCommandHandler::new();
+
+        let table_names = vec!["users".to_string(), "posts".to_string()];
+        let output_path = Some(PathBuf::from("/test/output"));
+
+        let summary = handler.format_export_summary(&table_names, output_path.as_ref(), true);
+
+        assert!(summary.contains("Export Complete"));
+        assert!(summary.contains("split mode"));
+        assert!(summary.contains("users.yaml"));
+        assert!(summary.contains("posts.yaml"));
+    }
+
+    #[test]
+    fn test_filter_tables_include() {
+        use crate::core::schema::Table;
+
+        let handler = ExportCommandHandler::new();
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_table(Table::new("users".to_string()));
+        schema.add_table(Table::new("posts".to_string()));
+        schema.add_table(Table::new("comments".to_string()));
+
+        handler
+            .filter_tables(
+                &mut schema,
+                &vec!["users".to_string(), "posts".to_string()],
+                &vec![],
+            )
+            .unwrap();
+
+        assert_eq!(schema.tables.len(), 2);
+        assert!(schema.tables.contains_key("users"));
+        assert!(schema.tables.contains_key("posts"));
+        assert!(!schema.tables.contains_key("comments"));
+    }
+
+    #[test]
+    fn test_filter_tables_exclude() {
+        use crate::core::schema::Table;
+        let handler = ExportCommandHandler::new();
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_table(Table::new("users".to_string()));
+        schema.add_table(Table::new("posts".to_string()));
+        schema.add_table(Table::new("comments".to_string()));
+
+        handler
+            .filter_tables(&mut schema, &vec![], &vec!["comments".to_string()])
+            .unwrap();
+
+        assert_eq!(schema.tables.len(), 2);
+        assert!(schema.tables.contains_key("users"));
+        assert!(schema.tables.contains_key("posts"));
+        assert!(!schema.tables.contains_key("comments"));
+    }
+
+    #[test]
+    fn test_filter_tables_nonexistent_table_error() {
+        use crate::core::schema::Table;
+        let handler = ExportCommandHandler::new();
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_table(Table::new("users".to_string()));
+
+        let result = handler.filter_tables(&mut schema, &vec!["nonexistent".to_string()], &vec![]);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("nonexistent"));
+    }
+
+    #[test]
+    fn test_filter_tables_no_filter() {
+        use crate::core::schema::Table;
+        let handler = ExportCommandHandler::new();
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_table(Table::new("users".to_string()));
+        schema.add_table(Table::new("posts".to_string()));
+
+        handler
+            .filter_tables(&mut schema, &vec![], &vec![])
+            .unwrap();
+
+        assert_eq!(schema.tables.len(), 2);
+    }
+
+    #[test]
+    fn test_write_split_files_creates_per_table_files() {
+        use crate::core::schema::Table;
+        use crate::services::schema_io::schema_serializer::SchemaSerializerService;
+        use tempfile::TempDir;
+
+        let handler = ExportCommandHandler::new();
+        let serializer = SchemaSerializerService::new();
+        let temp_dir = TempDir::new().unwrap();
+        let output_dir = temp_dir.path().to_path_buf();
+
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_table(Table::new("users".to_string()));
+        schema.add_table(Table::new("posts".to_string()));
+
+        handler
+            .write_split_files(&schema, &serializer, &output_dir, false)
+            .unwrap();
+
+        assert!(output_dir.join("users.yaml").exists());
+        assert!(output_dir.join("posts.yaml").exists());
+        // schema.yaml は作成されない
+        assert!(!output_dir.join("schema.yaml").exists());
+    }
+
+    #[test]
+    fn test_write_split_files_rejects_existing_before_any_write() {
+        use crate::core::schema::Table;
+        use crate::services::schema_io::schema_serializer::SchemaSerializerService;
+        use tempfile::TempDir;
+
+        let handler = ExportCommandHandler::new();
+        let serializer = SchemaSerializerService::new();
+        let temp_dir = TempDir::new().unwrap();
+        let output_dir = temp_dir.path().to_path_buf();
+
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_table(Table::new("aaa".to_string()));
+        schema.add_table(Table::new("zzz".to_string()));
+
+        // ソート順で後ろに来る zzz.yaml だけ事前に作成
+        fs::write(output_dir.join("zzz.yaml"), "existing").unwrap();
+
+        let result = handler.write_split_files(&schema, &serializer, &output_dir, false);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("zzz.yaml"));
+
+        // aaa.yaml はまだ書き込まれていないことを確認（一括チェックが先行）
+        assert!(!output_dir.join("aaa.yaml").exists());
+    }
+
+    #[test]
+    fn test_write_split_files_force_overwrites_existing() {
+        use crate::core::schema::Table;
+        use crate::services::schema_io::schema_serializer::SchemaSerializerService;
+        use tempfile::TempDir;
+
+        let handler = ExportCommandHandler::new();
+        let serializer = SchemaSerializerService::new();
+        let temp_dir = TempDir::new().unwrap();
+        let output_dir = temp_dir.path().to_path_buf();
+
+        let mut schema = Schema::new("1.0".to_string());
+        schema.add_table(Table::new("users".to_string()));
+
+        // 事前にファイルを作成
+        fs::write(output_dir.join("users.yaml"), "old content").unwrap();
+
+        // --force で上書き成功
+        handler
+            .write_split_files(&schema, &serializer, &output_dir, true)
+            .unwrap();
+
+        let content = fs::read_to_string(output_dir.join("users.yaml")).unwrap();
+        // 上書きされて YAML 形式になっている
+        assert!(content.contains("version:"));
     }
 
     #[test]
