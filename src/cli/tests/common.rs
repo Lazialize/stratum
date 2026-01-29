@@ -75,7 +75,7 @@ pub fn create_test_migration(
     fs::write(migration_dir.join("down.sql"), down_sql)?;
 
     let meta = format!(
-        "version: \"{}\"\ndescription: \"{}\"\nchecksum: \"{}\"\n",
+        "version: \"{}\"\ndescription: \"{}\"\ndialect: \"sqlite\"\nchecksum: \"{}\"\ndestructive_changes: {{}}\n",
         version, description, checksum
     );
     fs::write(migration_dir.join(".meta.yaml"), meta)?;
