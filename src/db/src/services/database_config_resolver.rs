@@ -99,4 +99,90 @@ mod tests {
         assert_eq!(resolved.timeout, Some(30));
         std::env::remove_var("DB_TIMEOUT");
     }
+
+    #[test]
+    #[serial]
+    fn test_apply_env_overrides_host() {
+        let config = base_config();
+        std::env::set_var("DB_HOST", "newhost");
+        let resolved = DatabaseConfigResolver::apply_env_overrides(&config);
+        assert_eq!(resolved.host, "newhost");
+        std::env::remove_var("DB_HOST");
+    }
+
+    #[test]
+    #[serial]
+    fn test_apply_env_overrides_database() {
+        let config = base_config();
+        std::env::set_var("DB_DATABASE", "newdb");
+        let resolved = DatabaseConfigResolver::apply_env_overrides(&config);
+        assert_eq!(resolved.database, "newdb");
+        std::env::remove_var("DB_DATABASE");
+    }
+
+    #[test]
+    #[serial]
+    fn test_apply_env_overrides_user() {
+        let config = base_config();
+        std::env::set_var("DB_USER", "admin");
+        let resolved = DatabaseConfigResolver::apply_env_overrides(&config);
+        assert_eq!(resolved.user, Some("admin".to_string()));
+        std::env::remove_var("DB_USER");
+    }
+
+    #[test]
+    #[serial]
+    fn test_apply_env_overrides_password() {
+        let config = base_config();
+        std::env::set_var("DB_PASSWORD", "secret");
+        let resolved = DatabaseConfigResolver::apply_env_overrides(&config);
+        assert_eq!(resolved.password, Some("secret".to_string()));
+        std::env::remove_var("DB_PASSWORD");
+    }
+
+    #[test]
+    #[serial]
+    fn test_apply_env_overrides_valid_port() {
+        let config = base_config();
+        std::env::set_var("DB_PORT", "3306");
+        let resolved = DatabaseConfigResolver::apply_env_overrides(&config);
+        assert_eq!(resolved.port, Some(3306));
+        std::env::remove_var("DB_PORT");
+    }
+
+    #[test]
+    #[serial]
+    fn test_apply_env_overrides_no_env_keeps_base() {
+        // 全ての環境変数が未設定の場合、ベース値がそのまま保持される
+        std::env::remove_var("DB_HOST");
+        std::env::remove_var("DB_PORT");
+        std::env::remove_var("DB_DATABASE");
+        std::env::remove_var("DB_USER");
+        std::env::remove_var("DB_PASSWORD");
+        std::env::remove_var("DB_TIMEOUT");
+
+        let config = base_config();
+        let resolved = DatabaseConfigResolver::apply_env_overrides(&config);
+        assert_eq!(resolved.port, Some(5432));
+        assert_eq!(resolved.database, "testdb");
+        assert_eq!(resolved.user, Some("user".to_string()));
+        assert_eq!(resolved.password, Some("pass".to_string()));
+        assert_eq!(resolved.timeout, Some(30));
+    }
+
+    #[test]
+    #[serial]
+    fn test_apply_env_overrides_multiple() {
+        let config = base_config();
+        std::env::set_var("DB_HOST", "remotehost");
+        std::env::set_var("DB_PORT", "5433");
+        std::env::set_var("DB_DATABASE", "proddb");
+        let resolved = DatabaseConfigResolver::apply_env_overrides(&config);
+        assert_eq!(resolved.host, "remotehost");
+        assert_eq!(resolved.port, Some(5433));
+        assert_eq!(resolved.database, "proddb");
+        std::env::remove_var("DB_HOST");
+        std::env::remove_var("DB_PORT");
+        std::env::remove_var("DB_DATABASE");
+    }
 }

@@ -408,6 +408,192 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_schema_with_indexes() {
+        let service = SchemaChecksumService::new();
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            true,
+        ));
+        table.indexes.push(crate::core::schema::Index {
+            name: "idx_email".to_string(),
+            columns: vec!["email".to_string()],
+            unique: true,
+        });
+        schema.add_table(table);
+
+        let normalized = service.normalize_schema(&schema);
+        assert!(normalized.contains("idx_email"));
+        assert!(normalized.contains("email"));
+    }
+
+    #[test]
+    fn test_normalize_schema_with_foreign_key() {
+        let service = SchemaChecksumService::new();
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("posts".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_column(Column::new(
+            "user_id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.add_constraint(Constraint::FOREIGN_KEY {
+            columns: vec!["user_id".to_string()],
+            referenced_table: "users".to_string(),
+            referenced_columns: vec!["id".to_string()],
+            on_delete: Some(crate::core::schema::ReferentialAction::Cascade),
+            on_update: Some(crate::core::schema::ReferentialAction::SetNull),
+        });
+        schema.add_table(table);
+
+        let normalized = service.normalize_schema(&schema);
+        assert!(normalized.contains("posts"));
+        assert!(normalized.contains("FOREIGN_KEY"));
+        assert!(normalized.contains("CASCADE"));
+        assert!(normalized.contains("SET NULL"));
+    }
+
+    #[test]
+    fn test_normalize_schema_with_unique_constraint() {
+        let service = SchemaChecksumService::new();
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            false,
+        ));
+        table.add_constraint(Constraint::UNIQUE {
+            columns: vec!["email".to_string()],
+        });
+        schema.add_table(table);
+
+        let normalized = service.normalize_schema(&schema);
+        assert!(normalized.contains("UNIQUE"));
+    }
+
+    #[test]
+    fn test_normalize_schema_with_check_constraint() {
+        let service = SchemaChecksumService::new();
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("products".to_string());
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2,
+            },
+            false,
+        ));
+        table.add_constraint(Constraint::CHECK {
+            columns: vec!["price".to_string()],
+            check_expression: "price > 0".to_string(),
+        });
+        schema.add_table(table);
+
+        let normalized = service.normalize_schema(&schema);
+        assert!(normalized.contains("CHECK"));
+        assert!(normalized.contains("price > 0"));
+    }
+
+    #[test]
+    fn test_normalize_schema_with_default_value_and_auto_increment() {
+        let service = SchemaChecksumService::new();
+        let mut schema = Schema::new("1.0".to_string());
+        let mut table = Table::new("items".to_string());
+        let mut col = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        col.auto_increment = Some(true);
+        table.add_column(col);
+        let mut col2 = Column::new(
+            "status".to_string(),
+            ColumnType::VARCHAR { length: 50 },
+            false,
+        );
+        col2.default_value = Some("active".to_string());
+        table.add_column(col2);
+        schema.add_table(table);
+
+        let normalized = service.normalize_schema(&schema);
+        assert!(normalized.contains("auto_increment"));
+        assert!(normalized.contains("active"));
+    }
+
+    #[test]
+    fn test_column_type_to_stable_string_all_types() {
+        let service = SchemaChecksumService::new();
+
+        // Test various column types produce distinct checksums
+        let types_schemas: Vec<Schema> = vec![
+            ColumnType::INTEGER { precision: Some(4) },
+            ColumnType::VARCHAR { length: 100 },
+            ColumnType::TEXT,
+            ColumnType::BOOLEAN,
+            ColumnType::DATE,
+            ColumnType::TIMESTAMP {
+                with_time_zone: Some(true),
+            },
+            ColumnType::TIME {
+                with_time_zone: Some(true),
+            },
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2,
+            },
+            ColumnType::FLOAT,
+            ColumnType::DOUBLE,
+            ColumnType::CHAR { length: 1 },
+            ColumnType::BLOB,
+            ColumnType::UUID,
+            ColumnType::JSON,
+            ColumnType::JSONB,
+            ColumnType::Enum {
+                name: "status".to_string(),
+            },
+            ColumnType::DialectSpecific {
+                kind: "CITEXT".to_string(),
+                params: serde_json::json!({}),
+            },
+        ]
+        .into_iter()
+        .map(|ct| {
+            let mut s = Schema::new("1.0".to_string());
+            let mut t = Table::new("test".to_string());
+            t.add_column(Column::new("col".to_string(), ct, false));
+            s.add_table(t);
+            s
+        })
+        .collect();
+
+        // All should produce unique checksums
+        let checksums: Vec<String> = types_schemas
+            .iter()
+            .map(|s| service.calculate_checksum(s))
+            .collect();
+        let unique: std::collections::HashSet<&String> = checksums.iter().collect();
+        assert_eq!(
+            checksums.len(),
+            unique.len(),
+            "All column types should produce distinct checksums"
+        );
+    }
+
+    #[test]
     fn test_normalize_uses_stable_serialization() {
         let mut schema = Schema::new("1.0".to_string());
 

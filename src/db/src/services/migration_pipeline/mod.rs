@@ -625,4 +625,224 @@ mod tests {
         assert!(sql.contains(r#"DROP TABLE "users""#));
         assert!(sql.contains(r#"DROP TABLE "posts""#));
     }
+
+    #[test]
+    fn test_pipeline_with_allow_destructive() {
+        let diff = SchemaDiff::new();
+        let pipeline =
+            MigrationPipeline::new(&diff, Dialect::PostgreSQL).with_allow_destructive(true);
+        assert!(pipeline.allow_destructive);
+    }
+
+    #[test]
+    fn test_pipeline_stage_error_prepare() {
+        let error = PipelineStageError::Prepare {
+            message: "validation failed".to_string(),
+        };
+        assert_eq!(error.stage(), "prepare");
+        assert!(error.to_string().contains("validation failed"));
+    }
+
+    #[test]
+    fn test_pipeline_stage_error_circular_dependency() {
+        let error = PipelineStageError::CircularDependency {
+            message: "cycle detected".to_string(),
+        };
+        assert_eq!(error.stage(), "table_statements");
+        assert!(error.to_string().contains("cycle detected"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_removed_table_with_old_schema() {
+        use crate::core::schema::Column;
+        use crate::core::schema::ColumnType;
+
+        let mut diff = SchemaDiff::new();
+        diff.removed_tables.push("users".to_string());
+
+        let mut old_schema = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        old_schema.add_table(old_table);
+        let new_schema = Schema::new("1.0".to_string());
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)
+            .with_schemas(&old_schema, &new_schema);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("CREATE TABLE"));
+        assert!(sql.contains("users"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_removed_table_without_old_schema() {
+        let mut diff = SchemaDiff::new();
+        diff.removed_tables.push("users".to_string());
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("NOTE"));
+        assert!(sql.contains("users"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_added_columns_dropped() {
+        use crate::core::schema::{Column, ColumnType};
+        use crate::core::schema_diff::TableDiff;
+
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.added_columns.push(Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            true,
+        ));
+        diff.modified_tables.push(table_diff);
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("DROP COLUMN"));
+        assert!(sql.contains("email"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_renamed_table() {
+        use crate::core::schema_diff::RenamedTable;
+
+        let mut diff = SchemaDiff::new();
+        let new_table = Table::new("accounts".to_string());
+        diff.renamed_tables.push(RenamedTable {
+            old_name: "users".to_string(),
+            new_table,
+        });
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("RENAME TO"));
+        assert!(sql.contains("accounts"));
+        assert!(sql.contains("users"));
+    }
+
+    #[test]
+    fn test_pipeline_transaction_header_mysql() {
+        let mut diff = SchemaDiff::new();
+        diff.added_tables.push(Table::new("test".to_string()));
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::MySQL);
+        let result = pipeline.generate_up();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("implicit commits"));
+    }
+
+    #[test]
+    fn test_pipeline_transaction_header_sqlite() {
+        let mut diff = SchemaDiff::new();
+        diff.added_tables.push(Table::new("test".to_string()));
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::SQLite);
+        let result = pipeline.generate_up();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("Transaction:"));
+    }
+
+    #[test]
+    fn test_pipeline_empty_sql_no_header() {
+        let diff = SchemaDiff::new();
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_up();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.is_empty());
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_enum_added() {
+        use crate::core::schema::EnumDefinition;
+
+        let mut diff = SchemaDiff::new();
+        diff.added_enums.push(EnumDefinition {
+            name: "status".to_string(),
+            values: vec!["active".to_string(), "inactive".to_string()],
+        });
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("DROP TYPE") || sql.contains("status"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_enum_removed_with_old_schema() {
+        use crate::core::schema::EnumDefinition;
+
+        let mut diff = SchemaDiff::new();
+        diff.removed_enums.push("status".to_string());
+
+        let mut old_schema = Schema::new("1.0".to_string());
+        old_schema.enums.insert(
+            "status".to_string(),
+            EnumDefinition {
+                name: "status".to_string(),
+                values: vec!["active".to_string(), "inactive".to_string()],
+            },
+        );
+        let new_schema = Schema::new("1.0".to_string());
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)
+            .with_schemas(&old_schema, &new_schema);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("CREATE TYPE") || sql.contains("status"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_enum_removed_without_old_schema() {
+        let mut diff = SchemaDiff::new();
+        diff.removed_enums.push("status".to_string());
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("TODO"));
+        assert!(sql.contains("status"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_enum_modified() {
+        use crate::core::schema_diff::{EnumChangeKind, EnumDiff};
+
+        let mut diff = SchemaDiff::new();
+        diff.modified_enums.push(EnumDiff {
+            enum_name: "status".to_string(),
+            old_values: vec!["active".to_string()],
+            new_values: vec!["active".to_string(), "pending".to_string()],
+            added_values: vec!["pending".to_string()],
+            removed_values: vec![],
+            change_kind: EnumChangeKind::AddOnly,
+            columns: vec![],
+        });
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("TODO"));
+        assert!(sql.contains("status"));
+    }
 }

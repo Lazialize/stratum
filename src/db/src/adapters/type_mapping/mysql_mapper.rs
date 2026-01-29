@@ -205,4 +205,248 @@ mod tests {
 
         assert_eq!(service.to_sql_type(&col_type), "TINYINT UNSIGNED");
     }
+
+    #[test]
+    fn test_mysql_parse_smallint() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("smallint", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::INTEGER { precision: Some(2) }));
+    }
+
+    #[test]
+    fn test_mysql_parse_bigint() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("bigint", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::INTEGER { precision: Some(8) }));
+    }
+
+    #[test]
+    fn test_mysql_parse_tinyint() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            numeric_precision: Some(1),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("tinyint", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::INTEGER { precision: Some(1) }));
+    }
+
+    #[test]
+    fn test_mysql_parse_tinyint_1_is_boolean() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("tinyint(1)", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::BOOLEAN));
+    }
+
+    #[test]
+    fn test_mysql_parse_text_types() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+
+        let result = mapper.parse_sql_type("text", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::TEXT));
+
+        let result = mapper.parse_sql_type("longtext", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::TEXT));
+
+        let result = mapper.parse_sql_type("mediumtext", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::TEXT));
+    }
+
+    #[test]
+    fn test_mysql_parse_blob_types() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+
+        let result = mapper.parse_sql_type("blob", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::BLOB));
+
+        let result = mapper.parse_sql_type("longblob", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::BLOB));
+
+        let result = mapper.parse_sql_type("mediumblob", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::BLOB));
+    }
+
+    #[test]
+    fn test_mysql_parse_date() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("date", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::DATE));
+    }
+
+    #[test]
+    fn test_mysql_parse_time() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("time", &metadata).unwrap();
+        assert!(matches!(
+            result,
+            ColumnType::TIME {
+                with_time_zone: None
+            }
+        ));
+    }
+
+    #[test]
+    fn test_mysql_parse_datetime_and_timestamp() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+
+        let result = mapper.parse_sql_type("datetime", &metadata).unwrap();
+        assert!(matches!(
+            result,
+            ColumnType::TIMESTAMP {
+                with_time_zone: None
+            }
+        ));
+
+        let result = mapper.parse_sql_type("timestamp", &metadata).unwrap();
+        assert!(matches!(
+            result,
+            ColumnType::TIMESTAMP {
+                with_time_zone: None
+            }
+        ));
+    }
+
+    #[test]
+    fn test_mysql_parse_json() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("json", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::JSON));
+    }
+
+    #[test]
+    fn test_mysql_parse_decimal() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            numeric_precision: Some(10),
+            numeric_scale: Some(2),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("decimal", &metadata).unwrap();
+        assert!(matches!(
+            result,
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2
+            }
+        ));
+    }
+
+    #[test]
+    fn test_mysql_parse_float_double() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+
+        let result = mapper.parse_sql_type("float", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::FLOAT));
+
+        let result = mapper.parse_sql_type("double", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::DOUBLE));
+    }
+
+    #[test]
+    fn test_mysql_parse_char() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            char_max_length: Some(10),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("char", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::CHAR { length: 10 }));
+    }
+
+    #[test]
+    fn test_mysql_parse_unknown_returns_none() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("unknowntype", &metadata);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_mysql_format_timestamp() {
+        let mapper = MySqlTypeMapper;
+        let result = mapper.format_sql_type(
+            &ColumnType::TIMESTAMP {
+                with_time_zone: None,
+            },
+            None,
+        );
+        assert_eq!(result, "TIMESTAMP");
+    }
+
+    #[test]
+    fn test_mysql_format_time() {
+        let mapper = MySqlTypeMapper;
+        let result = mapper.format_sql_type(
+            &ColumnType::TIME {
+                with_time_zone: None,
+            },
+            None,
+        );
+        assert_eq!(result, "TIME");
+    }
+
+    #[test]
+    fn test_mysql_format_blob() {
+        let mapper = MySqlTypeMapper;
+        let result = mapper.format_sql_type(&ColumnType::BLOB, None);
+        assert_eq!(result, "BLOB");
+    }
+
+    #[test]
+    fn test_mysql_format_float_double() {
+        let mapper = MySqlTypeMapper;
+        assert_eq!(mapper.format_sql_type(&ColumnType::FLOAT, None), "FLOAT");
+        assert_eq!(mapper.format_sql_type(&ColumnType::DOUBLE, None), "DOUBLE");
+    }
+
+    #[test]
+    fn test_mysql_format_decimal() {
+        let mapper = MySqlTypeMapper;
+        let result = mapper.format_sql_type(
+            &ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2,
+            },
+            None,
+        );
+        assert_eq!(result, "DECIMAL(10, 2)");
+    }
+
+    #[test]
+    fn test_mysql_format_enum_fallback() {
+        let mapper = MySqlTypeMapper;
+        let result = mapper.format_sql_type(
+            &ColumnType::Enum {
+                name: "status".to_string(),
+            },
+            None,
+        );
+        assert_eq!(result, "TEXT");
+    }
+
+    #[test]
+    fn test_mysql_dialect_specific_with_length() {
+        let mapper = MySqlTypeMapper;
+        let params = serde_json::json!({ "length": 20 });
+        let result = mapper.format_dialect_specific("VARBINARY", &params);
+        assert_eq!(result, "VARBINARY(20)");
+    }
+
+    #[test]
+    fn test_mysql_dialect_specific_no_params() {
+        let mapper = MySqlTypeMapper;
+        let params = serde_json::json!({});
+        let result = mapper.format_dialect_specific("TINYINT", &params);
+        assert_eq!(result, "TINYINT");
+    }
 }

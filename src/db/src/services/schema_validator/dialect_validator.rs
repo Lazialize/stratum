@@ -175,4 +175,179 @@ mod tests {
             .message
             .contains("will be stored as JSON in MySQL"));
     }
+
+    #[test]
+    fn test_generate_dialect_warnings_sqlite_uuid() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new("uuid".to_string(), ColumnType::UUID, false));
+        schema.add_table(table);
+
+        let warnings = generate_dialect_warnings(&schema, &Dialect::SQLite);
+
+        assert!(!warnings.is_empty());
+        assert!(warnings[0]
+            .message
+            .contains("will be stored as TEXT in SQLite"));
+    }
+
+    #[test]
+    fn test_generate_dialect_warnings_sqlite_jsonb() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("documents".to_string());
+        table.add_column(Column::new("data".to_string(), ColumnType::JSONB, false));
+        schema.add_table(table);
+
+        let warnings = generate_dialect_warnings(&schema, &Dialect::SQLite);
+
+        assert!(!warnings.is_empty());
+        assert!(warnings[0]
+            .message
+            .contains("will be stored as TEXT in SQLite"));
+    }
+
+    #[test]
+    fn test_generate_dialect_warnings_mysql_time_with_tz() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("events".to_string());
+        table.add_column(Column::new(
+            "start_time".to_string(),
+            ColumnType::TIME {
+                with_time_zone: Some(true),
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let warnings = generate_dialect_warnings(&schema, &Dialect::MySQL);
+
+        assert!(!warnings.is_empty());
+        assert!(warnings[0]
+            .message
+            .contains("timezone information will be lost"));
+    }
+
+    #[test]
+    fn test_generate_dialect_warnings_sqlite_time_with_tz() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("events".to_string());
+        table.add_column(Column::new(
+            "start_time".to_string(),
+            ColumnType::TIME {
+                with_time_zone: Some(true),
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let warnings = generate_dialect_warnings(&schema, &Dialect::SQLite);
+
+        assert!(!warnings.is_empty());
+        assert!(warnings[0]
+            .message
+            .contains("timezone information will be lost"));
+    }
+
+    #[test]
+    fn test_generate_dialect_warnings_sqlite_date() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("events".to_string());
+        table.add_column(Column::new(
+            "event_date".to_string(),
+            ColumnType::DATE,
+            false,
+        ));
+        schema.add_table(table);
+
+        let warnings = generate_dialect_warnings(&schema, &Dialect::SQLite);
+
+        assert!(!warnings.is_empty());
+        assert!(warnings[0]
+            .message
+            .contains("will be stored as TEXT in SQLite"));
+    }
+
+    #[test]
+    fn test_generate_dialect_warnings_postgres_no_warnings() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new("uuid".to_string(), ColumnType::UUID, false));
+        table.add_column(Column::new("data".to_string(), ColumnType::JSONB, false));
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2,
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let warnings = generate_dialect_warnings(&schema, &Dialect::PostgreSQL);
+
+        assert!(
+            warnings.is_empty(),
+            "PostgreSQL should not generate warnings for UUID, JSONB, or DECIMAL"
+        );
+    }
+
+    #[test]
+    fn test_generate_dialect_warnings_multiple_warnings() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("mixed".to_string());
+        table.add_column(Column::new("uuid".to_string(), ColumnType::UUID, false));
+        table.add_column(Column::new("data".to_string(), ColumnType::JSONB, false));
+        table.add_column(Column::new(
+            "price".to_string(),
+            ColumnType::DECIMAL {
+                precision: 10,
+                scale: 2,
+            },
+            false,
+        ));
+        table.add_column(Column::new(
+            "event_date".to_string(),
+            ColumnType::DATE,
+            false,
+        ));
+        schema.add_table(table);
+
+        let warnings = generate_dialect_warnings(&schema, &Dialect::SQLite);
+
+        // SQLiteでは UUID, JSONB, DECIMAL, DATE の4つの警告が出る
+        assert!(
+            warnings.len() >= 4,
+            "Expected at least 4 warnings for SQLite, got {}",
+            warnings.len()
+        );
+    }
+
+    #[test]
+    fn test_generate_dialect_warnings_time_without_tz_no_warning() {
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("events".to_string());
+        table.add_column(Column::new(
+            "start_time".to_string(),
+            ColumnType::TIME {
+                with_time_zone: None,
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let warnings = generate_dialect_warnings(&schema, &Dialect::MySQL);
+
+        assert!(
+            warnings.is_empty(),
+            "TIME without TZ should not generate warnings for MySQL"
+        );
+    }
 }

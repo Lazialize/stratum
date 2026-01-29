@@ -238,4 +238,164 @@ mod tests {
         assert_eq!(diff.removed_tables.len(), 1);
         assert_eq!(diff.removed_tables[0], "users");
     }
+
+    #[test]
+    fn test_detect_table_modified() {
+        let service = SchemaDiffDetectorService::new();
+
+        let mut schema1 = Schema::new("1.0".to_string());
+        let mut table1 = Table::new("users".to_string());
+        table1.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        schema1.add_table(table1);
+
+        let mut schema2 = Schema::new("1.0".to_string());
+        let mut table2 = Table::new("users".to_string());
+        table2.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table2.add_column(Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            true,
+        ));
+        schema2.add_table(table2);
+
+        let diff = service.detect_diff(&schema1, &schema2);
+        assert_eq!(diff.modified_tables.len(), 1);
+        assert_eq!(diff.modified_tables[0].table_name, "users");
+    }
+
+    #[test]
+    fn test_detect_table_renamed() {
+        let service = SchemaDiffDetectorService::new();
+
+        let mut schema1 = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        schema1.add_table(old_table);
+
+        let mut schema2 = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("accounts".to_string());
+        new_table.renamed_from = Some("users".to_string());
+        new_table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        schema2.add_table(new_table);
+
+        let diff = service.detect_diff(&schema1, &schema2);
+        assert_eq!(diff.renamed_tables.len(), 1);
+        assert_eq!(diff.renamed_tables[0].old_name, "users");
+        assert_eq!(diff.renamed_tables[0].new_table.name, "accounts");
+        // Old table should NOT appear in removed
+        assert!(diff.removed_tables.is_empty());
+    }
+
+    #[test]
+    fn test_detect_diff_with_warnings() {
+        let service = SchemaDiffDetectorService::new();
+        let schema1 = Schema::new("1.0".to_string());
+
+        let mut schema2 = Schema::new("1.0".to_string());
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        schema2.add_table(table);
+
+        let (diff, _warnings) = service.detect_diff_with_warnings(&schema1, &schema2);
+        assert_eq!(diff.added_tables.len(), 1);
+    }
+
+    #[test]
+    fn test_detect_diff_with_warnings_modified_table() {
+        let service = SchemaDiffDetectorService::new();
+
+        let mut schema1 = Schema::new("1.0".to_string());
+        let mut table1 = Table::new("users".to_string());
+        table1.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        schema1.add_table(table1);
+
+        let mut schema2 = Schema::new("1.0".to_string());
+        let mut table2 = Table::new("users".to_string());
+        table2.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table2.add_column(Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            true,
+        ));
+        schema2.add_table(table2);
+
+        let (diff, _warnings) = service.detect_diff_with_warnings(&schema1, &schema2);
+        assert_eq!(diff.modified_tables.len(), 1);
+    }
+
+    #[test]
+    fn test_detect_diff_with_warnings_renamed_table() {
+        let service = SchemaDiffDetectorService::new();
+
+        let mut schema1 = Schema::new("1.0".to_string());
+        let mut old_table = Table::new("users".to_string());
+        old_table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        schema1.add_table(old_table);
+
+        let mut schema2 = Schema::new("1.0".to_string());
+        let mut new_table = Table::new("accounts".to_string());
+        new_table.renamed_from = Some("users".to_string());
+        new_table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        schema2.add_table(new_table);
+
+        let (diff, _warnings) = service.detect_diff_with_warnings(&schema1, &schema2);
+        assert_eq!(diff.renamed_tables.len(), 1);
+        assert!(diff.removed_tables.is_empty());
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let service = SchemaDiffDetectorService::default();
+        let s1 = Schema::new("1.0".to_string());
+        let s2 = Schema::new("1.0".to_string());
+        let diff = service.detect_diff(&s1, &s2);
+        assert!(diff.is_empty());
+    }
+
+    #[test]
+    fn test_trait_impl() {
+        use crate::services::traits::SchemaDiffDetector;
+        let service = SchemaDiffDetectorService::new();
+        let s1 = Schema::new("1.0".to_string());
+        let s2 = Schema::new("1.0".to_string());
+        let (diff, warnings) = SchemaDiffDetector::detect_diff_with_warnings(&service, &s1, &s2);
+        assert!(diff.is_empty());
+        assert!(warnings.is_empty());
+    }
 }

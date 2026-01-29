@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn test_default_service() {
-        let service = DtoConverterService::default();
+        let service = DtoConverterService;
         assert!(format!("{:?}", service).contains("DtoConverterService"));
     }
 

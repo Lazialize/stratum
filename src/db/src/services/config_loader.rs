@@ -91,4 +91,42 @@ mod tests {
         std::env::remove_var("TEST_HOST");
         std::env::remove_var("TEST_PORT");
     }
+
+    #[test]
+    fn test_from_file_valid_config() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let config_path = dir.path().join("config.yaml");
+        let config_content = r#"version: "1.0"
+dialect: sqlite
+schema_dir: schema
+migrations_dir: migrations
+environments:
+  development:
+    host: ""
+    database: ":memory:"
+"#;
+        std::fs::write(&config_path, config_content).unwrap();
+
+        let config = ConfigLoader::from_file(&config_path).unwrap();
+        assert_eq!(config.version, "1.0");
+        assert!(config.environments.contains_key("development"));
+    }
+
+    #[test]
+    fn test_from_file_not_found() {
+        let result = ConfigLoader::from_file(Path::new("/nonexistent/path/config.yaml"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Failed to read config file"));
+    }
+
+    #[test]
+    fn test_from_file_invalid_yaml() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let config_path = dir.path().join("config.yaml");
+        std::fs::write(&config_path, "invalid: [[[yaml").unwrap();
+
+        let result = ConfigLoader::from_file(&config_path);
+        assert!(result.is_err());
+    }
 }

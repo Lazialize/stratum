@@ -564,9 +564,7 @@ mod tests {
         schema.add_table(Table::new("users".to_string()));
         schema.add_table(Table::new("posts".to_string()));
 
-        handler
-            .filter_tables(&mut schema, &[], &[])
-            .unwrap();
+        handler.filter_tables(&mut schema, &[], &[]).unwrap();
 
         assert_eq!(schema.tables.len(), 2);
     }

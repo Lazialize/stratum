@@ -691,7 +691,7 @@ mod tests {
     #[test]
     fn test_generate_fk_constraint_name_short() {
         // 63文字以下の場合はそのまま返す
-        let name = generate_fk_constraint_name("posts", &vec!["user_id".to_string()], "users");
+        let name = generate_fk_constraint_name("posts", &["user_id".to_string()], "users");
         assert_eq!(name, "fk_posts_user_id_users");
         assert!(name.len() <= 63);
     }
@@ -701,7 +701,7 @@ mod tests {
         // 複合キーの場合
         let name = generate_fk_constraint_name(
             "order_items",
-            &vec!["order_id".to_string(), "product_id".to_string()],
+            &["order_id".to_string(), "product_id".to_string()],
             "orders",
         );
         assert_eq!(name, "fk_order_items_order_id_product_id_orders");
@@ -713,7 +713,7 @@ mod tests {
         // 63文字を超える場合はハッシュ付きで切り詰め
         let name = generate_fk_constraint_name(
             "very_long_table_name_with_many_characters",
-            &vec!["organization_id".to_string(), "department_id".to_string()],
+            &["organization_id".to_string(), "department_id".to_string()],
             "another_very_long_table_name_here",
         );
 
@@ -737,12 +737,12 @@ mod tests {
         // 同じ入力には同じ出力を保証
         let name1 = generate_fk_constraint_name(
             "very_long_table_name_with_many_characters",
-            &vec!["organization_id".to_string()],
+            &["organization_id".to_string()],
             "another_very_long_table_name_here",
         );
         let name2 = generate_fk_constraint_name(
             "very_long_table_name_with_many_characters",
-            &vec!["organization_id".to_string()],
+            &["organization_id".to_string()],
             "another_very_long_table_name_here",
         );
         assert_eq!(name1, name2);
@@ -755,7 +755,7 @@ mod tests {
     #[test]
     fn test_generate_uq_constraint_name_short() {
         // 63文字以下の場合はそのまま返す
-        let name = generate_uq_constraint_name("users", &vec!["email".to_string()]);
+        let name = generate_uq_constraint_name("users", &["email".to_string()]);
         assert_eq!(name, "uq_users_email");
         assert!(name.len() <= 63);
     }
@@ -765,7 +765,7 @@ mod tests {
         // 複合カラムの場合
         let name = generate_uq_constraint_name(
             "order_items",
-            &vec!["order_id".to_string(), "product_id".to_string()],
+            &["order_id".to_string(), "product_id".to_string()],
         );
         assert_eq!(name, "uq_order_items_order_id_product_id");
         assert!(name.len() <= 63);
@@ -776,7 +776,7 @@ mod tests {
         // 63文字を超える場合はハッシュ付きで切り詰め
         let name = generate_uq_constraint_name(
             "very_long_table_name_with_many_characters",
-            &vec![
+            &[
                 "organization_id".to_string(),
                 "department_id".to_string(),
                 "another_long_column".to_string(),
@@ -797,11 +797,11 @@ mod tests {
         // 同じ入力には同じ出力を保証
         let name1 = generate_uq_constraint_name(
             "very_long_table_name_with_many_characters",
-            &vec!["organization_id".to_string()],
+            &["organization_id".to_string()],
         );
         let name2 = generate_uq_constraint_name(
             "very_long_table_name_with_many_characters",
-            &vec!["organization_id".to_string()],
+            &["organization_id".to_string()],
         );
         assert_eq!(name1, name2);
     }
@@ -813,7 +813,7 @@ mod tests {
     #[test]
     fn test_generate_ck_constraint_name_short() {
         // 63文字以下の場合はそのまま返す
-        let name = generate_ck_constraint_name("users", &vec!["age".to_string()]);
+        let name = generate_ck_constraint_name("users", &["age".to_string()]);
         assert_eq!(name, "ck_users_age");
         assert!(name.len() <= 63);
     }
@@ -821,10 +821,8 @@ mod tests {
     #[test]
     fn test_generate_ck_constraint_name_composite() {
         // 複合カラムの場合
-        let name = generate_ck_constraint_name(
-            "products",
-            &vec!["price".to_string(), "discount".to_string()],
-        );
+        let name =
+            generate_ck_constraint_name("products", &["price".to_string(), "discount".to_string()]);
         assert_eq!(name, "ck_products_price_discount");
         assert!(name.len() <= 63);
     }
@@ -834,7 +832,7 @@ mod tests {
         // 63文字を超える場合はハッシュ付きで切り詰め
         let name = generate_ck_constraint_name(
             "very_long_table_name_with_many_characters",
-            &vec![
+            &[
                 "organization_id".to_string(),
                 "department_id".to_string(),
                 "another_long_column".to_string(),
@@ -855,11 +853,11 @@ mod tests {
         // 同じ入力には同じ出力を保証
         let name1 = generate_ck_constraint_name(
             "very_long_table_name_with_many_characters",
-            &vec!["organization_id".to_string()],
+            &["organization_id".to_string()],
         );
         let name2 = generate_ck_constraint_name(
             "very_long_table_name_with_many_characters",
-            &vec!["organization_id".to_string()],
+            &["organization_id".to_string()],
         );
         assert_eq!(name1, name2);
     }
@@ -871,8 +869,8 @@ mod tests {
     #[test]
     fn test_different_prefixes_produce_different_names() {
         // uq_ と ck_ は同じ入力でも異なる名前を生成する
-        let uq_name = generate_uq_constraint_name("users", &vec!["email".to_string()]);
-        let ck_name = generate_ck_constraint_name("users", &vec!["email".to_string()]);
+        let uq_name = generate_uq_constraint_name("users", &["email".to_string()]);
+        let ck_name = generate_ck_constraint_name("users", &["email".to_string()]);
         assert_ne!(uq_name, ck_name);
         assert!(uq_name.starts_with("uq_"));
         assert!(ck_name.starts_with("ck_"));
@@ -883,12 +881,12 @@ mod tests {
         // 異なる入力には異なる出力（ハッシュが異なる）
         let name1 = generate_fk_constraint_name(
             "very_long_table_name_with_many_characters_a",
-            &vec!["column_id".to_string()],
+            &["column_id".to_string()],
             "referenced_table",
         );
         let name2 = generate_fk_constraint_name(
             "very_long_table_name_with_many_characters_b",
-            &vec!["column_id".to_string()],
+            &["column_id".to_string()],
             "referenced_table",
         );
 
@@ -1021,5 +1019,204 @@ mod tests {
         // `*/` の出現回数が1回（フォーマット由来のみ）であること
         let close_count = result.matches("*/").count();
         assert_eq!(close_count, 1, "Expected exactly 1 '*/' in: {}", result);
+    }
+
+    // ==========================================
+    // sanitize_sql_comment のテスト
+    // ==========================================
+
+    #[test]
+    fn test_sanitize_sql_comment_no_change() {
+        assert_eq!(sanitize_sql_comment("Hello world"), "Hello world");
+    }
+
+    #[test]
+    fn test_sanitize_sql_comment_replaces_close() {
+        assert_eq!(sanitize_sql_comment("a */ b"), "a * / b");
+    }
+
+    #[test]
+    fn test_sanitize_sql_comment_multiple_closes() {
+        assert_eq!(sanitize_sql_comment("a */ b */ c"), "a * / b * / c");
+    }
+
+    // ==========================================
+    // build_column_definition のテスト
+    // ==========================================
+
+    #[test]
+    fn test_build_column_definition_basic() {
+        let column = Column::new(
+            "name".to_string(),
+            ColumnType::VARCHAR { length: 100 },
+            false,
+        );
+        let result = build_column_definition("\"name\"", &column, "VARCHAR(100)".to_string(), &[]);
+        assert_eq!(result, "\"name\" VARCHAR(100) NOT NULL");
+    }
+
+    #[test]
+    fn test_build_column_definition_nullable() {
+        let column = Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            true,
+        );
+        let result = build_column_definition("\"email\"", &column, "VARCHAR(255)".to_string(), &[]);
+        assert_eq!(result, "\"email\" VARCHAR(255)");
+    }
+
+    #[test]
+    fn test_build_column_definition_with_default() {
+        let mut column = Column::new(
+            "status".to_string(),
+            ColumnType::VARCHAR { length: 20 },
+            false,
+        );
+        column.default_value = Some("'active'".to_string());
+        let result = build_column_definition("\"status\"", &column, "VARCHAR(20)".to_string(), &[]);
+        assert_eq!(result, "\"status\" VARCHAR(20) NOT NULL DEFAULT 'active'");
+    }
+
+    #[test]
+    fn test_build_column_definition_with_extra_parts() {
+        let column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let result = build_column_definition(
+            "\"id\"",
+            &column,
+            "INTEGER".to_string(),
+            &["AUTO_INCREMENT"],
+        );
+        assert_eq!(result, "\"id\" INTEGER NOT NULL AUTO_INCREMENT");
+    }
+
+    #[test]
+    fn test_build_column_definition_empty_extra_parts_skipped() {
+        let column = Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        );
+        let result = build_column_definition(
+            "\"id\"",
+            &column,
+            "INTEGER".to_string(),
+            &["", "PRIMARY KEY", ""],
+        );
+        assert_eq!(result, "\"id\" INTEGER NOT NULL PRIMARY KEY");
+    }
+
+    // ==========================================
+    // SqlGenerator trait デフォルト実装のテスト
+    // ==========================================
+
+    #[test]
+    fn test_should_add_as_table_constraint_default() {
+        let gen = DummySqlGenerator;
+        let constraint = Constraint::UNIQUE {
+            columns: vec!["email".to_string()],
+        };
+        // デフォルトはFK以外true
+        assert!(gen.should_add_as_table_constraint(&constraint));
+    }
+
+    #[test]
+    fn test_generate_drop_table() {
+        let gen = DummySqlGenerator;
+        let result = gen.generate_drop_table("users");
+        assert_eq!(result, "DROP TABLE \"users\"");
+    }
+
+    #[test]
+    fn test_generate_drop_index() {
+        let gen = DummySqlGenerator;
+        let result = gen.generate_drop_index("users", "idx_users_email");
+        assert_eq!(result, "DROP INDEX \"idx_users_email\"");
+    }
+
+    #[test]
+    fn test_generate_rename_table() {
+        let gen = DummySqlGenerator;
+        let result = gen.generate_rename_table("old_name", "new_name");
+        assert_eq!(result, "ALTER TABLE \"old_name\" RENAME TO \"new_name\"");
+    }
+
+    #[test]
+    fn test_generate_missing_table_notice() {
+        let gen = DummySqlGenerator;
+        let result = gen.generate_missing_table_notice("users");
+        assert!(result.contains("users"));
+        assert!(result.contains("NOTE"));
+    }
+
+    #[test]
+    fn test_generate_create_table() {
+        let gen = DummySqlGenerator;
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "id".to_string(),
+            ColumnType::INTEGER { precision: None },
+            false,
+        ));
+        table.constraints.push(Constraint::PRIMARY_KEY {
+            columns: vec!["id".to_string()],
+        });
+
+        let result = gen.generate_create_table(&table);
+        assert!(result.contains("CREATE TABLE"));
+        assert!(result.contains("\"users\""));
+    }
+
+    #[test]
+    fn test_generate_create_index() {
+        let gen = DummySqlGenerator;
+        let table = Table::new("users".to_string());
+        let index = Index {
+            name: "idx_users_email".to_string(),
+            columns: vec!["email".to_string()],
+            unique: false,
+        };
+        let result = gen.generate_create_index(&table, &index);
+        assert!(result.contains("CREATE INDEX"));
+        assert!(result.contains("\"idx_users_email\""));
+    }
+
+    #[test]
+    fn test_generate_create_index_unique() {
+        let gen = DummySqlGenerator;
+        let table = Table::new("users".to_string());
+        let index = Index {
+            name: "idx_users_email".to_string(),
+            columns: vec!["email".to_string()],
+            unique: true,
+        };
+        let result = gen.generate_create_index(&table, &index);
+        assert!(result.contains("CREATE UNIQUE INDEX"));
+    }
+
+    #[test]
+    fn test_generate_add_column() {
+        let gen = DummySqlGenerator;
+        let column = Column::new(
+            "email".to_string(),
+            ColumnType::VARCHAR { length: 255 },
+            true,
+        );
+        let result = gen.generate_add_column("users", &column);
+        assert!(result.contains("ALTER TABLE"));
+        assert!(result.contains("ADD COLUMN"));
+    }
+
+    #[test]
+    fn test_generate_drop_column() {
+        let gen = DummySqlGenerator;
+        let result = gen.generate_drop_column("users", "email");
+        assert!(result.contains("ALTER TABLE"));
+        assert!(result.contains("DROP COLUMN"));
+        assert!(result.contains("\"email\""));
     }
 }

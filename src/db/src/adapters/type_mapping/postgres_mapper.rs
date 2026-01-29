@@ -364,4 +364,238 @@ mod tests {
 
         assert_eq!(service.to_sql_type(&col_type), "TEXT[]");
     }
+
+    #[test]
+    fn test_postgres_dialect_specific_values() {
+        let mapper = PostgresTypeMapper;
+        let params = serde_json::json!({ "values": ["a", "b", "c"] });
+        let result = mapper.format_dialect_specific("CUSTOM", &params);
+        assert_eq!(result, "CUSTOM('a', 'b', 'c')");
+    }
+
+    #[test]
+    fn test_postgres_dialect_specific_no_params() {
+        let mapper = PostgresTypeMapper;
+        let params = serde_json::json!({});
+        let result = mapper.format_dialect_specific("CITEXT", &params);
+        assert_eq!(result, "CITEXT");
+    }
+
+    #[test]
+    fn test_postgres_parse_alternative_type_names() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata::default();
+
+        // int aliases
+        assert!(matches!(
+            mapper.parse_sql_type("int4", &meta),
+            Some(ColumnType::INTEGER { precision: Some(4) })
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("int2", &meta),
+            Some(ColumnType::INTEGER { precision: Some(2) })
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("smallint", &meta),
+            Some(ColumnType::INTEGER { precision: Some(2) })
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("int8", &meta),
+            Some(ColumnType::INTEGER { precision: Some(8) })
+        ));
+
+        // varchar alias
+        let meta_len = TypeMetadata {
+            char_max_length: Some(50),
+            ..Default::default()
+        };
+        assert!(matches!(
+            mapper.parse_sql_type("varchar", &meta_len),
+            Some(ColumnType::VARCHAR { length: 50 })
+        ));
+
+        // boolean aliases
+        assert!(matches!(
+            mapper.parse_sql_type("boolean", &meta),
+            Some(ColumnType::BOOLEAN)
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("bool", &meta),
+            Some(ColumnType::BOOLEAN)
+        ));
+
+        // text
+        assert!(matches!(
+            mapper.parse_sql_type("text", &meta),
+            Some(ColumnType::TEXT)
+        ));
+
+        // timestamptz alias
+        assert!(matches!(
+            mapper.parse_sql_type("timestamptz", &meta),
+            Some(ColumnType::TIMESTAMP {
+                with_time_zone: Some(true)
+            })
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("timestamp", &meta),
+            Some(ColumnType::TIMESTAMP {
+                with_time_zone: Some(false)
+            })
+        ));
+
+        // json/jsonb
+        assert!(matches!(
+            mapper.parse_sql_type("json", &meta),
+            Some(ColumnType::JSON)
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("jsonb", &meta),
+            Some(ColumnType::JSONB)
+        ));
+
+        // numeric/decimal
+        let meta_num = TypeMetadata {
+            numeric_precision: Some(8),
+            numeric_scale: Some(2),
+            ..Default::default()
+        };
+        assert!(matches!(
+            mapper.parse_sql_type("numeric", &meta_num),
+            Some(ColumnType::DECIMAL {
+                precision: 8,
+                scale: 2
+            })
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("decimal", &meta_num),
+            Some(ColumnType::DECIMAL {
+                precision: 8,
+                scale: 2
+            })
+        ));
+
+        // float types
+        assert!(matches!(
+            mapper.parse_sql_type("real", &meta),
+            Some(ColumnType::FLOAT)
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("float4", &meta),
+            Some(ColumnType::FLOAT)
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("double precision", &meta),
+            Some(ColumnType::DOUBLE)
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("float8", &meta),
+            Some(ColumnType::DOUBLE)
+        ));
+
+        // char
+        let meta_char = TypeMetadata {
+            char_max_length: Some(10),
+            ..Default::default()
+        };
+        assert!(matches!(
+            mapper.parse_sql_type("character", &meta_char),
+            Some(ColumnType::CHAR { length: 10 })
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("char", &meta_char),
+            Some(ColumnType::CHAR { length: 10 })
+        ));
+
+        // date
+        assert!(matches!(
+            mapper.parse_sql_type("date", &meta),
+            Some(ColumnType::DATE)
+        ));
+
+        // time variants
+        assert!(matches!(
+            mapper.parse_sql_type("time with time zone", &meta),
+            Some(ColumnType::TIME {
+                with_time_zone: Some(true)
+            })
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("timetz", &meta),
+            Some(ColumnType::TIME {
+                with_time_zone: Some(true)
+            })
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("time without time zone", &meta),
+            Some(ColumnType::TIME {
+                with_time_zone: Some(false)
+            })
+        ));
+        assert!(matches!(
+            mapper.parse_sql_type("time", &meta),
+            Some(ColumnType::TIME {
+                with_time_zone: Some(false)
+            })
+        ));
+
+        // bytea
+        assert!(matches!(
+            mapper.parse_sql_type("bytea", &meta),
+            Some(ColumnType::BLOB)
+        ));
+
+        // uuid
+        assert!(matches!(
+            mapper.parse_sql_type("uuid", &meta),
+            Some(ColumnType::UUID)
+        ));
+
+        // unknown
+        assert!(mapper.parse_sql_type("unknown_xyz", &meta).is_none());
+    }
+
+    #[test]
+    fn test_postgres_format_time() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        assert_eq!(
+            service.to_sql_type(&ColumnType::TIME {
+                with_time_zone: Some(true)
+            }),
+            "TIME WITH TIME ZONE"
+        );
+        assert_eq!(
+            service.to_sql_type(&ColumnType::TIME {
+                with_time_zone: Some(false)
+            }),
+            "TIME"
+        );
+    }
+
+    #[test]
+    fn test_postgres_format_enum() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        assert_eq!(
+            service.to_sql_type(&ColumnType::Enum {
+                name: "status".to_string()
+            }),
+            "\"status\""
+        );
+    }
+
+    #[test]
+    fn test_postgres_user_defined_not_enum() {
+        let mapper = PostgresTypeMapper;
+        // USER-DEFINED but no enum_names match
+        let meta = TypeMetadata {
+            udt_name: Some("geometry".to_string()),
+            enum_names: Some(HashSet::new()),
+            ..Default::default()
+        };
+        assert!(mapper.parse_sql_type("USER-DEFINED", &meta).is_none());
+
+        // USER-DEFINED with no metadata
+        let meta_empty = TypeMetadata::default();
+        assert!(mapper.parse_sql_type("USER-DEFINED", &meta_empty).is_none());
+    }
 }

@@ -456,4 +456,118 @@ destructive_changes:
             DestructiveChangeStatus::Present
         );
     }
+
+    #[test]
+    fn test_validate_version_valid() {
+        let migration = MigrationFile::new(
+            "20260121120000".to_string(),
+            "test".to_string(),
+            Dialect::PostgreSQL,
+            String::new(),
+            String::new(),
+            PathBuf::from("test"),
+            "checksum".to_string(),
+        );
+        assert!(migration.validate_version());
+    }
+
+    #[test]
+    fn test_validate_version_too_short() {
+        let migration = MigrationFile::new(
+            "2026012112".to_string(),
+            "test".to_string(),
+            Dialect::PostgreSQL,
+            String::new(),
+            String::new(),
+            PathBuf::from("test"),
+            "checksum".to_string(),
+        );
+        assert!(!migration.validate_version());
+    }
+
+    #[test]
+    fn test_validate_version_too_long() {
+        let migration = MigrationFile::new(
+            "202601211200001".to_string(),
+            "test".to_string(),
+            Dialect::PostgreSQL,
+            String::new(),
+            String::new(),
+            PathBuf::from("test"),
+            "checksum".to_string(),
+        );
+        assert!(!migration.validate_version());
+    }
+
+    #[test]
+    fn test_validate_version_non_digit() {
+        let migration = MigrationFile::new(
+            "2026012112abcd".to_string(),
+            "test".to_string(),
+            Dialect::PostgreSQL,
+            String::new(),
+            String::new(),
+            PathBuf::from("test"),
+            "checksum".to_string(),
+        );
+        assert!(!migration.validate_version());
+    }
+
+    #[test]
+    fn test_migration_status_is_failed() {
+        assert!(!MigrationStatus::Pending.is_failed());
+        assert!(!MigrationStatus::Applied.is_failed());
+        assert!(MigrationStatus::Failed {
+            error_message: "Error".to_string()
+        }
+        .is_failed());
+    }
+
+    #[test]
+    fn test_migration_status_is_applied() {
+        assert!(!MigrationStatus::Pending.is_applied());
+        assert!(MigrationStatus::Applied.is_applied());
+        assert!(!MigrationStatus::Failed {
+            error_message: "Error".to_string()
+        }
+        .is_applied());
+    }
+
+    #[test]
+    fn test_migration_history_get_record() {
+        let mut history = MigrationHistory::new();
+        let record = MigrationRecord::new(
+            "20260121120000".to_string(),
+            "Initial schema".to_string(),
+            "abc123".to_string(),
+        );
+        history.add_record(record);
+
+        let found = history.get_record("20260121120000");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().description, "Initial schema");
+
+        let not_found = history.get_record("99999999999999");
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_migration_history_default() {
+        let history = MigrationHistory::default();
+        assert_eq!(history.count(), 0);
+    }
+
+    #[test]
+    fn test_applied_migration_new() {
+        let now = Utc::now();
+        let duration = Duration::seconds(5);
+        let applied = AppliedMigration::new(
+            "20260121120000".to_string(),
+            "test".to_string(),
+            now,
+            duration,
+        );
+        assert_eq!(applied.version, "20260121120000");
+        assert_eq!(applied.duration, Duration::seconds(5));
+    }
 }

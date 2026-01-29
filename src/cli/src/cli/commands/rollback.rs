@@ -626,4 +626,133 @@ mod tests {
         assert_eq!(parsed["rolled_back_count"], 1);
         assert_eq!(parsed["migrations"][0]["sql"], "DROP TABLE users;");
     }
+
+    #[test]
+    fn test_contains_destructive_sql_drop_table() {
+        let handler = RollbackCommandHandler::new();
+        assert!(handler.contains_destructive_sql("DROP TABLE users;"));
+        assert!(handler.contains_destructive_sql("DROP TABLE IF EXISTS users;"));
+    }
+
+    #[test]
+    fn test_contains_destructive_sql_drop_column() {
+        let handler = RollbackCommandHandler::new();
+        assert!(handler.contains_destructive_sql("ALTER TABLE users DROP COLUMN email;"));
+    }
+
+    #[test]
+    fn test_contains_destructive_sql_truncate() {
+        let handler = RollbackCommandHandler::new();
+        assert!(handler.contains_destructive_sql("TRUNCATE TABLE users;"));
+    }
+
+    #[test]
+    fn test_contains_destructive_sql_non_destructive() {
+        let handler = RollbackCommandHandler::new();
+        assert!(!handler.contains_destructive_sql("CREATE TABLE users (id INTEGER);"));
+        assert!(
+            !handler.contains_destructive_sql("ALTER TABLE users ADD COLUMN email VARCHAR(255);")
+        );
+        assert!(!handler.contains_destructive_sql("INSERT INTO users (id) VALUES (1);"));
+    }
+
+    #[test]
+    fn test_highlight_destructive_sql() {
+        let handler = RollbackCommandHandler::new();
+        let sql = "CREATE TABLE users (id INTEGER);\nDROP TABLE posts;\nALTER TABLE orders ADD COLUMN total INTEGER;";
+        let highlighted = handler.highlight_destructive_sql(sql);
+        // 非破壊的行はそのまま含まれる
+        assert!(highlighted.contains("CREATE TABLE users"));
+        assert!(highlighted.contains("ALTER TABLE orders ADD COLUMN"));
+        // 全行含まれている（3行）
+        assert_eq!(highlighted.lines().count(), 3);
+    }
+
+    #[test]
+    fn test_execute_dry_run() {
+        use crate::core::migration::MigrationRecord;
+        use std::path::PathBuf;
+
+        let handler = RollbackCommandHandler::new();
+        let record = MigrationRecord::new(
+            "20260121120000".to_string(),
+            "create_users".to_string(),
+            "checksum".to_string(),
+        );
+        let down_sql = "DROP TABLE users;".to_string();
+        let path = PathBuf::from("migrations/20260121120000_create_users");
+        let items = vec![(&record, down_sql, path)];
+
+        let output = handler.execute_dry_run(&items, true);
+        assert!(output.contains("DRY RUN MODE"));
+        assert!(output.contains("20260121120000"));
+        assert!(output.contains("create_users"));
+        assert!(output.contains("DROP TABLE users"));
+        assert!(output.contains("--allow-destructive"));
+    }
+
+    #[test]
+    fn test_execute_dry_run_no_destructive() {
+        use crate::core::migration::MigrationRecord;
+        use std::path::PathBuf;
+
+        let handler = RollbackCommandHandler::new();
+        let record = MigrationRecord::new(
+            "20260121120000".to_string(),
+            "add_column".to_string(),
+            "checksum".to_string(),
+        );
+        let down_sql = "ALTER TABLE users DROP COLUMN email;".to_string();
+        let path = PathBuf::from("migrations/20260121120000_add_column");
+        let items = vec![(&record, down_sql, path)];
+
+        let output = handler.execute_dry_run(&items, false);
+        assert!(output.contains("DRY RUN MODE"));
+        assert!(!output.contains("--allow-destructive"));
+    }
+
+    #[test]
+    fn test_execute_dry_run_with_format_text() {
+        use crate::core::migration::MigrationRecord;
+        use std::path::PathBuf;
+
+        let handler = RollbackCommandHandler::new();
+        let record = MigrationRecord::new(
+            "20260121120000".to_string(),
+            "create_users".to_string(),
+            "checksum".to_string(),
+        );
+        let down_sql = "DROP TABLE users;".to_string();
+        let path = PathBuf::from("migrations/20260121120000_create_users");
+        let items = vec![(&record, down_sql, path)];
+
+        let result = handler.execute_dry_run_with_format(&items, true, &OutputFormat::Text);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.contains("DRY RUN MODE"));
+    }
+
+    #[test]
+    fn test_execute_dry_run_with_format_json() {
+        use crate::core::migration::MigrationRecord;
+        use std::path::PathBuf;
+
+        let handler = RollbackCommandHandler::new();
+        let record = MigrationRecord::new(
+            "20260121120000".to_string(),
+            "create_users".to_string(),
+            "checksum".to_string(),
+        );
+        let down_sql = "DROP TABLE users;".to_string();
+        let path = PathBuf::from("migrations/20260121120000_create_users");
+        let items = vec![(&record, down_sql, path)];
+
+        let result = handler.execute_dry_run_with_format(&items, true, &OutputFormat::Json);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // JSONとしてパース可能
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(parsed["dry_run"], true);
+        assert_eq!(parsed["rolled_back_count"], 1);
+    }
 }

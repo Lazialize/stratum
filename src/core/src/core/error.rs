@@ -853,4 +853,354 @@ mod tests {
         let result = ValidationResult::new();
         assert!(result.errors_to_string().is_empty());
     }
+
+    #[test]
+    fn test_error_location_with_table() {
+        let loc = ErrorLocation::with_table("users".to_string());
+        assert_eq!(loc.table, Some("users".to_string()));
+        assert_eq!(loc.column, None);
+        assert_eq!(loc.line, None);
+        let formatted = loc.format();
+        assert!(formatted.contains("table: users"));
+        assert!(!formatted.contains("column"));
+    }
+
+    #[test]
+    fn test_error_location_empty() {
+        let loc = ErrorLocation::new();
+        let formatted = loc.format();
+        assert!(formatted.is_empty());
+    }
+
+    #[test]
+    fn test_error_location_table_only() {
+        let loc = ErrorLocation {
+            table: Some("orders".to_string()),
+            column: None,
+            line: None,
+        };
+        let formatted = loc.format();
+        assert_eq!(formatted, " (table: orders)");
+    }
+
+    #[test]
+    fn test_error_location_column_only() {
+        let loc = ErrorLocation {
+            table: None,
+            column: Some("email".to_string()),
+            line: None,
+        };
+        let formatted = loc.format();
+        assert_eq!(formatted, " (column: email)");
+    }
+
+    #[test]
+    fn test_error_location_line_only() {
+        let loc = ErrorLocation {
+            table: None,
+            column: None,
+            line: Some(10),
+        };
+        let formatted = loc.format();
+        assert_eq!(formatted, " (line: 10)");
+    }
+
+    #[test]
+    fn test_error_location_default() {
+        let loc = ErrorLocation::default();
+        assert_eq!(loc, ErrorLocation::new());
+    }
+
+    #[test]
+    fn test_validation_warning_format() {
+        let warning = ValidationWarning::compatibility(
+            "test warning".to_string(),
+            Some(ErrorLocation::with_table("users".to_string())),
+        );
+        let formatted = warning.format();
+        assert!(formatted.contains("Warning: test warning"));
+        assert!(formatted.contains("table: users"));
+    }
+
+    #[test]
+    fn test_validation_warning_format_no_location() {
+        let warning = ValidationWarning::compatibility("test warning".to_string(), None);
+        let formatted = warning.format();
+        assert_eq!(formatted, "Warning: test warning");
+    }
+
+    #[test]
+    fn test_validation_result_merge() {
+        let mut result1 = ValidationResult::new();
+        result1.add_error(ValidationError::Syntax {
+            message: "e1".to_string(),
+            location: None,
+            suggestion: None,
+        });
+        result1.add_warning(ValidationWarning::compatibility("w1".to_string(), None));
+
+        let mut result2 = ValidationResult::new();
+        result2.add_error(ValidationError::Reference {
+            message: "e2".to_string(),
+            location: None,
+            suggestion: None,
+        });
+        result2.add_warning(ValidationWarning::compatibility("w2".to_string(), None));
+
+        result1.merge(result2);
+        assert_eq!(result1.error_count(), 2);
+        assert_eq!(result1.warning_count(), 2);
+    }
+
+    #[test]
+    fn test_validation_result_merge_all() {
+        let mut base = ValidationResult::new();
+
+        let mut r1 = ValidationResult::new();
+        r1.add_error(ValidationError::Syntax {
+            message: "e1".to_string(),
+            location: None,
+            suggestion: None,
+        });
+
+        let mut r2 = ValidationResult::new();
+        r2.add_error(ValidationError::Syntax {
+            message: "e2".to_string(),
+            location: None,
+            suggestion: None,
+        });
+
+        let mut r3 = ValidationResult::new();
+        r3.add_warning(ValidationWarning::compatibility("w1".to_string(), None));
+
+        base.merge_all(vec![r1, r2, r3]);
+        assert_eq!(base.error_count(), 2);
+        assert_eq!(base.warning_count(), 1);
+    }
+
+    #[test]
+    fn test_parse_rename_error_does_not_exist() {
+        let err = DatabaseError::parse_rename_error(
+            "ERROR: column \"old_col\" does not exist",
+            "users",
+            "old_col",
+            "new_col",
+        );
+        match err {
+            DatabaseError::RenameColumnFailed {
+                reason, suggestion, ..
+            } => {
+                assert!(reason.contains("does not exist"));
+                assert!(suggestion.is_some());
+            }
+            _ => panic!("Expected RenameColumnFailed"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_error_unknown_column() {
+        let err = DatabaseError::parse_rename_error(
+            "Unknown column 'old_col' in 'users'",
+            "users",
+            "old_col",
+            "new_col",
+        );
+        match err {
+            DatabaseError::RenameColumnFailed { reason, .. } => {
+                assert!(reason.contains("does not exist"));
+            }
+            _ => panic!("Expected RenameColumnFailed"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_error_permission_denied() {
+        let err = DatabaseError::parse_rename_error(
+            "permission denied for table users",
+            "users",
+            "old_col",
+            "new_col",
+        );
+        match err {
+            DatabaseError::RenameColumnFailed {
+                reason, suggestion, ..
+            } => {
+                assert!(reason.contains("Insufficient privileges"));
+                assert!(suggestion.unwrap().contains("ALTER TABLE"));
+            }
+            _ => panic!("Expected RenameColumnFailed"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_error_access_denied() {
+        let err = DatabaseError::parse_rename_error(
+            "Access denied for user 'root'",
+            "users",
+            "old_col",
+            "new_col",
+        );
+        match err {
+            DatabaseError::RenameColumnFailed { reason, .. } => {
+                assert!(reason.contains("Insufficient privileges"));
+            }
+            _ => panic!("Expected RenameColumnFailed"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_error_duplicate_column() {
+        let err = DatabaseError::parse_rename_error(
+            "duplicate column name: new_col already exists",
+            "users",
+            "old_col",
+            "new_col",
+        );
+        match err {
+            DatabaseError::RenameColumnFailed {
+                reason, suggestion, ..
+            } => {
+                assert!(reason.contains("already exists"));
+                assert!(suggestion.unwrap().contains("Choose a different name"));
+            }
+            _ => panic!("Expected RenameColumnFailed"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_error_foreign_key() {
+        let err = DatabaseError::parse_rename_error(
+            "cannot rename: foreign key constraint violated",
+            "users",
+            "old_col",
+            "new_col",
+        );
+        match err {
+            DatabaseError::RenameColumnFailed {
+                reason, suggestion, ..
+            } => {
+                assert!(reason.contains("foreign key constraint"));
+                assert!(suggestion.unwrap().contains("dropping or updating"));
+            }
+            _ => panic!("Expected RenameColumnFailed"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_error_generic() {
+        let err = DatabaseError::parse_rename_error(
+            "some unknown error occurred",
+            "users",
+            "old_col",
+            "new_col",
+        );
+        match err {
+            DatabaseError::RenameColumnFailed {
+                reason, suggestion, ..
+            } => {
+                assert_eq!(reason, "some unknown error occurred");
+                assert!(suggestion.is_none());
+            }
+            _ => panic!("Expected RenameColumnFailed"),
+        }
+    }
+
+    #[test]
+    fn test_validation_error_location() {
+        let loc = ErrorLocation::with_table_and_column("users", "email");
+        let error = ValidationError::Syntax {
+            message: "test".to_string(),
+            location: Some(loc.clone()),
+            suggestion: Some("fix it".to_string()),
+        };
+        assert_eq!(error.location(), Some(&loc));
+
+        let error_no_loc = ValidationError::Syntax {
+            message: "test".to_string(),
+            location: None,
+            suggestion: None,
+        };
+        assert_eq!(error_no_loc.location(), None);
+    }
+
+    #[test]
+    fn test_validation_error_suggestion() {
+        let error = ValidationError::Syntax {
+            message: "test".to_string(),
+            location: None,
+            suggestion: Some("fix this".to_string()),
+        };
+        assert_eq!(error.suggestion(), Some("fix this"));
+
+        let error_no_sug = ValidationError::Reference {
+            message: "test".to_string(),
+            location: None,
+            suggestion: None,
+        };
+        assert_eq!(error_no_sug.suggestion(), None);
+    }
+
+    #[test]
+    fn test_validation_error_type_predicates() {
+        let tc = ValidationError::TypeConversion {
+            message: "test".to_string(),
+            location: None,
+            suggestion: None,
+        };
+        assert!(tc.is_type_conversion());
+        assert!(!tc.is_syntax());
+
+        let dc = ValidationError::DialectConstraint {
+            message: "test".to_string(),
+            location: None,
+            dialect: "mysql".to_string(),
+        };
+        assert!(dc.is_dialect_constraint());
+    }
+
+    #[test]
+    fn test_database_error_migration_variant() {
+        let me = MigrationError::new("v1".to_string(), "fail".to_string());
+        let db_err = DatabaseError::Migration { error: me };
+        assert!(db_err.is_migration());
+        assert!(!db_err.is_connection());
+    }
+
+    #[test]
+    fn test_database_error_rename_column_failed() {
+        let err = DatabaseError::RenameColumnFailed {
+            table_name: "users".to_string(),
+            old_name: "old".to_string(),
+            new_name: "new".to_string(),
+            reason: "failed".to_string(),
+            suggestion: None,
+        };
+        assert!(err.is_rename_column_failed());
+    }
+
+    #[test]
+    fn test_validation_result_default() {
+        let result = ValidationResult::default();
+        assert!(result.is_valid());
+        assert_eq!(result.error_count(), 0);
+        assert_eq!(result.warning_count(), 0);
+    }
+
+    #[test]
+    fn test_config_error_display() {
+        let err = ConfigError::MissingVersion;
+        assert_eq!(err.to_string(), "Config file version is not specified");
+
+        let err = ConfigError::NoEnvironments;
+        assert!(err.to_string().contains("At least one environment"));
+
+        let err = ConfigError::EnvironmentNotFound {
+            name: "staging".to_string(),
+            available: vec!["development".to_string(), "production".to_string()],
+        };
+        assert!(err.to_string().contains("staging"));
+
+        let err = ConfigError::MissingDatabaseName;
+        assert!(err.to_string().contains("Database name"));
+    }
 }
