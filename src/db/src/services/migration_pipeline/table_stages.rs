@@ -331,7 +331,7 @@ mod tests {
         // SQLiteはテーブル再作成パターンを使用
         assert!(sql.contains("PRAGMA foreign_keys=off"));
         assert!(sql.contains("BEGIN TRANSACTION"));
-        assert!(sql.contains(r#"CREATE TABLE "new_users""#));
+        assert!(sql.contains(r#"CREATE TABLE "_stratum_tmp_recreate_users""#));
     }
 
     #[test]

@@ -3,8 +3,9 @@
 // スキーマ定義からMySQL用のDDL文を生成します。
 
 use crate::adapters::sql_generator::{
-    build_column_definition, generate_ck_constraint_name, generate_fk_constraint_name,
-    generate_uq_constraint_name, quote_columns_mysql, quote_identifier_mysql, MigrationDirection,
+    build_column_definition, format_check_constraint, generate_ck_constraint_name,
+    generate_fk_constraint_name, generate_uq_constraint_name, quote_columns_mysql,
+    quote_identifier_mysql, sanitize_sql_comment, validate_check_expression, MigrationDirection,
     SqlGenerator,
 };
 use crate::adapters::type_mapping::TypeMappingService;
@@ -88,7 +89,7 @@ impl SqlGenerator for MysqlSqlGenerator {
                 check_expression, ..
             } => {
                 // MySQL 8.0.16以降でCHECK制約がサポートされる
-                format!("CHECK ({})", check_expression)
+                format_check_constraint(check_expression)
             }
             Constraint::FOREIGN_KEY { .. } => {
                 // FOREIGN KEY制約はALTER TABLEで追加するため、ここでは空文字列を返す
@@ -256,6 +257,15 @@ impl SqlGenerator for MysqlSqlGenerator {
             } => {
                 let constraint_name = generate_ck_constraint_name(table_name, columns);
 
+                if let Err(msg) = validate_check_expression(check_expression) {
+                    let sanitized_msg = sanitize_sql_comment(&msg);
+                    return format!(
+                        "/* ERROR: {} */ ALTER TABLE {} ADD CONSTRAINT {} CHECK (FALSE)",
+                        sanitized_msg,
+                        quote_identifier_mysql(table_name),
+                        quote_identifier_mysql(&constraint_name),
+                    );
+                }
                 format!(
                     "ALTER TABLE {} ADD CONSTRAINT {} CHECK ({})",
                     quote_identifier_mysql(table_name),

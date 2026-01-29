@@ -97,6 +97,66 @@ pub(crate) fn generate_ck_constraint_name(table_name: &str, columns: &[String]) 
     generate_constraint_name("ck", &body)
 }
 
+/// CHECK式のバリデーション
+///
+/// defense-in-depth として、CHECK式に危険なDML/DDLキーワードが含まれていないか検証します。
+/// スキーマ定義ファイル由来の値のみが渡される想定ですが、万一の不正入力を防ぎます。
+///
+/// # Returns
+///
+/// バリデーションに失敗した場合はエラーメッセージを返します。
+pub(crate) fn validate_check_expression(expr: &str) -> Result<(), String> {
+    // 大文字に正規化してキーワードを検査
+    let upper = expr.to_uppercase();
+    // トークン境界を考慮するため、単語単位で検出
+    let tokens: Vec<&str> = upper.split_whitespace().collect();
+
+    const FORBIDDEN_KEYWORDS: &[&str] = &[
+        "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE", "GRANT", "REVOKE",
+        "EXEC", "EXECUTE", "CALL",
+    ];
+
+    for token in &tokens {
+        // セミコロンを含むトークンも検出（例: "DELETE;"）
+        let clean_token = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+        for keyword in FORBIDDEN_KEYWORDS {
+            if clean_token == *keyword {
+                return Err(format!(
+                    "CHECK式に禁止キーワード '{}' が含まれています: {}",
+                    keyword, expr
+                ));
+            }
+        }
+    }
+
+    // セミコロンの検出（ステートメント区切りによるインジェクション防止）
+    if expr.contains(';') {
+        return Err(format!("CHECK式にセミコロンが含まれています: {}", expr));
+    }
+
+    Ok(())
+}
+
+/// CHECK式をバリデーション付きでSQL化
+///
+/// バリデーションに失敗した場合はコメント付きのSQLを生成し、
+/// 不正なCHECK式がそのまま実行されることを防ぎます。
+pub(crate) fn format_check_constraint(expr: &str) -> String {
+    if let Err(msg) = validate_check_expression(expr) {
+        let sanitized_msg = sanitize_sql_comment(&msg);
+        format!("/* ERROR: {} */ CHECK (FALSE)", sanitized_msg)
+    } else {
+        format!("CHECK ({})", expr)
+    }
+}
+
+/// SQLコメント内に埋め込む文字列をサニタイズ
+///
+/// `*/` を `* /` に置換して、SQLコメント `/* ... */` が壊れるのを防ぎます。
+pub(crate) fn sanitize_sql_comment(s: &str) -> String {
+    s.replace("*/", "* /")
+}
+
 /// カラム定義の共通組み立てヘルパー
 ///
 /// # Arguments
@@ -838,5 +898,128 @@ mod tests {
 
         // 異なる名前が生成される
         assert_ne!(name1, name2);
+    }
+
+    // ==========================================
+    // validate_check_expression のテスト
+    // ==========================================
+
+    #[test]
+    fn test_validate_check_expression_valid_simple() {
+        assert!(validate_check_expression("age > 0").is_ok());
+    }
+
+    #[test]
+    fn test_validate_check_expression_valid_complex() {
+        assert!(validate_check_expression("price >= 0 AND discount <= 100").is_ok());
+    }
+
+    #[test]
+    fn test_validate_check_expression_valid_in_clause() {
+        assert!(validate_check_expression("status IN ('active', 'inactive')").is_ok());
+    }
+
+    #[test]
+    fn test_validate_check_expression_rejects_insert() {
+        let result = validate_check_expression("1); INSERT INTO t VALUES (1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("INSERT"));
+    }
+
+    #[test]
+    fn test_validate_check_expression_rejects_update() {
+        let result = validate_check_expression("1); UPDATE t SET x = 1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("UPDATE"));
+    }
+
+    #[test]
+    fn test_validate_check_expression_rejects_delete() {
+        let result = validate_check_expression("1); DELETE FROM t");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("DELETE"));
+    }
+
+    #[test]
+    fn test_validate_check_expression_rejects_drop() {
+        let result = validate_check_expression("1); DROP TABLE users");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("DROP"));
+    }
+
+    #[test]
+    fn test_validate_check_expression_rejects_alter() {
+        let result = validate_check_expression("1); ALTER TABLE users ADD COLUMN x INT");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ALTER"));
+    }
+
+    #[test]
+    fn test_validate_check_expression_rejects_create() {
+        let result = validate_check_expression("1); CREATE TABLE evil (id INT)");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("CREATE"));
+    }
+
+    #[test]
+    fn test_validate_check_expression_rejects_semicolon() {
+        let result = validate_check_expression("age > 0; SELECT 1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("セミコロン"));
+    }
+
+    #[test]
+    fn test_validate_check_expression_rejects_truncate() {
+        let result = validate_check_expression("1); TRUNCATE users");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("TRUNCATE"));
+    }
+
+    #[test]
+    fn test_validate_check_expression_case_insensitive() {
+        // 大文字・小文字を問わず検出
+        assert!(validate_check_expression("1); drop table users").is_err());
+        assert!(validate_check_expression("1); Drop Table users").is_err());
+    }
+
+    #[test]
+    fn test_validate_check_expression_keyword_as_substring_allowed() {
+        // "updated_at" のようなカラム名に含まれるサブストリングは許可
+        // "updated_at" は split_whitespace でトークン化され、trim後 "updated_at" ≠ "UPDATE"
+        assert!(validate_check_expression("updated_at IS NOT NULL").is_ok());
+        assert!(validate_check_expression("created_by IS NOT NULL").is_ok());
+    }
+
+    // ==========================================
+    // format_check_constraint のテスト
+    // ==========================================
+
+    #[test]
+    fn test_format_check_constraint_valid() {
+        assert_eq!(format_check_constraint("price >= 0"), "CHECK (price >= 0)");
+    }
+
+    #[test]
+    fn test_format_check_constraint_invalid_produces_false() {
+        let result = format_check_constraint("1); DROP TABLE users");
+        assert!(result.contains("CHECK (FALSE)"));
+        assert!(result.contains("ERROR"));
+    }
+
+    #[test]
+    fn test_format_check_constraint_sanitizes_comment_close() {
+        // エラーメッセージに */ が含まれる入力でもSQLコメントが壊れないこと
+        let result = format_check_constraint("1; */ DROP TABLE users");
+        assert!(result.contains("CHECK (FALSE)"));
+        // 正当なコメント閉じ `*/` は1つだけ（フォーマットの `/* ... */` 由来）
+        // ユーザー入力由来の `*/` は `* /` にサニタイズされている
+        assert!(
+            result.contains("* /"),
+            "Expected sanitized '* /' in: {}",
+            result
+        );
+        // `*/` の出現回数が1回（フォーマット由来のみ）であること
+        let close_count = result.matches("*/").count();
+        assert_eq!(close_count, 1, "Expected exactly 1 '*/' in: {}", result);
     }
 }

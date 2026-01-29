@@ -542,7 +542,7 @@ mod tests {
             sql
         );
         assert!(
-            sql.contains(r#"CREATE TABLE "new_users""#),
+            sql.contains(r#"CREATE TABLE "_stratum_tmp_recreate_users""#),
             "Expected new table creation in: {}",
             sql
         );
@@ -950,7 +950,7 @@ mod tests {
         );
         // 旧テーブルにはUNIQUE制約がないので、再作成されたテーブルにはUNIQUEがないはず
         // (新テーブル作成SQL内にUNIQUEが含まれない)
-        let create_stmt_start = sql.find(r#"CREATE TABLE "new_users""#);
+        let create_stmt_start = sql.find(r#"CREATE TABLE "_stratum_tmp_recreate_users""#);
         if let Some(start) = create_stmt_start {
             let create_stmt = &sql[start..sql[start..].find(';').map_or(sql.len(), |p| start + p)];
             assert!(

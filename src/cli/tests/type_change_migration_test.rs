@@ -526,17 +526,18 @@ mod type_change_migration_tests {
             assert!(combined_sql.contains("BEGIN TRANSACTION"));
 
             // 新テーブル作成
-            assert!(combined_sql.contains(r#"CREATE TABLE "new_users""#));
+            assert!(combined_sql.contains(r#"CREATE TABLE "_stratum_tmp_recreate_users""#));
 
             // データコピー
-            assert!(combined_sql.contains(r#"INSERT INTO "new_users""#));
+            assert!(combined_sql.contains(r#"INSERT INTO "_stratum_tmp_recreate_users""#));
             assert!(combined_sql.contains("SELECT"));
 
             // 旧テーブル削除
             assert!(combined_sql.contains(r#"DROP TABLE "users""#));
 
             // リネーム
-            assert!(combined_sql.contains(r#"ALTER TABLE "new_users" RENAME TO "users""#));
+            assert!(combined_sql
+                .contains(r#"ALTER TABLE "_stratum_tmp_recreate_users" RENAME TO "users""#));
 
             // 外部キー制約の有効化
             assert!(combined_sql.contains("PRAGMA foreign_keys=on"));
@@ -710,7 +711,7 @@ mod type_change_migration_tests {
                 MigrationDirection::Up,
             );
             let up_combined = up_sql.join("\n");
-            assert!(up_combined.contains(r#"CREATE TABLE "new_results""#));
+            assert!(up_combined.contains(r#"CREATE TABLE "_stratum_tmp_recreate_results""#));
             assert!(up_combined.contains("TEXT"));
 
             // Down: TEXT → INTEGER
@@ -720,7 +721,7 @@ mod type_change_migration_tests {
                 MigrationDirection::Down,
             );
             let down_combined = down_sql.join("\n");
-            assert!(down_combined.contains(r#"CREATE TABLE "new_results""#));
+            assert!(down_combined.contains(r#"CREATE TABLE "_stratum_tmp_recreate_results""#));
             assert!(down_combined.contains("INTEGER"));
         }
 
@@ -787,7 +788,7 @@ mod type_change_migration_tests {
             assert!(result.is_ok());
             let (sql, _) = result.unwrap();
             assert!(sql.contains("PRAGMA foreign_keys=off"));
-            assert!(sql.contains(r#"CREATE TABLE "new_users""#));
+            assert!(sql.contains(r#"CREATE TABLE "_stratum_tmp_recreate_users""#));
         }
 
         /// MigrationGeneratorServiceでのSQLite型変更SQL生成（カラム追加あり）
@@ -861,7 +862,7 @@ mod type_change_migration_tests {
             // 列交差ロジックの検証
             // id, age は共通カラムとしてコピーされる
             // bio は新規追加カラムなのでNULLが入る
-            assert!(sql.contains(r#"INSERT INTO "new_users""#));
+            assert!(sql.contains(r#"INSERT INTO "_stratum_tmp_recreate_users""#));
             assert!(sql.contains("SELECT"));
             // id, ageが含まれる
             assert!(sql.contains("id"));

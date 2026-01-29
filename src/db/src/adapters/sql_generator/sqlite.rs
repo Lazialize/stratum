@@ -5,8 +5,8 @@
 
 use crate::adapters::sql_generator::sqlite_table_recreator::SqliteTableRecreator;
 use crate::adapters::sql_generator::{
-    build_column_definition, quote_columns_sqlite, quote_identifier_sqlite, MigrationDirection,
-    SqlGenerator,
+    build_column_definition, format_check_constraint, quote_columns_sqlite,
+    quote_identifier_sqlite, MigrationDirection, SqlGenerator,
 };
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
@@ -60,9 +60,7 @@ impl SqlGenerator for SqliteSqlGenerator {
             }
             Constraint::CHECK {
                 check_expression, ..
-            } => {
-                format!("CHECK ({})", check_expression)
-            }
+            } => format_check_constraint(check_expression),
             Constraint::FOREIGN_KEY {
                 columns,
                 referenced_table,
@@ -386,10 +384,11 @@ mod tests {
         assert!(statements.len() >= 9);
         assert_eq!(statements[0], "PRAGMA foreign_keys=off");
         assert_eq!(statements[1], "BEGIN TRANSACTION");
-        assert!(statements[2].contains(r#"CREATE TABLE "new_users""#));
-        assert!(statements[3].contains(r#"INSERT INTO "new_users""#));
+        assert!(statements[2].contains(r#"CREATE TABLE "_stratum_tmp_recreate_users""#));
+        assert!(statements[3].contains(r#"INSERT INTO "_stratum_tmp_recreate_users""#));
         assert!(statements[4].contains(r#"DROP TABLE "users""#));
-        assert!(statements[5].contains(r#"ALTER TABLE "new_users" RENAME TO "users""#));
+        assert!(statements[5]
+            .contains(r#"ALTER TABLE "_stratum_tmp_recreate_users" RENAME TO "users""#));
     }
 
     #[test]

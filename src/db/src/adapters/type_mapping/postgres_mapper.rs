@@ -138,7 +138,7 @@ impl TypeMapper for PostgresTypeMapper {
             let values_str = values
                 .iter()
                 .filter_map(|v| v.as_str())
-                .map(|s| format!("'{}'", s))
+                .map(|s| format!("'{}'", s.replace('\'', "''")))
                 .collect::<Vec<_>>()
                 .join(", ");
             return format!("{}({})", kind, values_str);

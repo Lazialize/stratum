@@ -4,7 +4,7 @@
 // テーブル再作成パターンで型変更を実現します。
 
 use crate::adapters::sql_generator::{
-    quote_columns_sqlite, quote_identifier_sqlite, MigrationDirection,
+    format_check_constraint, quote_columns_sqlite, quote_identifier_sqlite, MigrationDirection,
 };
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
@@ -72,7 +72,7 @@ impl SqliteTableRecreator {
     ) -> Vec<String> {
         let mut statements = Vec::new();
         let table_name = &new_table.name;
-        let new_table_name = format!("new_{}", table_name);
+        let new_table_name = format!("_stratum_tmp_recreate_{}", table_name);
         let quoted_table = quote_identifier_sqlite(table_name);
         let quoted_new_table = quote_identifier_sqlite(&new_table_name);
 
@@ -184,9 +184,7 @@ impl SqliteTableRecreator {
             }
             Constraint::CHECK {
                 check_expression, ..
-            } => {
-                format!("CHECK ({})", check_expression)
-            }
+            } => format_check_constraint(check_expression),
             Constraint::FOREIGN_KEY {
                 columns,
                 referenced_table,
@@ -226,7 +224,7 @@ impl SqliteTableRecreator {
         new_table: &Table,
         old_table: Option<&Table>,
     ) -> String {
-        let new_table_name = format!("new_{}", new_table.name);
+        let new_table_name = format!("_stratum_tmp_recreate_{}", new_table.name);
         let quoted_new_table = quote_identifier_sqlite(&new_table_name);
         let quoted_table = quote_identifier_sqlite(&new_table.name);
 
@@ -362,12 +360,12 @@ mod tests {
         assert!(statements.len() >= 9);
         assert_eq!(statements[0], "PRAGMA foreign_keys=off");
         assert_eq!(statements[1], "BEGIN TRANSACTION");
-        assert!(statements[2].starts_with(r#"CREATE TABLE "new_users""#));
-        assert!(statements[3].starts_with(r#"INSERT INTO "new_users""#));
+        assert!(statements[2].starts_with(r#"CREATE TABLE "_stratum_tmp_recreate_users""#));
+        assert!(statements[3].starts_with(r#"INSERT INTO "_stratum_tmp_recreate_users""#));
         assert_eq!(statements[4], r#"DROP TABLE "users""#);
         assert_eq!(
             statements[5],
-            r#"ALTER TABLE "new_users" RENAME TO "users""#
+            r#"ALTER TABLE "_stratum_tmp_recreate_users" RENAME TO "users""#
         );
         // インデックスがない場合、次はCOMMIT
         assert!(statements.contains(&"COMMIT".to_string()));
@@ -434,7 +432,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            r#"INSERT INTO "new_users" ("id", "name", "email") SELECT "id", "name", "email" FROM "users""#
+            r#"INSERT INTO "_stratum_tmp_recreate_users" ("id", "name", "email") SELECT "id", "name", "email" FROM "users""#
         );
     }
 
@@ -443,9 +441,9 @@ mod tests {
         let recreator = SqliteTableRecreator::new();
         let table = create_test_table();
 
-        let sql = recreator.generate_create_table_with_name(&table, "new_users");
+        let sql = recreator.generate_create_table_with_name(&table, "_stratum_tmp_recreate_users");
 
-        assert!(sql.starts_with(r#"CREATE TABLE "new_users""#));
+        assert!(sql.starts_with(r#"CREATE TABLE "_stratum_tmp_recreate_users""#));
         assert!(sql.contains(r#""id" INTEGER NOT NULL"#));
         assert!(sql.contains(r#""name" TEXT NOT NULL"#));
         assert!(sql.contains(r#""email" TEXT"#));
@@ -511,7 +509,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            r#"INSERT INTO "new_users" ("id", "name", "email") SELECT "id", "name", "email" FROM "users""#
+            r#"INSERT INTO "_stratum_tmp_recreate_users" ("id", "name", "email") SELECT "id", "name", "email" FROM "users""#
         );
     }
 
@@ -556,7 +554,7 @@ mod tests {
         // 追加されたnullableカラムにはNULLが入る
         assert_eq!(
             sql,
-            r#"INSERT INTO "new_users" ("id", "name", "bio") SELECT "id", "name", NULL FROM "users""#
+            r#"INSERT INTO "_stratum_tmp_recreate_users" ("id", "name", "bio") SELECT "id", "name", NULL FROM "users""#
         );
     }
 
@@ -603,7 +601,7 @@ mod tests {
         // 追加されたカラムにはDEFAULT値が入る
         assert_eq!(
             sql,
-            r#"INSERT INTO "new_users" ("id", "name", "status") SELECT "id", "name", 'active' FROM "users""#
+            r#"INSERT INTO "_stratum_tmp_recreate_users" ("id", "name", "status") SELECT "id", "name", 'active' FROM "users""#
         );
     }
 
@@ -633,7 +631,7 @@ mod tests {
         // 削除されたカラムはSELECTに含まれない
         assert_eq!(
             sql,
-            r#"INSERT INTO "new_users" ("id", "name") SELECT "id", "name" FROM "users""#
+            r#"INSERT INTO "_stratum_tmp_recreate_users" ("id", "name") SELECT "id", "name" FROM "users""#
         );
     }
 
@@ -668,7 +666,7 @@ mod tests {
         // NOT NULLでDEFAULTがない場合はフォールバック値（0）
         assert_eq!(
             sql,
-            r#"INSERT INTO "new_users" ("id", "count") SELECT "id", 0 FROM "users""#
+            r#"INSERT INTO "_stratum_tmp_recreate_users" ("id", "count") SELECT "id", 0 FROM "users""#
         );
     }
 
@@ -682,7 +680,7 @@ mod tests {
 
         assert_eq!(
             sql,
-            r#"INSERT INTO "new_users" ("id", "name", "email") SELECT "id", "name", "email" FROM "users""#
+            r#"INSERT INTO "_stratum_tmp_recreate_users" ("id", "name", "email") SELECT "id", "name", "email" FROM "users""#
         );
     }
 }

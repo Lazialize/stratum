@@ -3,9 +3,10 @@
 // スキーマ定義からPostgreSQL用のDDL文を生成します。
 
 use crate::adapters::sql_generator::{
-    build_column_definition, generate_ck_constraint_name, generate_fk_constraint_name,
-    generate_uq_constraint_name, quote_columns_postgres, quote_identifier_postgres,
-    quote_regclass_postgres, MigrationDirection, SqlGenerator,
+    build_column_definition, format_check_constraint, generate_ck_constraint_name,
+    generate_fk_constraint_name, generate_uq_constraint_name, quote_columns_postgres,
+    quote_identifier_postgres, quote_regclass_postgres, sanitize_sql_comment,
+    validate_check_expression, MigrationDirection, SqlGenerator,
 };
 use crate::adapters::type_mapping::TypeMappingService;
 use crate::core::config::Dialect;
@@ -52,6 +53,23 @@ impl PostgresSqlGenerator {
     /// 型変更SQLを生成
     ///
     /// auto_incrementの変更と同時に型変更がある場合も処理する（例: INTEGER→BIGSERIAL）
+    ///
+    /// # USING句について
+    ///
+    /// PostgreSQLではALTER COLUMN TYPEで暗黙のキャストが存在しない型変換を行う場合、
+    /// USING句が必要です。現在の実装では `USING "column"::TYPE` 形式の単純キャストのみ
+    /// 自動生成します。
+    ///
+    /// 以下のケースでは、生成されたマイグレーションを手動で修正する必要があります:
+    /// - 文字列→タイムスタンプ変換でカスタムフォーマットが必要な場合
+    ///   例: `USING to_timestamp("col", 'YYYY-MM-DD HH24:MI:SS')`
+    /// - 複合的な変換ロジックが必要な場合
+    ///   例: `USING CASE WHEN "col" = 'yes' THEN true ELSE false END`
+    /// - ENUM型への変換で中間キャストが必要な場合
+    ///   例: `USING "col"::text::new_enum_type`
+    ///
+    /// 自動生成されるマイグレーションファイルを確認し、
+    /// 必要に応じてUSING句を適切な変換ロジックに修正してください。
     #[allow(clippy::too_many_arguments)]
     fn generate_type_change_sql(
         &self,
@@ -166,6 +184,12 @@ impl PostgresSqlGenerator {
     ///
     /// TypeCategoryベースでUSING句の自動生成を判定します。
     /// design.mdの「USING句生成ルール」に基づく実装。
+    ///
+    /// # 制限事項
+    ///
+    /// USING句が必要と判定された場合、`USING "column"::TARGET_TYPE` 形式の単純キャストを生成します。
+    /// 複雑な型変換（例: 文字列→タイムスタンプのフォーマット指定、条件付きキャスト）には対応していません。
+    /// そのようなケースでは、生成されたマイグレーションSQLを手動で修正してください。
     fn needs_using_clause(&self, source_type: &ColumnType, target_type: &ColumnType) -> bool {
         let source_category = TypeCategory::from_column_type(source_type);
         let target_category = TypeCategory::from_column_type(target_type);
@@ -237,9 +261,7 @@ impl SqlGenerator for PostgresSqlGenerator {
             }
             Constraint::CHECK {
                 check_expression, ..
-            } => {
-                format!("CHECK ({})", check_expression)
-            }
+            } => format_check_constraint(check_expression),
             Constraint::FOREIGN_KEY { .. } => {
                 // FOREIGN KEY制約はALTER TABLEで追加するため、ここでは空文字列を返す
                 String::new()
@@ -477,6 +499,15 @@ impl SqlGenerator for PostgresSqlGenerator {
             } => {
                 let constraint_name = generate_ck_constraint_name(table_name, columns);
 
+                if let Err(msg) = validate_check_expression(check_expression) {
+                    let sanitized_msg = sanitize_sql_comment(&msg);
+                    return format!(
+                        "/* ERROR: {} */ ALTER TABLE {} ADD CONSTRAINT {} CHECK (FALSE)",
+                        sanitized_msg,
+                        quote_identifier_postgres(table_name),
+                        quote_identifier_postgres(&constraint_name),
+                    );
+                }
                 format!(
                     "ALTER TABLE {} ADD CONSTRAINT {} CHECK ({})",
                     quote_identifier_postgres(table_name),
