@@ -513,8 +513,8 @@ mod tests {
         handler
             .filter_tables(
                 &mut schema,
-                &vec!["users".to_string(), "posts".to_string()],
-                &vec![],
+                &["users".to_string(), "posts".to_string()],
+                &[],
             )
             .unwrap();
 
@@ -534,7 +534,7 @@ mod tests {
         schema.add_table(Table::new("comments".to_string()));
 
         handler
-            .filter_tables(&mut schema, &vec![], &vec!["comments".to_string()])
+            .filter_tables(&mut schema, &[], &["comments".to_string()])
             .unwrap();
 
         assert_eq!(schema.tables.len(), 2);
@@ -550,7 +550,7 @@ mod tests {
         let mut schema = Schema::new("1.0".to_string());
         schema.add_table(Table::new("users".to_string()));
 
-        let result = handler.filter_tables(&mut schema, &vec!["nonexistent".to_string()], &vec![]);
+        let result = handler.filter_tables(&mut schema, &["nonexistent".to_string()], &[]);
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("nonexistent"));
@@ -565,7 +565,7 @@ mod tests {
         schema.add_table(Table::new("posts".to_string()));
 
         handler
-            .filter_tables(&mut schema, &vec![], &vec![])
+            .filter_tables(&mut schema, &[], &[])
             .unwrap();
 
         assert_eq!(schema.tables.len(), 2);
