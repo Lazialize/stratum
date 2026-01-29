@@ -4,9 +4,11 @@ schema_dir: schema
 migrations_dir: migrations
 environments:
   development:
-    host: localhost
-    port: 0
-    database: sqlite_db
-    user: null
-    password: null
+    database: myapp_dev.db
     timeout: 30
+  staging:
+    database: myapp_staging.db
+    timeout: 30
+  production:
+    database: myapp_production.db
+    timeout: 60

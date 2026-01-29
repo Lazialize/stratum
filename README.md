@@ -7,8 +7,6 @@
 
 Strata is a modern database schema management tool that treats your database schema as code. Define your schemas in declarative YAML files, automatically generate migrations, and apply them with confidence across multiple environments.
 
-See `ROADMAP.md` for planned features and TODOs.
-
 ## Features
 
 - **📝 Schema as Code**: Define database schemas in declarative YAML files
@@ -19,6 +17,8 @@ See `ROADMAP.md` for planned features and TODOs.
 - **📤 Schema Export**: Export existing database schemas to code
 - **🛡️ Destructive Change Guard**: Prevent accidental data loss with explicit confirmation
 - **🗄️ Multi-Database Support**: PostgreSQL, MySQL, and SQLite
+- **📊 Structured Output**: `--format json` for CI/CD integration
+- **🔒 SSL/TLS Support**: Configurable SSL modes for secure database connections
 
 ## Installation
 
@@ -68,7 +68,7 @@ strata init --dialect mysql
 ```
 
 This creates:
-- `.strata.yaml` - Configuration file
+- `.strata.yaml` - Configuration file with development, staging, and production environments
 - `schema/` - Directory for schema definitions
 - `migrations/` - Directory for generated migrations
 
@@ -80,38 +80,29 @@ Create a schema file in the `schema/` directory (e.g., `schema/users.yaml`):
 version: "1.0"
 tables:
   users:
-    name: users
     columns:
       - name: id
         type:
           kind: INTEGER
-          precision: null
         nullable: false
-        default_value: null
         auto_increment: true
       - name: email
         type:
           kind: VARCHAR
           length: 255
         nullable: false
-        default_value: null
-        auto_increment: null
       - name: created_at
         type:
           kind: TIMESTAMP
           with_time_zone: true
         nullable: false
-        default_value: null
-        auto_increment: null
+    primary_key:
+      - id
     indexes:
       - name: idx_users_email
         columns:
           - email
         unique: true
-    constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
 ```
 
 ### 3. Generate Migration
@@ -151,6 +142,15 @@ strata status
 # Check production status
 strata status --env production
 ```
+
+## Global Options
+
+These options apply to all commands:
+
+- `-c, --config <PATH>` - Path to configuration file (default: `.strata.yaml`)
+- `-v, --verbose` - Enable verbose debug output
+- `--no-color` - Disable colored output
+- `--format <FORMAT>` - Output format: `text` (default) or `json`
 
 ## Commands
 
@@ -228,12 +228,20 @@ strata rollback
 # Rollback last 3 migrations
 strata rollback --steps 3
 
+# Dry run to preview SQL
+strata rollback --dry-run
+
 # Rollback in production
 strata rollback --env production --steps 1
+
+# Allow destructive rollback
+strata rollback --allow-destructive
 ```
 
 **Options:**
 - `--steps <N>` - Number of migrations to rollback
+- `--dry-run` - Show SQL without executing
+- `--allow-destructive` - Allow destructive changes (DROP TABLE, DROP COLUMN, etc.)
 - `-e, --env <ENV>` - Target environment (default: development)
 
 ### `validate` - Validate Schema
@@ -282,12 +290,24 @@ strata export --env production --output ./prod-schema
 
 # Overwrite existing files
 strata export --force
+
+# Split into per-table files
+strata export --split
+
+# Export specific tables only
+strata export --tables users,posts
+
+# Exclude specific tables
+strata export --exclude-tables schema_migrations
 ```
 
 **Options:**
 - `-o, --output <DIR>` - Output directory for schema files
 - `-e, --env <ENV>` - Target environment (default: development)
 - `--force` - Overwrite existing files without confirmation
+- `--split` - Output one YAML file per table instead of a single file
+- `--tables <TABLES>` - Include only specified tables (comma-separated)
+- `--exclude-tables <TABLES>` - Exclude specified tables (comma-separated)
 
 ## Configuration
 
@@ -310,13 +330,26 @@ environments:
     password: devpass
     timeout: 30
 
+  staging:
+    host: staging-db.example.com
+    port: 5432
+    database: myapp_staging
+    user: app_user
+    timeout: 30
+    ssl_mode: require
+
   production:
     host: db.example.com
     port: 5432
     database: myapp_prod
     user: app_user
-    password: ${DB_PASSWORD}  # Use environment variable
     timeout: 60
+    ssl_mode: verify_full
+    max_connections: 10
+    min_connections: 2
+    idle_timeout: 300
+    options:
+      application_name: strata
 ```
 
 ### Configuration Fields
@@ -326,12 +359,36 @@ environments:
 - `schema_dir` - Directory for schema definition files
 - `migrations_dir` - Directory for migration files
 - `environments` - Database connection settings per environment
-  - `host` - Database host
-  - `port` - Database port
+  - `host` - Database host (default: `localhost`)
+  - `port` - Database port (default: 5432 for PostgreSQL, 3306 for MySQL, none for SQLite)
   - `database` - Database name (or file path for SQLite)
   - `user` - Database user (optional for SQLite)
   - `password` - Database password (optional for SQLite)
   - `timeout` - Connection timeout in seconds
+  - `ssl_mode` - SSL connection mode: `disable`, `prefer`, `require`, `verify_ca`, `verify_full`
+  - `max_connections` - Maximum connection pool size (default: 5)
+  - `min_connections` - Minimum connection pool size
+  - `idle_timeout` - Idle connection timeout in seconds
+  - `options` - Additional connection parameters (key-value pairs appended to connection string)
+
+### Environment Variable Overrides
+
+Database connection settings can be overridden with environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `DB_HOST` | Database host |
+| `DB_PORT` | Database port |
+| `DB_DATABASE` | Database name |
+| `DB_USER` | Database user |
+| `DB_PASSWORD` | Database password |
+| `DB_TIMEOUT` | Connection timeout in seconds |
+
+This allows you to keep sensitive credentials out of your configuration file:
+
+```bash
+DB_PASSWORD=secret strata apply --env production
+```
 
 ## Schema Definition Format
 
@@ -485,8 +542,33 @@ Supported constraints:
   - `columns`: List of column names
   - `referenced_table`: Referenced table name
   - `referenced_columns`: Referenced column names
+  - `on_delete`: Referential action on delete (optional): `NO_ACTION`, `CASCADE`, `SET_NULL`, `SET_DEFAULT`, `RESTRICT`
+  - `on_update`: Referential action on update (optional): same values as `on_delete`
 - `UNIQUE` - Unique constraint
   - `columns`: List of column names
+- `CHECK` - Check constraint
+  - `columns`: List of columns involved
+  - `check_expression`: SQL check expression (e.g., `"price > 0"`)
+
+### Table and Column Renames
+
+To rename a table or column, use the `renamed_from` field. Strata will generate `ALTER TABLE RENAME` or `ALTER TABLE RENAME COLUMN` instead of a destructive drop-and-create:
+
+```yaml
+tables:
+  # Rename table: accounts -> users
+  users:
+    renamed_from: accounts
+    columns:
+      - name: full_name
+        renamed_from: name  # Rename column: name -> full_name
+        type:
+          kind: VARCHAR
+          length: 255
+        nullable: false
+```
+
+> **Note:** Remove `renamed_from` after the migration has been applied. It is only used during migration generation.
 
 ### Database Dialect Type Mapping
 
@@ -520,7 +602,6 @@ Here are examples of how to use each column type in your schema:
 version: "1.0"
 tables:
   products:
-    name: products
     columns:
       # Numeric types
       - name: id
@@ -598,10 +679,8 @@ tables:
           kind: JSONB
         nullable: true
 
-    constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
+    primary_key:
+      - id
 ```
 
 ### Example Schema
@@ -610,7 +689,6 @@ tables:
 version: "1.0"
 tables:
   posts:
-    name: posts
     columns:
       - name: id
         type:
@@ -640,6 +718,8 @@ tables:
           kind: TIMESTAMP
           with_time_zone: true
         nullable: true
+    primary_key:
+      - id
     indexes:
       - name: idx_posts_user_id
         columns:
@@ -650,15 +730,13 @@ tables:
           - published_at
         unique: false
     constraints:
-      - type: PRIMARY_KEY
-        columns:
-          - id
       - type: FOREIGN_KEY
         columns:
           - user_id
         referenced_table: users
         referenced_columns:
           - id
+        on_delete: CASCADE
 ```
 
 ## Migration Files
@@ -679,8 +757,25 @@ The `.meta.yaml` file contains:
 
 ```yaml
 version: "20260122120000"
-description: "create_users"
+description: create_users
+dialect: postgresql
 checksum: "abc123def456..."  # SHA-256 hash of up.sql
+```
+
+Migrations with destructive changes include additional metadata:
+
+```yaml
+version: "20260125120000"
+description: drop_legacy_tables
+dialect: postgresql
+checksum: "def789..."
+destructive_changes:
+  tables_dropped:
+    - legacy_users
+  columns_dropped:
+    - table: products
+      columns:
+        - old_field
 ```
 
 The checksum ensures migration integrity - any modification to the migration after it's been applied will be detected.

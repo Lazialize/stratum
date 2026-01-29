@@ -29,3 +29,53 @@ tables:
         columns:
           - email
         unique: true
+
+  posts:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+        auto_increment: true
+      - name: title
+        type:
+          kind: VARCHAR
+          length: 200
+        nullable: false
+      - name: content
+        type:
+          kind: TEXT
+        nullable: true
+      - name: user_id
+        type:
+          kind: INTEGER
+        nullable: false
+      - name: published
+        type:
+          kind: BOOLEAN
+        nullable: false
+        default_value: "false"
+      - name: published_at
+        type:
+          kind: TIMESTAMP
+          with_time_zone: true
+        nullable: true
+    primary_key:
+      - id
+    indexes:
+      - name: idx_posts_user_id
+        columns:
+          - user_id
+        unique: false
+      - name: idx_posts_published_at
+        columns:
+          - published_at
+        unique: false
+    constraints:
+      - type: FOREIGN_KEY
+        columns:
+          - user_id
+        referenced_table: users
+        referenced_columns:
+          - id
+        on_delete: CASCADE

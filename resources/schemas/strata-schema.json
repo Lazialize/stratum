@@ -67,6 +67,10 @@
           "items": {
             "$ref": "#/$defs/constraint"
           }
+        },
+        "renamed_from": {
+          "type": "string",
+          "description": "Previous table name (used for table rename migration)"
         }
       }
     },
@@ -93,6 +97,10 @@
         "auto_increment": {
           "type": ["boolean", "null"],
           "description": "Whether the column auto-increments"
+        },
+        "renamed_from": {
+          "type": "string",
+          "description": "Previous column name (used for column rename migration)"
         }
       }
     },
@@ -578,6 +586,14 @@
               "items": { "type": "string" },
               "minItems": 1,
               "description": "Referenced columns"
+            },
+            "on_delete": {
+              "$ref": "#/$defs/referentialAction",
+              "description": "Action on referenced row deletion"
+            },
+            "on_update": {
+              "$ref": "#/$defs/referentialAction",
+              "description": "Action on referenced row update"
             }
           }
         },
@@ -620,6 +636,11 @@
           }
         }
       ]
+    },
+    "referentialAction": {
+      "type": "string",
+      "enum": ["NO_ACTION", "CASCADE", "SET_NULL", "SET_DEFAULT", "RESTRICT"],
+      "description": "Referential action for foreign key ON DELETE / ON UPDATE"
     },
     "enumDefinition": {
       "type": "object",
