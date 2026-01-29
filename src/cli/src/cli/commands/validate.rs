@@ -6,11 +6,57 @@
 // - エラーと警告のフォーマットされた表示
 // - 検証結果のサマリー表示
 
+use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
+use crate::cli::commands::{CommandOutput, render_output};
 use crate::services::schema_io::schema_parser::SchemaParserService;
 use crate::services::schema_validator::SchemaValidatorService;
 use anyhow::{anyhow, Context, Result};
+use serde::Serialize;
 use std::path::PathBuf;
+
+/// validateコマンドの出力構造体
+#[derive(Debug, Clone, Serialize)]
+pub struct ValidateOutput {
+    /// 検証が成功したかどうか
+    pub is_valid: bool,
+    /// エラー一覧
+    pub errors: Vec<ValidationIssue>,
+    /// 警告一覧
+    pub warnings: Vec<ValidationIssue>,
+    /// 統計情報
+    pub statistics: ValidationStatistics,
+    /// テキスト出力メッセージ
+    #[serde(skip)]
+    pub text_message: String,
+}
+
+/// 検証の問題
+#[derive(Debug, Clone, Serialize)]
+pub struct ValidationIssue {
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
+}
+
+/// 検証の統計情報
+#[derive(Debug, Clone, Serialize)]
+pub struct ValidationStatistics {
+    pub tables: usize,
+    pub columns: usize,
+    pub indexes: usize,
+    pub constraints: usize,
+}
+
+impl CommandOutput for ValidateOutput {
+    fn to_text(&self) -> String {
+        self.text_message.clone()
+    }
+}
 
 /// 検証結果のサマリー情報
 #[derive(Debug, Clone)]
@@ -33,6 +79,8 @@ pub struct ValidateCommand {
     pub config_path: Option<PathBuf>,
     /// スキーマディレクトリのパス（指定されない場合は設定ファイルから取得）
     pub schema_dir: Option<PathBuf>,
+    /// 出力フォーマット
+    pub format: OutputFormat,
 }
 
 /// validateコマンドハンドラー
@@ -76,17 +124,73 @@ impl ValidateCommandHandler {
         let validation_result = validator.validate_with_dialect(&schema, config.dialect);
 
         // 検証結果を表示用にフォーマット
-        let summary = self.format_validation_result(&validation_result, &schema);
+        let text_message = self.format_validation_result(&validation_result, &schema);
+        let stats = self.calculate_statistics(&schema);
+
+        // 構造化出力データを構築
+        let errors: Vec<ValidationIssue> = validation_result
+            .errors
+            .iter()
+            .map(|error| {
+                let location = self.get_error_location(error);
+                ValidationIssue {
+                    message: format!("{}", error),
+                    table: location.and_then(|l| l.table.clone()),
+                    column: location.and_then(|l| l.column.clone()),
+                    suggestion: self.get_error_suggestion(error).map(|s| s.to_string()),
+                }
+            })
+            .collect();
+
+        let warnings: Vec<ValidationIssue> = validation_result
+            .warnings
+            .iter()
+            .map(|warning| {
+                let loc = &warning.location;
+                ValidationIssue {
+                    message: warning.message.clone(),
+                    table: loc.as_ref().and_then(|l| l.table.clone()),
+                    column: loc.as_ref().and_then(|l| l.column.clone()),
+                    suggestion: None,
+                }
+            })
+            .collect();
+
+        let output = ValidateOutput {
+            is_valid: validation_result.is_valid(),
+            errors,
+            warnings,
+            statistics: ValidationStatistics {
+                tables: stats.0,
+                columns: stats.1,
+                indexes: stats.2,
+                constraints: stats.3,
+            },
+            text_message: text_message.clone(),
+        };
 
         if validation_result.is_valid() {
-            Ok(summary)
+            render_output(&output, &command.format)
         } else {
-            // サマリーを標準エラーに出力してからエラーを返す
-            eprintln!("{}", summary);
-            Err(anyhow!(
-                "Validation failed with {} error(s)",
-                validation_result.errors.len()
-            ))
+            match &command.format {
+                OutputFormat::Json => {
+                    // JSON モードでは構造化出力を stdout に出力した上で Err を返す
+                    // （exit code 1 で CI/CD パイプラインが失敗を検出できるようにする）
+                    let json_output = render_output(&output, &command.format)?;
+                    println!("{}", json_output);
+                    Err(anyhow!(
+                        "Validation failed with {} error(s)",
+                        validation_result.errors.len()
+                    ))
+                }
+                OutputFormat::Text => {
+                    eprintln!("{}", text_message);
+                    Err(anyhow!(
+                        "Validation failed with {} error(s)",
+                        validation_result.errors.len()
+                    ))
+                }
+            }
         }
     }
 
@@ -331,5 +435,46 @@ mod tests {
         assert_eq!(column_count, 2);
         assert_eq!(index_count, 0);
         assert_eq!(constraint_count, 1);
+    }
+
+    #[test]
+    fn test_validate_output_json_serialization() {
+        let output = ValidateOutput {
+            is_valid: false,
+            errors: vec![ValidationIssue {
+                message: "No primary key".to_string(),
+                table: Some("users".to_string()),
+                column: None,
+                suggestion: Some("Add a primary key".to_string()),
+            }],
+            warnings: vec![ValidationIssue {
+                message: "Wide column".to_string(),
+                table: Some("users".to_string()),
+                column: Some("bio".to_string()),
+                suggestion: None,
+            }],
+            statistics: ValidationStatistics {
+                tables: 1,
+                columns: 3,
+                indexes: 0,
+                constraints: 0,
+            },
+            text_message: "should not appear in JSON".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // text_message は #[serde(skip)] のため含まれない
+        assert!(parsed.get("text_message").is_none());
+        // 主要フィールドが含まれる
+        assert_eq!(parsed["is_valid"], false);
+        assert_eq!(parsed["errors"][0]["message"], "No primary key");
+        assert_eq!(parsed["errors"][0]["table"], "users");
+        assert!(parsed["errors"][0].get("column").is_none()); // None はスキップ
+        assert_eq!(parsed["errors"][0]["suggestion"], "Add a primary key");
+        assert_eq!(parsed["warnings"][0]["column"], "bio");
+        assert!(parsed["warnings"][0].get("suggestion").is_none()); // None はスキップ
+        assert_eq!(parsed["statistics"]["tables"], 1);
     }
 }

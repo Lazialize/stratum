@@ -20,6 +20,7 @@ fn test_validate_command_struct() {
         project_path: PathBuf::from("/test/path"),
         config_path: None,
         schema_dir: None,
+        format: strata::cli::OutputFormat::Text,
     };
 
     assert_eq!(command.project_path, PathBuf::from("/test/path"));
@@ -36,6 +37,7 @@ fn test_validate_no_config_file() {
         project_path,
         config_path: None,
         schema_dir: None,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command);
@@ -59,6 +61,7 @@ fn test_validate_no_schema_dir() {
         project_path,
         config_path: None,
         schema_dir: None,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command);
@@ -79,6 +82,7 @@ fn test_validate_empty_schema_dir() {
         project_path,
         config_path: None,
         schema_dir: None,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command);
@@ -125,6 +129,7 @@ tables:
         project_path,
         config_path: None,
         schema_dir: None,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command);
@@ -164,6 +169,7 @@ tables:
         project_path,
         config_path: None,
         schema_dir: None,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command);
@@ -209,6 +215,7 @@ tables:
         project_path,
         config_path: None,
         schema_dir: None,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command);
@@ -247,6 +254,7 @@ tables:
         project_path: project_path.clone(),
         config_path: None,
         schema_dir: Some(custom_schema_dir),
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command);

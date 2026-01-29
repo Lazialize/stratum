@@ -340,6 +340,7 @@ tables:
                 description: Some(description.to_string()),
                 dry_run: false,
                 allow_destructive,
+                format: strata::cli::OutputFormat::Text,
             };
 
             handler.execute(&command).map_err(|e| e.to_string())
@@ -364,6 +365,7 @@ tables:
                 env: "development".to_string(),
                 timeout: None,
                 allow_destructive,
+                format: strata::cli::OutputFormat::Text,
             };
 
             handler.execute(&command).await.map_err(|e| e.to_string())
@@ -379,6 +381,7 @@ tables:
                 env: "development".to_string(),
                 timeout: None,
                 allow_destructive: false,
+                format: strata::cli::OutputFormat::Text,
             };
 
             handler.execute(&command).await.map_err(|e| e.to_string())
@@ -394,6 +397,7 @@ tables:
                 env: "development".to_string(),
                 dry_run: false,
                 allow_destructive: true, // down.sql may contain DROP TABLE
+                format: strata::cli::OutputFormat::Text,
             };
 
             handler.execute(&command).await.map_err(|e| e.to_string())
@@ -406,6 +410,7 @@ tables:
                 project_path: self.project_path.clone(),
                 config_path: None,
                 env: "development".to_string(),
+                format: strata::cli::OutputFormat::Text,
             };
 
             handler.execute(&command).await.map_err(|e| e.to_string())

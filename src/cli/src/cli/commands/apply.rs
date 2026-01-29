@@ -8,11 +8,13 @@
 // - 実行ログの表示
 
 use crate::adapters::database_migrator::DatabaseMigratorService;
+use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::destructive_change_formatter::DestructiveChangeFormatter;
 use crate::cli::commands::migration_loader;
 use crate::cli::commands::split_sql_statements;
 use crate::cli::commands::DESTRUCTIVE_SQL_REGEX;
+use crate::cli::commands::{CommandOutput, render_output};
 use crate::core::config::Dialect;
 use crate::core::migration::{
     AppliedMigration, DestructiveChangeStatus, Migration, MigrationMetadata, MigrationRecord,
@@ -20,8 +22,43 @@ use crate::core::migration::{
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use colored::Colorize;
+use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+
+/// applyコマンドの出力構造体
+#[derive(Debug, Clone, Serialize)]
+pub struct ApplyOutput {
+    /// Dry runモードかどうか
+    pub dry_run: bool,
+    /// 適用されたマイグレーション数
+    pub applied_count: usize,
+    /// 各マイグレーションの結果
+    pub migrations: Vec<MigrationResult>,
+    /// 合計実行時間（ミリ秒）
+    pub total_duration_ms: i64,
+    /// 警告メッセージ
+    pub warnings: Vec<String>,
+    /// メッセージ
+    #[serde(skip)]
+    pub message: String,
+}
+
+/// 個別マイグレーション結果
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationResult {
+    pub version: String,
+    pub description: String,
+    pub duration_ms: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sql: Option<String>,
+}
+
+impl CommandOutput for ApplyOutput {
+    fn to_text(&self) -> String {
+        self.message.clone()
+    }
+}
 
 /// applyコマンドの入力パラメータ
 #[derive(Debug, Clone)]
@@ -38,6 +75,8 @@ pub struct ApplyCommand {
     pub timeout: Option<u64>,
     /// 破壊的変更を許可
     pub allow_destructive: bool,
+    /// 出力フォーマット
+    pub format: OutputFormat,
 }
 
 /// applyコマンドハンドラー
@@ -74,7 +113,15 @@ impl ApplyCommandHandler {
         let available_migrations = migration_loader::load_available_migrations(&migrations_dir)?;
 
         if available_migrations.is_empty() {
-            return Ok("No migration files found.".to_string());
+            let output = ApplyOutput {
+                dry_run: command.dry_run,
+                applied_count: 0,
+                migrations: vec![],
+                total_duration_ms: 0,
+                warnings: vec![],
+                message: "No migration files found.".to_string(),
+            };
+            return render_output(&output, &command.format);
         }
 
         // データベース接続を確立し、マイグレーション履歴を取得
@@ -94,7 +141,15 @@ impl ApplyCommandHandler {
             .collect();
 
         if pending_migrations.is_empty() {
-            return Ok("No pending migrations to apply. Database is up to date.".to_string());
+            let output = ApplyOutput {
+                dry_run: command.dry_run,
+                applied_count: 0,
+                migrations: vec![],
+                total_duration_ms: 0,
+                warnings: vec![],
+                message: "No pending migrations to apply. Database is up to date.".to_string(),
+            };
+            return render_output(&output, &command.format);
         }
 
         // 適用済みマイグレーションのチェックサム検証
@@ -106,7 +161,7 @@ impl ApplyCommandHandler {
 
         // Dry run モードの場合は SQL を表示して終了
         if command.dry_run {
-            return self.execute_dry_run(&pending_migrations);
+            return self.execute_dry_run(&pending_migrations, &command.format);
         }
 
         let migrator = DatabaseMigratorService::new();
@@ -182,12 +237,35 @@ impl ApplyCommandHandler {
         }
 
         // 結果サマリーを生成
-        let summary = self.generate_summary(&applied);
-        if warnings.is_empty() {
-            Ok(summary)
+        let migration_results: Vec<MigrationResult> = applied
+            .iter()
+            .map(|m| MigrationResult {
+                version: m.version.clone(),
+                description: m.description.clone(),
+                duration_ms: m.duration.num_milliseconds(),
+                sql: None,
+            })
+            .collect();
+
+        let total_duration: i64 = applied.iter().map(|m| m.duration.num_milliseconds()).sum();
+
+        let text_summary = self.generate_summary(&applied);
+        let text_message = if warnings.is_empty() {
+            text_summary
         } else {
-            Ok(format!("{}\n{}", warnings.join("\n"), summary))
-        }
+            format!("{}\n{}", warnings.join("\n"), text_summary)
+        };
+
+        let output = ApplyOutput {
+            dry_run: false,
+            applied_count: applied.len(),
+            migrations: migration_results,
+            total_duration_ms: total_duration,
+            warnings: checksum_warnings,
+            message: text_message,
+        };
+
+        render_output(&output, &command.format)
     }
 
     /// マイグレーションをトランザクション内で適用
@@ -251,14 +329,15 @@ impl ApplyCommandHandler {
     }
 
     /// Dry runモードの実行
-    fn execute_dry_run(&self, pending_migrations: &[&(String, String, PathBuf)]) -> Result<String> {
-        let mut output = String::from("=== DRY RUN MODE ===\n");
-        output.push_str(&format!(
+    fn execute_dry_run(&self, pending_migrations: &[&(String, String, PathBuf)], format: &OutputFormat) -> Result<String> {
+        let mut text_output = String::from("=== DRY RUN MODE ===\n");
+        text_output.push_str(&format!(
             "The following {} migration(s) will be applied:\n\n",
             pending_migrations.len()
         ));
 
         let mut has_destructive = false;
+        let mut migration_results = Vec::new();
 
         for (version, description, migration_dir) in pending_migrations {
             let up_sql_path = migration_dir.join("up.sql");
@@ -272,32 +351,48 @@ impl ApplyCommandHandler {
                 .with_context(|| format!("Failed to parse metadata: {:?}", meta_path))?;
             let destructive_status = metadata.destructive_change_status();
 
-            output.push_str(&format!("\u{25b6} {} - {}\n", version, description));
+            text_output.push_str(&format!("\u{25b6} {} - {}\n", version, description));
 
             match destructive_status {
                 DestructiveChangeStatus::Present => {
                     has_destructive = true;
-                    output.push_str(
+                    text_output.push_str(
                         &format!("{}\n", "⚠ Destructive Changes Detected".red().bold()).to_string(),
                     );
                 }
                 DestructiveChangeStatus::None => {}
             }
 
-            output.push_str("SQL:\n");
+            text_output.push_str("SQL:\n");
             let rendered_sql = if destructive_status == DestructiveChangeStatus::Present {
                 self.highlight_destructive_sql(&up_sql)
             } else {
-                up_sql
+                up_sql.clone()
             };
-            output.push_str(&format!("{}\n\n", rendered_sql));
+            text_output.push_str(&format!("{}\n\n", rendered_sql));
+
+            migration_results.push(MigrationResult {
+                version: version.clone(),
+                description: description.clone(),
+                duration_ms: 0,
+                sql: Some(up_sql),
+            });
         }
 
         if has_destructive {
-            output.push_str("To proceed, run with --allow-destructive flag\n");
+            text_output.push_str("To proceed, run with --allow-destructive flag\n");
         }
 
-        Ok(output)
+        let output = ApplyOutput {
+            dry_run: true,
+            applied_count: migration_results.len(),
+            migrations: migration_results,
+            total_duration_ms: 0,
+            warnings: vec![],
+            message: text_output,
+        };
+
+        render_output(&output, format)
     }
 
     fn highlight_destructive_sql(&self, sql: &str) -> String {
@@ -471,5 +566,46 @@ mod tests {
             .unwrap();
         let count: i64 = row.get(0);
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_apply_output_json_serialization() {
+        let output = ApplyOutput {
+            dry_run: false,
+            applied_count: 2,
+            migrations: vec![
+                MigrationResult {
+                    version: "20260121120000".to_string(),
+                    description: "create_users".to_string(),
+                    duration_ms: 100,
+                    sql: None,
+                },
+                MigrationResult {
+                    version: "20260121120001".to_string(),
+                    description: "create_posts".to_string(),
+                    duration_ms: 200,
+                    sql: Some("CREATE TABLE posts ...".to_string()),
+                },
+            ],
+            total_duration_ms: 300,
+            warnings: vec!["checksum warning".to_string()],
+            message: "should not appear in JSON".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // message は #[serde(skip)] のため含まれない
+        assert!(parsed.get("message").is_none());
+        // 主要フィールドが含まれる
+        assert_eq!(parsed["dry_run"], false);
+        assert_eq!(parsed["applied_count"], 2);
+        assert_eq!(parsed["total_duration_ms"], 300);
+        assert_eq!(parsed["migrations"][0]["version"], "20260121120000");
+        // sql が None のエントリは sql フィールドが含まれない
+        assert!(parsed["migrations"][0].get("sql").is_none());
+        // sql が Some のエントリは sql フィールドが含まれる
+        assert_eq!(parsed["migrations"][1]["sql"], "CREATE TABLE posts ...");
+        assert_eq!(parsed["warnings"][0], "checksum warning");
     }
 }

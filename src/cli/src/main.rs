@@ -4,6 +4,7 @@ use colored::control as color_control;
 use std::env;
 use std::path::PathBuf;
 use std::process;
+use strata::cli::commands::ErrorOutput;
 use strata::cli::commands::apply::{ApplyCommand, ApplyCommandHandler};
 use strata::cli::commands::export::{ExportCommand, ExportCommandHandler};
 use strata::cli::commands::generate::{GenerateCommand, GenerateCommandHandler};
@@ -11,7 +12,7 @@ use strata::cli::commands::init::{InitCommand, InitCommandHandler};
 use strata::cli::commands::rollback::{RollbackCommand, RollbackCommandHandler};
 use strata::cli::commands::status::{StatusCommand, StatusCommandHandler};
 use strata::cli::commands::validate::{ValidateCommand, ValidateCommandHandler};
-use strata::cli::{Cli, Commands};
+use strata::cli::{Cli, Commands, OutputFormat};
 use strata::core::config::Dialect;
 
 fn main() {
@@ -28,6 +29,7 @@ fn main() {
             process::exit(1);
         });
 
+    let is_json = matches!(cli.format, OutputFormat::Json);
     let result = runtime.block_on(run_command(cli));
 
     match result {
@@ -37,7 +39,13 @@ fn main() {
             }
         }
         Err(e) => {
-            eprintln!("Error: {:#}", e);
+            if is_json {
+                // JSON モードではエラーも構造化JSON形式で出力
+                let error_output = ErrorOutput::new(format!("{:#}", e));
+                eprintln!("{}", error_output.to_json());
+            } else {
+                eprintln!("Error: {:#}", e);
+            }
             process::exit(1);
         }
     }
@@ -69,6 +77,8 @@ async fn run_command(cli: Cli) -> Result<String> {
         }
     });
 
+    let format = cli.format;
+
     match cli.command {
         Commands::Init { dialect, force } => {
             let dialect = parse_dialect(dialect.as_deref())?;
@@ -82,9 +92,9 @@ async fn run_command(cli: Cli) -> Result<String> {
                 port: None,
                 user: None,
                 password: None,
+                format,
             };
-            handler.execute(&command)?;
-            Ok("Project initialized.".to_string())
+            handler.execute(&command)
         }
 
         Commands::Generate {
@@ -99,6 +109,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 description,
                 dry_run,
                 allow_destructive,
+                format,
             };
             handler.execute(&command)
         }
@@ -117,6 +128,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 env,
                 timeout,
                 allow_destructive,
+                format,
             };
             handler.execute(&command).await
         }
@@ -135,6 +147,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 env,
                 dry_run,
                 allow_destructive,
+                format,
             };
             handler.execute(&command).await
         }
@@ -145,6 +158,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 project_path,
                 config_path,
                 schema_dir,
+                format,
             };
             handler.execute(&command)
         }
@@ -155,6 +169,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 project_path,
                 config_path,
                 env,
+                format,
             };
             handler.execute(&command).await
         }
@@ -167,6 +182,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 env,
                 output_dir: output,
                 force,
+                format,
             };
             handler.execute(&command).await
         }

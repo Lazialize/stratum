@@ -6,13 +6,65 @@
 // - 適用済み/未適用の状態表示（テーブル形式）
 // - チェックサム不一致の検出と警告
 
+use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::migration_loader;
+use crate::cli::commands::{CommandOutput, render_output};
 use crate::core::migration::{Migration, MigrationMetadata, MigrationRecord};
 use anyhow::{Context, Result};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// statusコマンドの出力構造体
+#[derive(Debug, Clone, Serialize)]
+pub struct StatusOutput {
+    /// マイグレーション一覧
+    pub migrations: Vec<MigrationStatusEntry>,
+    /// サマリー情報
+    pub summary: StatusSummary,
+    /// 警告メッセージ
+    pub warnings: Vec<String>,
+    /// テキスト出力メッセージ
+    #[serde(skip)]
+    pub text_message: String,
+}
+
+/// マイグレーションのステータス
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MigrationStatusValue {
+    Applied,
+    Pending,
+    Orphaned,
+    AppliedChecksumMismatch,
+}
+
+/// マイグレーションステータスエントリ
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationStatusEntry {
+    pub version: String,
+    pub description: String,
+    pub status: MigrationStatusValue,
+    /// チェックサム不一致かどうか
+    pub checksum_mismatch: bool,
+}
+
+/// ステータスサマリー
+#[derive(Debug, Clone, Serialize)]
+pub struct StatusSummary {
+    pub total: usize,
+    pub applied: usize,
+    pub pending: usize,
+    pub orphaned: usize,
+}
+
+impl CommandOutput for StatusOutput {
+    fn to_text(&self) -> String {
+        self.text_message.clone()
+    }
+}
 
 /// statusコマンドの入力パラメータ
 #[derive(Debug, Clone)]
@@ -23,6 +75,8 @@ pub struct StatusCommand {
     pub config_path: Option<PathBuf>,
     /// 環境名
     pub env: String,
+    /// 出力フォーマット
+    pub format: OutputFormat,
 }
 
 /// statusコマンドハンドラー
@@ -59,7 +113,18 @@ impl StatusCommandHandler {
 
         // マイグレーションが存在しない場合
         if local_migrations.is_empty() {
-            return Ok(self.format_no_migrations());
+            let output = StatusOutput {
+                migrations: vec![],
+                summary: StatusSummary {
+                    total: 0,
+                    applied: 0,
+                    pending: 0,
+                    orphaned: 0,
+                },
+                warnings: vec![],
+                text_message: self.format_no_migrations(),
+            };
+            return render_output(&output, &command.format);
         }
 
         // データベースに接続し、マイグレーション履歴を取得
@@ -82,14 +147,60 @@ impl StatusCommandHandler {
             .filter(|(_, _, status)| status == "Orphaned")
             .count();
 
+        // 構造化出力データを構築
+        let mut warnings = Vec::new();
+        let migration_entries: Vec<MigrationStatusEntry> = status_list
+            .iter()
+            .map(|(v, d, s)| {
+                let checksum_mismatch = s.contains("checksum mismatch");
+                let status = if s.starts_with("Applied") {
+                    if checksum_mismatch {
+                        MigrationStatusValue::AppliedChecksumMismatch
+                    } else {
+                        MigrationStatusValue::Applied
+                    }
+                } else if s == "Orphaned" {
+                    MigrationStatusValue::Orphaned
+                } else {
+                    MigrationStatusValue::Pending
+                };
+                MigrationStatusEntry {
+                    version: v.clone(),
+                    description: d.clone(),
+                    status,
+                    checksum_mismatch,
+                }
+            })
+            .collect();
+
+        if migration_entries.iter().any(|e| e.status == MigrationStatusValue::AppliedChecksumMismatch) {
+            warnings.push("Some migrations have mismatched checksums. Migration files may have been modified after being applied.".to_string());
+        }
+        if orphaned_count > 0 {
+            warnings.push("Orphaned migrations detected. These migrations exist in the database but their local files are missing.".to_string());
+        }
+
         // フォーマット用に参照のベクタを作成
         let status_list_refs: Vec<(&str, &str, &str)> = status_list
             .iter()
             .map(|(v, d, s)| (v.as_str(), d.as_str(), s.as_str()))
             .collect();
 
-        // フォーマットして返す
-        Ok(self.format_migration_status(&status_list_refs, applied_count, pending_count, orphaned_count))
+        let text_message = self.format_migration_status(&status_list_refs, applied_count, pending_count, orphaned_count);
+
+        let output = StatusOutput {
+            migrations: migration_entries,
+            summary: StatusSummary {
+                total: status_list.len(),
+                applied: applied_count,
+                pending: pending_count,
+                orphaned: orphaned_count,
+            },
+            warnings,
+            text_message,
+        };
+
+        render_output(&output, &command.format)
     }
 
     /// ローカルマイグレーションファイルを読み込む
@@ -415,5 +526,54 @@ destructive_changes: {}
 
         assert!(output.contains("Migration Status"));
         assert!(output.contains("No migrations found"));
+    }
+
+    #[test]
+    fn test_status_output_json_serialization() {
+        let output = StatusOutput {
+            migrations: vec![
+                MigrationStatusEntry {
+                    version: "20260121120000".to_string(),
+                    description: "create_users".to_string(),
+                    status: MigrationStatusValue::Applied,
+                    checksum_mismatch: false,
+                },
+                MigrationStatusEntry {
+                    version: "20260121120001".to_string(),
+                    description: "create_posts".to_string(),
+                    status: MigrationStatusValue::Pending,
+                    checksum_mismatch: false,
+                },
+                MigrationStatusEntry {
+                    version: "20260121120002".to_string(),
+                    description: "add_index".to_string(),
+                    status: MigrationStatusValue::AppliedChecksumMismatch,
+                    checksum_mismatch: true,
+                },
+            ],
+            summary: StatusSummary {
+                total: 3,
+                applied: 1,
+                pending: 1,
+                orphaned: 0,
+            },
+            warnings: vec!["Some warning".to_string()],
+            text_message: "should not appear".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // text_message は含まれない
+        assert!(parsed.get("text_message").is_none());
+        // ステータスが snake_case で出力される
+        assert_eq!(parsed["migrations"][0]["status"], "applied");
+        assert_eq!(parsed["migrations"][1]["status"], "pending");
+        assert_eq!(parsed["migrations"][2]["status"], "applied_checksum_mismatch");
+        // サマリー
+        assert_eq!(parsed["summary"]["total"], 3);
+        assert_eq!(parsed["summary"]["applied"], 1);
+        // 警告
+        assert_eq!(parsed["warnings"][0], "Some warning");
     }
 }

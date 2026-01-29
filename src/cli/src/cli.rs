@@ -4,8 +4,18 @@
 pub mod command_context;
 pub mod commands;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+
+/// 出力フォーマット
+#[derive(Clone, Debug, Default, ValueEnum)]
+pub enum OutputFormat {
+    /// 人間向けテキスト出力（デフォルト）
+    #[default]
+    Text,
+    /// JSON構造化出力
+    Json,
+}
 
 /// Strata - Database Schema Management CLI
 ///
@@ -50,6 +60,10 @@ pub struct Cli {
     /// Disable colored output
     #[arg(long, global = true)]
     pub no_color: bool,
+
+    /// Output format (text or json)
+    #[arg(long, global = true, value_enum, default_value = "text")]
+    pub format: OutputFormat,
 
     /// Subcommand to execute
     #[command(subcommand)]

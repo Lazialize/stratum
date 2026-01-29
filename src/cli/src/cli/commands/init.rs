@@ -5,12 +5,34 @@
 // - デフォルト設定ファイルの生成（.strata.yaml）
 // - 初期化済みプロジェクトの検出と警告
 
+use crate::cli::OutputFormat;
+use crate::cli::commands::{CommandOutput, render_output};
 use crate::core::config::{Config, DatabaseConfig, Dialect};
 use crate::services::config_serializer::ConfigSerializer;
 use anyhow::{anyhow, Context, Result};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// initコマンドの出力構造体
+#[derive(Debug, Clone, Serialize)]
+pub struct InitOutput {
+    /// メッセージ
+    pub message: String,
+    /// 作成されたディレクトリ
+    pub created_dirs: Vec<String>,
+    /// 作成された設定ファイル
+    pub config_file: String,
+    /// 使用されたDialect
+    pub dialect: String,
+}
+
+impl CommandOutput for InitOutput {
+    fn to_text(&self) -> String {
+        self.message.clone()
+    }
+}
 
 /// 設定ファイル生成のパラメータ
 #[derive(Debug, Clone)]
@@ -42,6 +64,8 @@ pub struct InitCommand {
     pub user: Option<String>,
     /// パスワード
     pub password: Option<String>,
+    /// 出力フォーマット
+    pub format: OutputFormat,
 }
 
 /// initコマンドハンドラー
@@ -62,8 +86,8 @@ impl InitCommandHandler {
     ///
     /// # Returns
     ///
-    /// 成功時はOk(())、失敗時はエラーメッセージ
-    pub fn execute(&self, command: &InitCommand) -> Result<()> {
+    /// 成功時は出力文字列、失敗時はエラーメッセージ
+    pub fn execute(&self, command: &InitCommand) -> Result<String> {
         // 初期化済みチェック
         if self.is_already_initialized(&command.project_path) && !command.force {
             return Err(anyhow!(
@@ -88,7 +112,14 @@ impl InitCommandHandler {
         // .gitignoreに設定ファイルが含まれていない場合は警告
         self.warn_gitignore(&command.project_path);
 
-        Ok(())
+        let output = InitOutput {
+            message: "Project initialized.".to_string(),
+            created_dirs: vec!["schema/".to_string(), "migrations/".to_string()],
+            config_file: Config::DEFAULT_CONFIG_PATH.to_string(),
+            dialect: format!("{}", command.dialect),
+        };
+
+        render_output(&output, &command.format)
     }
 
     /// プロジェクトが既に初期化されているかチェック
@@ -300,5 +331,24 @@ mod tests {
         .unwrap();
         let handler = InitCommandHandler::new();
         handler.warn_gitignore(temp_dir.path()); // パニックしなければOK
+    }
+
+    #[test]
+    fn test_init_output_json_serialization() {
+        let output = InitOutput {
+            message: "Project initialized.".to_string(),
+            created_dirs: vec!["schema/".to_string(), "migrations/".to_string()],
+            config_file: ".strata.yaml".to_string(),
+            dialect: "sqlite".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["message"], "Project initialized.");
+        assert_eq!(parsed["created_dirs"][0], "schema/");
+        assert_eq!(parsed["created_dirs"][1], "migrations/");
+        assert_eq!(parsed["config_file"], ".strata.yaml");
+        assert_eq!(parsed["dialect"], "sqlite");
     }
 }

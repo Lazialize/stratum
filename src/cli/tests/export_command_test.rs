@@ -24,6 +24,7 @@ fn test_export_command_struct() {
         env: "development".to_string(),
         output_dir: Some(PathBuf::from("/test/output")),
         force: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     assert_eq!(command.project_path, PathBuf::from("/test/path"));
@@ -43,6 +44,7 @@ async fn test_export_no_config_file() {
         env: "development".to_string(),
         output_dir: None,
         force: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -65,6 +67,7 @@ async fn test_export_invalid_environment() {
         env: "invalid_env".to_string(),
         output_dir: None,
         force: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -144,6 +147,7 @@ async fn test_export_from_sqlite_database() {
         env: "development".to_string(),
         output_dir: Some(export_dir.clone()),
         force: true, // Allow overwrite in test
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -199,6 +203,7 @@ async fn test_export_to_stdout() {
         env: "development".to_string(),
         output_dir: None,
         force: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;

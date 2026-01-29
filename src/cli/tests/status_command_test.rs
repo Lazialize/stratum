@@ -23,6 +23,7 @@ fn test_status_command_struct() {
         project_path: PathBuf::from("/test/path"),
         config_path: None,
         env: "development".to_string(),
+        format: strata::cli::OutputFormat::Text,
     };
 
     assert_eq!(command.project_path, PathBuf::from("/test/path"));
@@ -39,6 +40,7 @@ async fn test_status_no_config_file() {
         project_path,
         config_path: None,
         env: "development".to_string(),
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -62,6 +64,7 @@ async fn test_status_no_migrations_dir() {
         project_path,
         config_path: None,
         env: "development".to_string(),
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -82,6 +85,7 @@ async fn test_status_no_migrations() {
         project_path,
         config_path: None,
         env: "development".to_string(),
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -135,6 +139,7 @@ async fn test_status_with_pending_migrations() {
         project_path,
         config_path: None,
         env: "development".to_string(),
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -219,6 +224,7 @@ async fn test_status_with_applied_migrations() {
         project_path,
         config_path: None,
         env: "development".to_string(),
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;

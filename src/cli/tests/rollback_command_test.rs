@@ -26,6 +26,7 @@ fn test_rollback_command_struct() {
         env: "development".to_string(),
         dry_run: false,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     assert_eq!(command.project_path, PathBuf::from("/test/path"));
@@ -46,6 +47,7 @@ async fn test_rollback_no_config_file() {
         env: "development".to_string(),
         dry_run: false,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -72,6 +74,7 @@ async fn test_rollback_no_migrations_dir() {
         env: "development".to_string(),
         dry_run: false,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -197,6 +200,7 @@ async fn test_rollback_single_migration_sqlite() {
         env: "development".to_string(),
         dry_run: false,
         allow_destructive: true, // down.sql may contain DROP TABLE
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;

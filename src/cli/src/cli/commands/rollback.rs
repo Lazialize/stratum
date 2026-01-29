@@ -7,17 +7,52 @@
 // - ロールバック結果の表示
 
 use crate::adapters::database_migrator::DatabaseMigratorService;
+use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::migration_loader;
 use crate::cli::commands::split_sql_statements;
 use crate::cli::commands::DESTRUCTIVE_SQL_REGEX;
+use crate::cli::commands::{CommandOutput, render_output};
 use crate::core::config::Dialect;
 use crate::core::migration::AppliedMigration;
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use colored::Colorize;
+use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+
+/// rollbackコマンドの出力構造体
+#[derive(Debug, Clone, Serialize)]
+pub struct RollbackOutput {
+    /// Dry runモードかどうか
+    pub dry_run: bool,
+    /// ロールバックされたマイグレーション数
+    pub rolled_back_count: usize,
+    /// 各マイグレーションの結果
+    pub migrations: Vec<RollbackMigrationResult>,
+    /// 合計実行時間（ミリ秒）
+    pub total_duration_ms: i64,
+    /// メッセージ
+    #[serde(skip)]
+    pub message: String,
+}
+
+/// 個別ロールバック結果
+#[derive(Debug, Clone, Serialize)]
+pub struct RollbackMigrationResult {
+    pub version: String,
+    pub description: String,
+    pub duration_ms: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sql: Option<String>,
+}
+
+impl CommandOutput for RollbackOutput {
+    fn to_text(&self) -> String {
+        self.message.clone()
+    }
+}
 
 /// rollbackコマンドの入力パラメータ
 #[derive(Debug, Clone)]
@@ -34,6 +69,8 @@ pub struct RollbackCommand {
     pub dry_run: bool,
     /// 破壊的変更を許可
     pub allow_destructive: bool,
+    /// 出力フォーマット
+    pub format: OutputFormat,
 }
 
 /// rollbackコマンドハンドラー
@@ -70,7 +107,14 @@ impl RollbackCommandHandler {
         let available_migrations = migration_loader::load_available_migrations(&migrations_dir)?;
 
         if available_migrations.is_empty() {
-            return Ok("No migration files found.".to_string());
+            let output = RollbackOutput {
+                dry_run: command.dry_run,
+                rolled_back_count: 0,
+                migrations: vec![],
+                total_duration_ms: 0,
+                message: "No migration files found.".to_string(),
+            };
+            return render_output(&output, &command.format);
         }
 
         // データベース接続を確立
@@ -96,7 +140,14 @@ impl RollbackCommandHandler {
             .with_context(|| "Failed to get applied migration history")?;
 
         if applied_migrations.is_empty() {
-            return Ok("No migrations to rollback. No migrations have been applied.".to_string());
+            let output = RollbackOutput {
+                dry_run: command.dry_run,
+                rolled_back_count: 0,
+                migrations: vec![],
+                total_duration_ms: 0,
+                message: "No migrations to rollback. No migrations have been applied.".to_string(),
+            };
+            return render_output(&output, &command.format);
         }
 
         // ロールバックする件数を決定（デフォルトは1）
@@ -157,7 +208,7 @@ impl RollbackCommandHandler {
 
         // Dry run モードの場合は SQL を表示して終了
         if command.dry_run {
-            return Ok(self.execute_dry_run(&rollback_items, has_destructive));
+            return self.execute_dry_run_with_format(&rollback_items, has_destructive, &command.format);
         }
 
         // マイグレーションを順次ロールバック
@@ -198,7 +249,30 @@ impl RollbackCommandHandler {
         }
 
         // 結果サマリーを生成
-        Ok(self.generate_summary(&rolled_back))
+        let migration_results: Vec<RollbackMigrationResult> = rolled_back
+            .iter()
+            .map(|m| RollbackMigrationResult {
+                version: m.version.clone(),
+                description: m.description.clone(),
+                duration_ms: m.duration.num_milliseconds(),
+                sql: None,
+            })
+            .collect();
+
+        let total_duration: i64 = rolled_back
+            .iter()
+            .map(|m| m.duration.num_milliseconds())
+            .sum();
+
+        let output = RollbackOutput {
+            dry_run: false,
+            rolled_back_count: rolled_back.len(),
+            migrations: migration_results,
+            total_duration_ms: total_duration,
+            message: self.generate_summary(&rolled_back),
+        };
+
+        render_output(&output, &command.format)
     }
 
     /// マイグレーションをトランザクション内でロールバック
@@ -279,6 +353,36 @@ impl RollbackCommandHandler {
     /// SQLに破壊的変更が含まれているかチェック
     fn contains_destructive_sql(&self, sql: &str) -> bool {
         DESTRUCTIVE_SQL_REGEX.is_match(sql)
+    }
+
+    /// Dry run モードの出力を生成（フォーマット対応）
+    fn execute_dry_run_with_format(
+        &self,
+        rollback_items: &[(&crate::core::migration::MigrationRecord, String, PathBuf)],
+        has_destructive: bool,
+        format: &OutputFormat,
+    ) -> Result<String> {
+        let text = self.execute_dry_run(rollback_items, has_destructive);
+
+        let migration_results: Vec<RollbackMigrationResult> = rollback_items
+            .iter()
+            .map(|(record, down_sql, _)| RollbackMigrationResult {
+                version: record.version.clone(),
+                description: record.description.clone(),
+                duration_ms: 0,
+                sql: Some(down_sql.clone()),
+            })
+            .collect();
+
+        let output = RollbackOutput {
+            dry_run: true,
+            rolled_back_count: migration_results.len(),
+            migrations: migration_results,
+            total_duration_ms: 0,
+            message: text,
+        };
+
+        render_output(&output, format)
     }
 
     /// Dry run モードの出力を生成
@@ -485,5 +589,30 @@ mod tests {
             .unwrap();
         let count: i64 = row.get(0);
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_rollback_output_json_serialization() {
+        let output = RollbackOutput {
+            dry_run: true,
+            rolled_back_count: 1,
+            migrations: vec![RollbackMigrationResult {
+                version: "20260121120000".to_string(),
+                description: "create_users".to_string(),
+                duration_ms: 0,
+                sql: Some("DROP TABLE users;".to_string()),
+            }],
+            total_duration_ms: 0,
+            message: "should not appear in JSON".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // message は #[serde(skip)] のため含まれない
+        assert!(parsed.get("message").is_none());
+        assert_eq!(parsed["dry_run"], true);
+        assert_eq!(parsed["rolled_back_count"], 1);
+        assert_eq!(parsed["migrations"][0]["sql"], "DROP TABLE users;");
     }
 }

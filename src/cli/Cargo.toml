@@ -28,6 +28,10 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "any", "postgres", "mysql
 # Error Handling (2026年1月時点の最新安定版)
 anyhow = "1"                                       # アプリケーションレベルエラー
 
+# Serialization
+serde = { version = "1", features = ["derive"] }   # シリアライゼーションフレームワーク
+serde_json = "1"                                    # JSON シリアライゼーション
+
 # Additional utilities
 chrono = { version = "0.4", features = ["serde"] } # 日時処理
 serde-saphyr = "0.0.16"                            # YAMLパーサー（パニックフリー）
@@ -37,7 +41,5 @@ serde-saphyr = "0.0.16"                            # YAMLパーサー（パニ�
 tempfile = "3"  # 一時ファイル/ディレクトリ作成
 testcontainers = "0.26"  # コンテナベースの統合テスト
 testcontainers-modules = { version = "0.14", features = ["postgres", "mysql"] }  # データベースモジュール
-serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 sha2 = "0.10"
-serde_json = "1"

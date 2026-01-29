@@ -34,6 +34,7 @@ async fn test_apply_command_no_config_file() {
         env: "development".to_string(),
         timeout: None,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -69,6 +70,7 @@ async fn test_apply_command_no_pending_migrations() {
         env: "development".to_string(),
         timeout: None,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -128,6 +130,7 @@ destructive_changes: {}
         env: "development".to_string(),
         timeout: None,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     // 2.6: dry-run モードでも DB に接続するようになった
@@ -187,6 +190,7 @@ destructive_changes: {}
         env: "development".to_string(),
         timeout: None,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -246,6 +250,7 @@ destructive_changes: {}
         env: "development".to_string(),
         timeout: None,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     // 1回目の適用
@@ -330,6 +335,7 @@ destructive_changes: {}
         env: "development".to_string(),
         timeout: None,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -391,6 +397,7 @@ destructive_changes: {}
         env: "development".to_string(),
         timeout: None,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;

@@ -6,9 +6,11 @@
 // - 差分検出とマイグレーションファイル生成
 // - 生成されたファイルパスの表示
 
+use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
 use crate::cli::commands::destructive_change_formatter::DestructiveChangeFormatter;
 use crate::cli::commands::dry_run_formatter::DryRunFormatter;
+use crate::cli::commands::{CommandOutput, render_output};
 use crate::core::config::Config;
 use crate::core::schema::Schema;
 use crate::services::destructive_change_detector::DestructiveChangeDetector;
@@ -20,8 +22,39 @@ use crate::services::schema_io::schema_serializer::SchemaSerializerService;
 use crate::services::schema_validator::SchemaValidatorService;
 use crate::services::traits::{MigrationGenerator, SchemaDiffDetector, SchemaValidator};
 use anyhow::{anyhow, Context, Result};
+use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// generateコマンドの出力構造体
+#[derive(Debug, Clone, Serialize)]
+pub struct GenerateOutput {
+    /// Dry runモードかどうか
+    pub dry_run: bool,
+    /// マイグレーション名
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration_name: Option<String>,
+    /// マイグレーションパス
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration_path: Option<String>,
+    /// UP SQL
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub up_sql: Option<String>,
+    /// DOWN SQL
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub down_sql: Option<String>,
+    /// 警告メッセージ
+    pub warnings: Vec<String>,
+    /// メッセージ
+    #[serde(skip)]
+    pub message: String,
+}
+
+impl CommandOutput for GenerateOutput {
+    fn to_text(&self) -> String {
+        self.message.clone()
+    }
+}
 
 /// generateコマンドの入力パラメータ
 #[derive(Debug, Clone)]
@@ -36,6 +69,8 @@ pub struct GenerateCommand {
     pub dry_run: bool,
     /// 破壊的変更を許可
     pub allow_destructive: bool,
+    /// 出力フォーマット
+    pub format: OutputFormat,
 }
 
 /// 差分検出・バリデーション結果
@@ -125,7 +160,18 @@ impl GenerateCommandHandler {
         // 差分検出・バリデーション
         let dvr = match self.detect_and_validate_diff(command, &current_schema, &previous_schema)? {
             Some(dvr) => dvr,
-            None => return Ok("No schema changes found. Schema is up to date.".to_string()),
+            None => {
+                let output = GenerateOutput {
+                    dry_run: command.dry_run,
+                    migration_name: None,
+                    migration_path: None,
+                    up_sql: None,
+                    down_sql: None,
+                    warnings: vec![],
+                    message: "No schema changes found. Schema is up to date.".to_string(),
+                };
+                return render_output(&output, &command.format);
+            }
         };
 
         // SQL生成
@@ -134,18 +180,29 @@ impl GenerateCommandHandler {
 
         // dry-runモードの場合はSQLを表示して終了
         if command.dry_run {
-            return self.execute_dry_run(
+            let text_output = self.execute_dry_run(
                 &dvr.migration_name,
                 &generated.up_sql,
                 &generated.down_sql,
                 &dvr.diff,
                 &generated.validation_result,
                 &dvr.destructive_report,
-            );
+            )?;
+
+            let output = GenerateOutput {
+                dry_run: true,
+                migration_name: Some(dvr.migration_name.clone()),
+                migration_path: None,
+                up_sql: Some(generated.up_sql.clone()),
+                down_sql: Some(generated.down_sql.clone()),
+                warnings: vec![],
+                message: text_output,
+            };
+            return render_output(&output, &command.format);
         }
 
         // ファイル書き出し
-        let migration_name = self.write_migration_files(
+        let (migration_name, migration_dir) = self.write_migration_files(
             &context,
             config,
             &dvr,
@@ -161,11 +218,22 @@ impl GenerateCommandHandler {
                 None
             };
 
-        if let Some(warning) = destructive_warning {
-            Ok(format!("{}\n{}", warning, migration_name))
+        let text_message = if let Some(ref warning) = destructive_warning {
+            format!("{}\n{}", warning, migration_name)
         } else {
-            Ok(migration_name)
-        }
+            migration_name.clone()
+        };
+
+        let output = GenerateOutput {
+            dry_run: false,
+            migration_name: Some(migration_name),
+            migration_path: Some(migration_dir.to_string_lossy().to_string()),
+            up_sql: None,
+            down_sql: None,
+            warnings: destructive_warning.into_iter().collect(),
+            message: text_message,
+        };
+        render_output(&output, &command.format)
     }
 
     /// スキーマの読み込み
@@ -330,7 +398,7 @@ impl GenerateCommandHandler {
         generated: &GeneratedSql,
         current_schema: &Schema,
         command: &GenerateCommand,
-    ) -> Result<String> {
+    ) -> Result<(String, PathBuf)> {
         let migrations_dir = context.migrations_dir();
         let migration_dir = migrations_dir.join(&dvr.migration_name);
         fs::create_dir_all(&migration_dir).with_context(|| {
@@ -369,7 +437,7 @@ impl GenerateCommandHandler {
         // スキーマスナップショット保存
         self.save_current_schema(&command.project_path, config, current_schema)?;
 
-        Ok(dvr.migration_name.clone())
+        Ok((dvr.migration_name.clone(), migration_dir))
     }
 
     /// dry-runモードの実行
@@ -565,6 +633,7 @@ mod tests {
             description: Some("test".to_string()),
             dry_run: true,
             allow_destructive: false,
+            format: crate::cli::OutputFormat::Text,
         };
         assert!(command.dry_run);
     }
@@ -1055,5 +1124,49 @@ mod tests {
         assert!(yaml.contains("primary_key:"));
         // 4. constraints内にPRIMARY_KEYは含まれない
         assert!(!yaml.contains("type: PRIMARY_KEY"));
+    }
+
+    #[test]
+    fn test_generate_output_json_serialization() {
+        let output = GenerateOutput {
+            dry_run: true,
+            migration_name: Some("20260121120000_create_users".to_string()),
+            migration_path: Some("/path/to/migrations/20260121120000_create_users".to_string()),
+            up_sql: Some("CREATE TABLE users (id INTEGER PRIMARY KEY);".to_string()),
+            down_sql: Some("DROP TABLE users;".to_string()),
+            warnings: vec!["destructive change".to_string()],
+            message: "should not appear in JSON".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // message は #[serde(skip)] のため含まれない
+        assert!(parsed.get("message").is_none());
+        assert_eq!(parsed["dry_run"], true);
+        assert_eq!(parsed["migration_name"], "20260121120000_create_users");
+        assert_eq!(
+            parsed["migration_path"],
+            "/path/to/migrations/20260121120000_create_users"
+        );
+        assert!(parsed["up_sql"].as_str().unwrap().contains("CREATE TABLE"));
+        assert_eq!(parsed["warnings"][0], "destructive change");
+
+        // None フィールドはスキップされる
+        let output_minimal = GenerateOutput {
+            dry_run: false,
+            migration_name: None,
+            migration_path: None,
+            up_sql: None,
+            down_sql: None,
+            warnings: vec![],
+            message: "text".to_string(),
+        };
+        let json2 = serde_json::to_string_pretty(&output_minimal).unwrap();
+        let parsed2: serde_json::Value = serde_json::from_str(&json2).unwrap();
+        assert!(parsed2.get("migration_name").is_none());
+        assert!(parsed2.get("migration_path").is_none());
+        assert!(parsed2.get("up_sql").is_none());
+        assert!(parsed2.get("down_sql").is_none());
     }
 }

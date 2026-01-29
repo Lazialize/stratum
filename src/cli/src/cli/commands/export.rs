@@ -7,16 +7,38 @@
 // - 出力: このモジュール（CLI層、YAMLシリアライズとファイル/標準出力）
 
 use crate::adapters::database_introspector::{create_introspector, DatabaseIntrospector};
+use crate::cli::OutputFormat;
 use crate::cli::command_context::CommandContext;
+use crate::cli::commands::{CommandOutput, render_output};
 use crate::core::config::Dialect;
 use crate::core::schema::Schema;
 use crate::services::schema_conversion::{RawTableInfo, SchemaConversionService};
 use crate::services::schema_io::schema_serializer::SchemaSerializerService;
 use anyhow::{anyhow, Context, Result};
+use serde::Serialize;
 use sqlx::AnyPool;
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
+
+/// exportコマンドの出力構造体
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportOutput {
+    /// エクスポートされたテーブル一覧
+    pub tables: Vec<String>,
+    /// 出力先パス（Noneの場合はstdout）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    /// テキスト出力メッセージ
+    #[serde(skip)]
+    pub text_message: String,
+}
+
+impl CommandOutput for ExportOutput {
+    fn to_text(&self) -> String {
+        self.text_message.clone()
+    }
+}
 
 /// exportコマンドの入力パラメータ
 #[derive(Debug, Clone)]
@@ -31,6 +53,8 @@ pub struct ExportCommand {
     pub output_dir: Option<PathBuf>,
     /// 既存ファイルを確認なしで上書き
     pub force: bool,
+    /// 出力フォーマット
+    pub format: OutputFormat,
 }
 
 /// exportコマンドハンドラー
@@ -100,10 +124,22 @@ impl ExportCommandHandler {
             fs::write(&output_file, &yaml_content)
                 .with_context(|| format!("Failed to write schema file: {:?}", output_file))?;
 
-            Ok(self.format_export_summary(&table_names, Some(output_dir)))
+            let output = ExportOutput {
+                tables: table_names.clone(),
+                output_path: Some(output_file.to_string_lossy().to_string()),
+                text_message: self.format_export_summary(&table_names, Some(output_dir)),
+            };
+
+            render_output(&output, &command.format)
         } else {
-            // 標準出力に出力（YAMLをそのまま返す）
-            Ok(yaml_content)
+            // 標準出力に出力
+            let output = ExportOutput {
+                tables: table_names,
+                output_path: None,
+                text_message: yaml_content,
+            };
+
+            render_output(&output, &command.format)
         }
     }
 
@@ -292,5 +328,33 @@ mod tests {
         let summary = handler.format_export_summary(&table_names, None);
 
         assert!(summary.contains("stdout"));
+    }
+
+    #[test]
+    fn test_export_output_json_serialization() {
+        let output = ExportOutput {
+            tables: vec!["users".to_string(), "posts".to_string()],
+            output_path: Some("/output/schema.yaml".to_string()),
+            text_message: "should not appear in JSON".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // text_message は #[serde(skip)] のため含まれない
+        assert!(parsed.get("text_message").is_none());
+        assert_eq!(parsed["tables"][0], "users");
+        assert_eq!(parsed["tables"][1], "posts");
+        assert_eq!(parsed["output_path"], "/output/schema.yaml");
+
+        // output_path が None の場合はフィールドがスキップされる
+        let output_no_path = ExportOutput {
+            tables: vec!["users".to_string()],
+            output_path: None,
+            text_message: "text".to_string(),
+        };
+        let json2 = serde_json::to_string_pretty(&output_no_path).unwrap();
+        let parsed2: serde_json::Value = serde_json::from_str(&json2).unwrap();
+        assert!(parsed2.get("output_path").is_none());
     }
 }

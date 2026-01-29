@@ -100,6 +100,7 @@ fn test_generate_rejects_destructive_without_allow() {
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command);
@@ -125,6 +126,7 @@ fn test_generate_allows_destructive_with_flag_and_writes_metadata() {
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: true,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let output = handler.execute(&command).expect("generate should succeed");
@@ -175,6 +177,7 @@ destructive_changes:
         env: "development".to_string(),
         timeout: None,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -219,6 +222,7 @@ destructive_changes:
         env: "development".to_string(),
         timeout: None,
         allow_destructive: true,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -259,6 +263,7 @@ checksum: "test_checksum"
         env: "development".to_string(),
         timeout: None,
         allow_destructive: false,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = handler.execute(&command).await;
@@ -286,6 +291,7 @@ async fn test_e2e_destructive_generate_apply_flow() {
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: true,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let output = handler.execute(&command).expect("generate should succeed");
@@ -306,6 +312,7 @@ async fn test_e2e_destructive_generate_apply_flow() {
         env: "development".to_string(),
         timeout: None,
         allow_destructive: true,
+        format: strata::cli::OutputFormat::Text,
     };
 
     let result = apply_handler.execute(&apply_command).await;
