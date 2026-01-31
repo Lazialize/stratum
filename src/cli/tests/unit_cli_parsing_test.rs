@@ -29,7 +29,7 @@ mod cli_tests {
     fn test_init_command_parses() {
         use strata::cli::Cli;
 
-        let cli = Cli::try_parse_from(["strata", "init"]).unwrap();
+        let cli = Cli::try_parse_from(["strata", "init", "--dialect", "postgresql"]).unwrap();
         assert!(matches!(cli.command, strata::cli::Commands::Init { .. }));
     }
 

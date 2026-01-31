@@ -70,6 +70,8 @@ pub struct GenerateCommand {
     pub dry_run: bool,
     /// 破壊的変更を許可
     pub allow_destructive: bool,
+    /// 詳細出力モード
+    pub verbose: bool,
     /// 出力フォーマット
     pub format: OutputFormat,
 }
@@ -227,7 +229,7 @@ impl GenerateCommandHandler {
                 None
             };
 
-        let change_summary = self.format_change_summary(&dvr.diff);
+        let change_summary = self.format_change_summary(&dvr.diff, command.verbose);
 
         let mut text_message = String::new();
         if let Some(ref warning) = destructive_warning {
@@ -576,11 +578,21 @@ impl GenerateCommandHandler {
     }
 
     /// 差分から変更サマリを生成
-    fn format_change_summary(&self, diff: &crate::core::schema_diff::SchemaDiff) -> String {
+    fn format_change_summary(
+        &self,
+        diff: &crate::core::schema_diff::SchemaDiff,
+        verbose: bool,
+    ) -> String {
         let mut lines = Vec::new();
 
         for table in &diff.added_tables {
             lines.push(format!("  + ADD TABLE {}", table.name));
+            if verbose {
+                for col in &table.columns {
+                    let nullable = if col.nullable { "NULL" } else { "NOT NULL" };
+                    lines.push(format!("      {} {:?} {}", col.name, col.column_type, nullable));
+                }
+            }
         }
 
         for table_name in &diff.removed_tables {
@@ -722,6 +734,7 @@ mod tests {
             description: Some("test".to_string()),
             dry_run: true,
             allow_destructive: false,
+            verbose: false,
             format: crate::cli::OutputFormat::Text,
         };
         assert!(command.dry_run);

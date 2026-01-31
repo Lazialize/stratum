@@ -95,6 +95,7 @@ async fn run_command(cli: Cli) -> Result<String> {
     });
 
     let format = cli.format;
+    let verbose = cli.verbose;
 
     debug!(project_path = %project_path.display(), "Resolved project path");
     if let Some(ref cp) = config_path {
@@ -102,9 +103,13 @@ async fn run_command(cli: Cli) -> Result<String> {
     }
 
     match cli.command {
-        Commands::Init { dialect, force } => {
+        Commands::Init {
+            dialect,
+            force,
+            add_gitignore,
+        } => {
             debug!(dialect = ?dialect, force = force, "Executing init command");
-            let dialect = parse_dialect(dialect.as_deref())?;
+            let dialect = parse_dialect(&dialect)?;
             let handler = InitCommandHandler::new();
             let command = InitCommand {
                 project_path,
@@ -115,6 +120,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 port: None,
                 user: None,
                 password: None,
+                add_gitignore,
                 format,
             };
             handler.execute(&command)
@@ -133,6 +139,7 @@ async fn run_command(cli: Cli) -> Result<String> {
                 description,
                 dry_run,
                 allow_destructive,
+                verbose,
                 format,
             };
             handler.execute(&command)
@@ -229,17 +236,14 @@ async fn run_command(cli: Cli) -> Result<String> {
 }
 
 /// Dialect文字列をDialect型に変換する
-fn parse_dialect(dialect: Option<&str>) -> Result<Dialect> {
+fn parse_dialect(dialect: &str) -> Result<Dialect> {
     match dialect {
-        Some("postgresql") | Some("postgres") => Ok(Dialect::PostgreSQL),
-        Some("mysql") => Ok(Dialect::MySQL),
-        Some("sqlite") => Ok(Dialect::SQLite),
-        Some(other) => Err(anyhow::anyhow!(
+        "postgresql" | "postgres" => Ok(Dialect::PostgreSQL),
+        "mysql" => Ok(Dialect::MySQL),
+        "sqlite" => Ok(Dialect::SQLite),
+        other => Err(anyhow::anyhow!(
             "Unsupported database dialect: {}. Please specify one of: postgresql, mysql, sqlite.",
             other
         )),
-        None => Err(anyhow::anyhow!(
-            "Database dialect is required. Please specify one of: postgresql, mysql, sqlite.\n  Example: strata init --dialect postgresql"
-        ))
     }
 }

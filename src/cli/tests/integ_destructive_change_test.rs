@@ -25,6 +25,7 @@ fn test_generate_rejects_destructive_without_allow() {
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: false,
+        verbose: false,
         format: strata::cli::OutputFormat::Text,
     };
 
@@ -51,6 +52,7 @@ fn test_generate_allows_destructive_with_flag_and_writes_metadata() {
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: true,
+        verbose: false,
         format: strata::cli::OutputFormat::Text,
     };
 
@@ -235,6 +237,7 @@ async fn test_e2e_destructive_generate_apply_flow() {
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: true,
+        verbose: false,
         format: strata::cli::OutputFormat::Text,
     };
 

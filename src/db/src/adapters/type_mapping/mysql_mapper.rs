@@ -16,9 +16,18 @@ impl TypeMapper for MySqlTypeMapper {
             }),
             "smallint" => Some(ColumnType::INTEGER { precision: Some(2) }),
             "bigint" => Some(ColumnType::INTEGER { precision: Some(8) }),
-            "tinyint" => Some(ColumnType::INTEGER {
-                precision: metadata.numeric_precision,
-            }),
+            "tinyint" => {
+                // MySQL の BOOLEAN は TINYINT(1) として格納される。
+                // information_schema では data_type="tinyint", numeric_precision=3。
+                // precision が 3 の場合は BOOLEAN として認識する。
+                if metadata.numeric_precision == Some(3) {
+                    Some(ColumnType::BOOLEAN)
+                } else {
+                    Some(ColumnType::INTEGER {
+                        precision: metadata.numeric_precision,
+                    })
+                }
+            }
             "varchar" => Some(ColumnType::VARCHAR {
                 length: metadata.char_max_length.unwrap_or(255),
             }),

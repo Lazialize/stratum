@@ -87,6 +87,11 @@ impl SchemaConversionService {
             }
         }
 
+        // SQLite の AUTOINCREMENT 検出結果を反映
+        if let Some(true) = raw.auto_increment {
+            column.auto_increment = Some(true);
+        }
+
         Ok(column)
     }
 
@@ -170,8 +175,29 @@ impl SchemaConversionService {
             table.add_index(index);
         }
 
-        // 制約を変換
+        // unique: true のインデックスのカラムセットを収集
+        // UNIQUE制約との重複を除外するために使用
+        let unique_index_column_sets: Vec<HashSet<&str>> = raw
+            .indexes
+            .iter()
+            .filter(|idx| idx.unique)
+            .map(|idx| idx.columns.iter().map(|c| c.as_str()).collect::<HashSet<_>>())
+            .collect();
+
+        // 制約を変換（UNIQUEインデックスと重複するUNIQUE制約をスキップ）
         for raw_constraint in &raw.constraints {
+            // UNIQUE制約がユニークインデックスと同じカラムセットの場合はスキップ
+            if let RawConstraintInfo::Unique { columns } = raw_constraint {
+                let constraint_cols: HashSet<&str> =
+                    columns.iter().map(|c| c.as_str()).collect();
+                if unique_index_column_sets
+                    .iter()
+                    .any(|idx_cols| *idx_cols == constraint_cols)
+                {
+                    continue; // ユニークインデックスで既にカバー済み
+                }
+            }
+
             let constraint = self
                 .convert_constraint(raw_constraint)
                 .with_context(|| format!("Failed to convert constraint in table '{}'", raw.name))?;
@@ -250,6 +276,7 @@ mod tests {
             numeric_precision: Some(32),
             numeric_scale: None,
             udt_name: None,
+            auto_increment: None,
         };
 
         let column = service.convert_column(&raw).unwrap();
@@ -271,6 +298,7 @@ mod tests {
             numeric_precision: None,
             numeric_scale: None,
             udt_name: None,
+            auto_increment: None,
         };
 
         let column = service.convert_column(&raw).unwrap();
@@ -300,6 +328,7 @@ mod tests {
             numeric_precision: None,
             numeric_scale: None,
             udt_name: Some("status".to_string()),
+            auto_increment: None,
         };
 
         let column = service.convert_column(&raw).unwrap();
@@ -322,6 +351,7 @@ mod tests {
             numeric_precision: None,
             numeric_scale: None,
             udt_name: None,
+            auto_increment: None,
         };
 
         let column = service.convert_column(&raw).unwrap();
@@ -342,6 +372,7 @@ mod tests {
             numeric_precision: None,
             numeric_scale: None,
             udt_name: None,
+            auto_increment: None,
         };
 
         let column = service.convert_column(&raw).unwrap();
@@ -523,6 +554,7 @@ mod tests {
                 numeric_precision: None,
                 numeric_scale: None,
                 udt_name: None,
+                auto_increment: None,
             }],
             indexes: vec![],
             constraints: vec![],
@@ -551,6 +583,7 @@ mod tests {
                     numeric_precision: None,
                     numeric_scale: None,
                     udt_name: None,
+                    auto_increment: None,
                 },
                 RawColumnInfo {
                     name: "title".to_string(),
@@ -561,6 +594,7 @@ mod tests {
                     numeric_precision: None,
                     numeric_scale: None,
                     udt_name: None,
+                    auto_increment: None,
                 },
                 RawColumnInfo {
                     name: "user_id".to_string(),
@@ -571,6 +605,7 @@ mod tests {
                     numeric_precision: None,
                     numeric_scale: None,
                     udt_name: None,
+                    auto_increment: None,
                 },
             ],
             indexes: vec![RawIndexInfo {
@@ -629,6 +664,7 @@ mod tests {
                     numeric_precision: None,
                     numeric_scale: None,
                     udt_name: None,
+                    auto_increment: None,
                 }],
                 indexes: vec![],
                 constraints: vec![],
@@ -644,6 +680,7 @@ mod tests {
                     numeric_precision: None,
                     numeric_scale: None,
                     udt_name: None,
+                    auto_increment: None,
                 }],
                 indexes: vec![],
                 constraints: vec![],
@@ -697,6 +734,7 @@ mod tests {
                     numeric_precision: None,
                     numeric_scale: None,
                     udt_name: None,
+                    auto_increment: None,
                 },
                 RawColumnInfo {
                     name: "status".to_string(),
@@ -707,6 +745,7 @@ mod tests {
                     numeric_precision: None,
                     numeric_scale: None,
                     udt_name: Some("status".to_string()),
+                    auto_increment: None,
                 },
             ],
             indexes: vec![RawIndexInfo {

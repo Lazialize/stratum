@@ -65,6 +65,8 @@ pub struct InitCommand {
     pub user: Option<String>,
     /// パスワード
     pub password: Option<String>,
+    /// .gitignoreに自動追記
+    pub add_gitignore: bool,
     /// 出力フォーマット
     pub format: OutputFormat,
 }
@@ -111,8 +113,12 @@ impl InitCommandHandler {
         };
         self.generate_config_file(&command.project_path, config_params)?;
 
-        // .gitignoreに設定ファイルが含まれていない場合は警告
-        self.warn_gitignore(&command.project_path);
+        // .gitignoreに設定ファイルを自動追記 or 警告
+        if command.add_gitignore {
+            self.add_to_gitignore(&command.project_path)?;
+        } else {
+            self.warn_gitignore(&command.project_path);
+        }
 
         let output = InitOutput {
             message: "Project initialized.".to_string(),
@@ -178,9 +184,43 @@ impl InitCommandHandler {
         }
 
         eprintln!(
-            "Warning: '{}' is not listed in .gitignore. The config file may contain sensitive information (e.g., database passwords). Consider adding '{}' to your .gitignore file or using environment variable references (e.g., password: \"${{DB_PASSWORD}}\").",
+            "Warning: '{}' is not listed in .gitignore. The config file may contain sensitive information (e.g., database passwords). Consider adding '{}' to your .gitignore file, using --add-gitignore flag, or using environment variable references (e.g., password: \"${{DB_PASSWORD}}\").",
             config_file_name, config_file_name
         );
+    }
+
+    /// .gitignoreに設定ファイルを追記
+    fn add_to_gitignore(&self, project_path: &Path) -> Result<()> {
+        let config_file_name = Config::DEFAULT_CONFIG_PATH;
+        let gitignore_path = project_path.join(".gitignore");
+
+        // 既に含まれているかチェック
+        if gitignore_path.exists() {
+            if let Ok(content) = fs::read_to_string(&gitignore_path) {
+                if content.lines().any(|line| {
+                    let trimmed = line.trim();
+                    trimmed == config_file_name || trimmed == format!("/{}", config_file_name)
+                }) {
+                    return Ok(()); // 既に含まれている
+                }
+            }
+            // 既存の .gitignore に追記
+            let mut content = fs::read_to_string(&gitignore_path)
+                .with_context(|| "Failed to read .gitignore")?;
+            if !content.ends_with('\n') {
+                content.push('\n');
+            }
+            content.push_str(config_file_name);
+            content.push('\n');
+            fs::write(&gitignore_path, content)
+                .with_context(|| "Failed to write .gitignore")?;
+        } else {
+            // 新しい .gitignore を作成
+            fs::write(&gitignore_path, format!("{}\n", config_file_name))
+                .with_context(|| "Failed to create .gitignore")?;
+        }
+
+        Ok(())
     }
 
     /// 設定ファイルを生成
@@ -195,26 +235,42 @@ impl InitCommandHandler {
         params: ConfigFileParams,
     ) -> Result<()> {
         // デフォルト値を設定
+        let is_sqlite = matches!(params.dialect, Dialect::SQLite);
+
         // SQLiteはファイルベースのためhost不要
-        let host = if matches!(params.dialect, Dialect::SQLite) {
+        let host = if is_sqlite {
             params.host.unwrap_or_default()
         } else {
             params.host.unwrap_or("localhost".to_string())
         };
 
+        // 非SQLiteの場合はデフォルトのport/user/passwordを設定
+        let port = if is_sqlite {
+            params.port
+        } else {
+            Some(params.port.unwrap_or_else(|| params.dialect.default_port().unwrap_or(0)))
+        };
+
+        let user = if is_sqlite {
+            params.user
+        } else {
+            Some(params.user.unwrap_or_else(|| "your_user".to_string()))
+        };
+
+        let password = if is_sqlite {
+            params.password
+        } else {
+            Some(params.password.unwrap_or_else(|| "your_password".to_string()))
+        };
+
         // データベース設定を作成
-        // portがNoneの場合はDialectのデフォルトポートが使用される
         let db_config = DatabaseConfig {
             host,
-            port: params.port,
+            port,
             database: params.database_name.clone(),
-            user: params.user,
-            password: params.password,
-            timeout: if matches!(params.dialect, Dialect::SQLite) {
-                None
-            } else {
-                Some(30)
-            },
+            user,
+            password,
+            timeout: if is_sqlite { None } else { Some(30) },
             ssl_mode: None,
             max_connections: None,
             min_connections: None,
@@ -222,22 +278,9 @@ impl InitCommandHandler {
             options: None,
         };
 
-        // 環境設定を作成
+        // 環境設定を作成（developmentのみ）
         let mut environments = HashMap::new();
-        environments.insert("development".to_string(), db_config.clone());
-
-        // staging/production 環境のプレースホルダーを追加
-        let staging_config = DatabaseConfig {
-            database: format!("{}_staging", params.database_name),
-            ..db_config.clone()
-        };
-        environments.insert("staging".to_string(), staging_config);
-
-        let production_config = DatabaseConfig {
-            database: format!("{}_production", params.database_name),
-            ..db_config
-        };
-        environments.insert("production".to_string(), production_config);
+        environments.insert("development".to_string(), db_config);
 
         // 設定オブジェクトを作成
         let config = Config {

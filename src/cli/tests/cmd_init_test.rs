@@ -174,6 +174,7 @@ mod init_command_tests {
             port: Some(5432),
             user: Some("user".to_string()),
             password: Some("pass".to_string()),
+            add_gitignore: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -212,6 +213,7 @@ mod init_command_tests {
             port: Some(3306),
             user: Some("root".to_string()),
             password: Some("newpass".to_string()),
+            add_gitignore: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -241,6 +243,7 @@ mod init_command_tests {
             port: Some(5432),
             user: Some("postgres".to_string()),
             password: Some("secret".to_string()),
+            add_gitignore: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -305,6 +308,7 @@ mod init_command_tests {
             port: None,
             user: None,
             password: None,
+            add_gitignore: false,
             format: strata::cli::OutputFormat::Text,
         };
 

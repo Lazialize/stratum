@@ -53,6 +53,8 @@ pub struct RawColumnInfo {
     pub numeric_scale: Option<i32>,
     /// ユーザー定義型名（PostgreSQLのENUM等）
     pub udt_name: Option<String>,
+    /// 自動増分フラグ（SQLite AUTOINCREMENT検出用）
+    pub auto_increment: Option<bool>,
 }
 
 /// 生のインデックス情報（DB固有フォーマット）
@@ -194,6 +196,7 @@ impl DatabaseIntrospector for PostgresIntrospector {
                 numeric_precision: row.get(5),
                 numeric_scale: row.get(6),
                 udt_name: row.get(7),
+                auto_increment: None,
             })
             .collect();
 
@@ -474,6 +477,7 @@ impl DatabaseIntrospector for MySqlIntrospector {
                 numeric_precision: row.get(5),
                 numeric_scale: row.get(6),
                 udt_name: None,
+                auto_increment: None,
             })
             .collect();
 
@@ -549,13 +553,18 @@ impl DatabaseIntrospector for MySqlIntrospector {
 
         // FOREIGN KEY
         // 制約名でグループ化して、同一テーブルへの複数FKを正しく区別する
+        // REFERENTIAL_CONSTRAINTS テーブルから ON DELETE アクションも取得
         let fk_sql = r#"
             SELECT
                 kcu.constraint_name,
                 kcu.column_name,
                 kcu.referenced_table_name,
-                kcu.referenced_column_name
+                kcu.referenced_column_name,
+                rc.delete_rule
             FROM information_schema.key_column_usage kcu
+            JOIN information_schema.referential_constraints rc
+                ON kcu.constraint_name = rc.constraint_name
+                AND kcu.table_schema = rc.constraint_schema
             WHERE kcu.table_name = ? AND kcu.table_schema = DATABASE()
                 AND kcu.referenced_table_name IS NOT NULL
             ORDER BY kcu.constraint_name, kcu.ordinal_position
@@ -564,28 +573,39 @@ impl DatabaseIntrospector for MySqlIntrospector {
         let fk_rows = sqlx::query(fk_sql).bind(table_name).fetch_all(pool).await?;
 
         // 制約名でグループ化（複合外部キー対応）
-        let mut fk_map: std::collections::HashMap<String, (String, Vec<String>, Vec<String>)> =
-            std::collections::HashMap::new();
+        // (referenced_table, columns, referenced_columns, on_delete)
+        let mut fk_map: std::collections::HashMap<
+            String,
+            (String, Vec<String>, Vec<String>, Option<String>),
+        > = std::collections::HashMap::new();
 
         for row in &fk_rows {
             let constraint_name = mysql_get_string(row, 0);
             let column = mysql_get_string(row, 1);
             let ref_table = mysql_get_string(row, 2);
             let ref_column = mysql_get_string(row, 3);
+            let delete_rule = mysql_get_optional_string(row, 4);
 
-            let entry = fk_map
-                .entry(constraint_name)
-                .or_insert_with(|| (ref_table.clone(), Vec::new(), Vec::new()));
+            let entry = fk_map.entry(constraint_name).or_insert_with(|| {
+                let on_delete = delete_rule.and_then(|rule| {
+                    if rule == "NO ACTION" || rule == "RESTRICT" {
+                        None
+                    } else {
+                        Some(rule)
+                    }
+                });
+                (ref_table.clone(), Vec::new(), Vec::new(), on_delete)
+            });
             entry.1.push(column);
             entry.2.push(ref_column);
         }
 
-        for (_constraint_name, (ref_table, columns, ref_columns)) in fk_map {
+        for (_constraint_name, (ref_table, columns, ref_columns, on_delete)) in fk_map {
             constraints.push(RawConstraintInfo::ForeignKey {
                 columns,
                 referenced_table: ref_table,
                 referenced_columns: ref_columns,
-                on_delete: None,
+                on_delete,
             });
         }
 
@@ -658,6 +678,17 @@ impl DatabaseIntrospector for SqliteIntrospector {
         use crate::adapters::sql_quote::quote_identifier_sqlite;
         use sqlx::Row;
 
+        // CREATE TABLE SQL を取得して AUTOINCREMENT を検出
+        let create_sql_query = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?";
+        let create_sql_row = sqlx::query(create_sql_query)
+            .bind(table_name)
+            .fetch_optional(pool)
+            .await?;
+        let has_autoincrement = create_sql_row
+            .and_then(|row| row.try_get::<Option<String>, _>(0).ok().flatten())
+            .map(|sql| sql.to_uppercase().contains("AUTOINCREMENT"))
+            .unwrap_or(false);
+
         let quoted_name = quote_identifier_sqlite(table_name);
         let sql = format!("PRAGMA table_info({})", quoted_name);
         let rows = sqlx::query(&sql).fetch_all(pool).await?;
@@ -666,15 +697,27 @@ impl DatabaseIntrospector for SqliteIntrospector {
             .iter()
             .map(|row| {
                 let not_null: i32 = row.get(3);
+                let is_pk: i32 = row.get(5);
+                let data_type: String = row.get(2);
+                // SQLite の INTEGER PRIMARY KEY AUTOINCREMENT を検出
+                let auto_increment = if has_autoincrement
+                    && is_pk > 0
+                    && data_type.to_uppercase() == "INTEGER"
+                {
+                    Some(true)
+                } else {
+                    None
+                };
                 RawColumnInfo {
                     name: row.get(1),
-                    data_type: row.get(2),
+                    data_type,
                     is_nullable: not_null == 0,
                     default_value: row.get(4),
                     char_max_length: None,
                     numeric_precision: None,
                     numeric_scale: None,
                     udt_name: None,
+                    auto_increment,
                 }
             })
             .collect();
@@ -833,6 +876,7 @@ mod tests {
             numeric_precision: None,
             numeric_scale: None,
             udt_name: None,
+            auto_increment: None,
         };
         assert!(format!("{:?}", column).contains("id"));
     }
@@ -848,6 +892,7 @@ mod tests {
             numeric_precision: None,
             numeric_scale: None,
             udt_name: None,
+            auto_increment: None,
         };
         let cloned = column.clone();
         assert_eq!(cloned.name, "email");

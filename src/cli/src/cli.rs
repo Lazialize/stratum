@@ -90,11 +90,15 @@ pub enum Commands {
     Init {
         /// Database dialect (postgresql, mysql, sqlite)
         #[arg(short, long, value_name = "DIALECT")]
-        dialect: Option<String>,
+        dialect: String,
 
         /// Force initialization even if config exists
         #[arg(short, long)]
         force: bool,
+
+        /// Add .strata.yaml to .gitignore automatically
+        #[arg(long)]
+        add_gitignore: bool,
     },
 
     /// Generate migration files from schema changes

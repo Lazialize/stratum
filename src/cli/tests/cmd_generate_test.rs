@@ -28,6 +28,7 @@ mod generate_command_tests {
             description: Some("test migration".to_string()),
             dry_run: false,
             allow_destructive: false,
+            verbose: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -55,6 +56,7 @@ mod generate_command_tests {
             description: Some("test migration".to_string()),
             dry_run: false,
             allow_destructive: false,
+            verbose: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -81,6 +83,7 @@ mod generate_command_tests {
             description: Some("initial migration".to_string()),
             dry_run: false,
             allow_destructive: false,
+            verbose: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -109,6 +112,7 @@ mod generate_command_tests {
             description: Some("create users table".to_string()),
             dry_run: false,
             allow_destructive: false,
+            verbose: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -149,6 +153,7 @@ mod generate_command_tests {
             description: None, // descriptionなし
             dry_run: false,
             allow_destructive: false,
+            verbose: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -175,6 +180,7 @@ mod generate_command_tests {
             description: Some("create orders table".to_string()),
             dry_run: false,
             allow_destructive: false,
+            verbose: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -232,6 +238,7 @@ mod generate_command_tests {
             description: Some("initial schema".to_string()),
             dry_run: false,
             allow_destructive: false,
+            verbose: false,
             format: strata::cli::OutputFormat::Text,
         };
 
@@ -269,6 +276,7 @@ mod generate_command_tests {
             description: Some("create customers".to_string()),
             dry_run: false,
             allow_destructive: false,
+            verbose: false,
             format: strata::cli::OutputFormat::Text,
         };
 

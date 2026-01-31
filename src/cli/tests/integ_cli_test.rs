@@ -340,6 +340,7 @@ tables:
                 description: Some(description.to_string()),
                 dry_run: false,
                 allow_destructive,
+                verbose: false,
                 format: strata::cli::OutputFormat::Text,
             };
 
