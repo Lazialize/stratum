@@ -229,8 +229,7 @@ impl<'a> MigrationPipeline<'a> {
                     for column_name in &table_diff.removed_columns {
                         if let Some(old_column) = old_table.get_column(column_name) {
                             statements.push(
-                                generator
-                                    .generate_add_column(&table_diff.table_name, old_column),
+                                generator.generate_add_column(&table_diff.table_name, old_column),
                             );
                         }
                     }

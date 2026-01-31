@@ -52,7 +52,10 @@ impl SchemaParserService {
     }
 
     /// 指定されたディレクトリからすべてのYAMLファイルを読み込み、統合されたスキーマとファイルリストを返す
-    pub fn parse_schema_directory_with_files(&self, schema_dir: &Path) -> Result<(Schema, Vec<std::path::PathBuf>)> {
+    pub fn parse_schema_directory_with_files(
+        &self,
+        schema_dir: &Path,
+    ) -> Result<(Schema, Vec<std::path::PathBuf>)> {
         // ディレクトリの存在確認
         if !schema_dir.exists() {
             return Err(IoError::FileNotFound {

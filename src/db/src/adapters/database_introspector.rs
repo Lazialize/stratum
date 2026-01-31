@@ -430,7 +430,6 @@ impl DatabaseIntrospector for PostgresIntrospector {
 #[async_trait]
 impl DatabaseIntrospector for MySqlIntrospector {
     async fn get_table_names(&self, pool: &AnyPool) -> Result<Vec<String>> {
-
         let sql = r#"
             SELECT table_name
             FROM information_schema.tables
@@ -528,7 +527,6 @@ impl DatabaseIntrospector for MySqlIntrospector {
         pool: &AnyPool,
         table_name: &str,
     ) -> Result<Vec<RawConstraintInfo>> {
-
         let mut constraints = Vec::new();
 
         // PRIMARY KEY
@@ -764,16 +762,14 @@ impl DatabaseIntrospector for SqliteIntrospector {
             let to_col: String = row.get(4);
             let on_delete: String = row.get(6);
 
-            let entry = fk_map
-                .entry(id)
-                .or_insert_with(|| {
-                    let od = if on_delete == "NO ACTION" {
-                        None
-                    } else {
-                        Some(on_delete.clone())
-                    };
-                    (ref_table.clone(), Vec::new(), Vec::new(), od)
-                });
+            let entry = fk_map.entry(id).or_insert_with(|| {
+                let od = if on_delete == "NO ACTION" {
+                    None
+                } else {
+                    Some(on_delete.clone())
+                };
+                (ref_table.clone(), Vec::new(), Vec::new(), od)
+            });
 
             entry.1.push(from_col);
             entry.2.push(to_col);

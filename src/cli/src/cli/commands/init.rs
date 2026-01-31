@@ -210,7 +210,11 @@ impl InitCommandHandler {
             database: params.database_name.clone(),
             user: params.user,
             password: params.password,
-            timeout: if matches!(params.dialect, Dialect::SQLite) { None } else { Some(30) },
+            timeout: if matches!(params.dialect, Dialect::SQLite) {
+                None
+            } else {
+                Some(30)
+            },
             ssl_mode: None,
             max_connections: None,
             min_connections: None,

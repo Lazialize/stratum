@@ -134,7 +134,8 @@ impl ValidateCommandHandler {
         );
 
         // 検証結果を表示用にフォーマット
-        let text_message = self.format_validation_result(&validation_result, &schema, &schema_files);
+        let text_message =
+            self.format_validation_result(&validation_result, &schema, &schema_files);
         let stats = self.calculate_statistics(&schema);
 
         // 構造化出力データを構築
