@@ -700,14 +700,12 @@ impl DatabaseIntrospector for SqliteIntrospector {
                 let is_pk: i32 = row.get(5);
                 let data_type: String = row.get(2);
                 // SQLite の INTEGER PRIMARY KEY AUTOINCREMENT を検出
-                let auto_increment = if has_autoincrement
-                    && is_pk > 0
-                    && data_type.to_uppercase() == "INTEGER"
-                {
-                    Some(true)
-                } else {
-                    None
-                };
+                let auto_increment =
+                    if has_autoincrement && is_pk > 0 && data_type.to_uppercase() == "INTEGER" {
+                        Some(true)
+                    } else {
+                        None
+                    };
                 RawColumnInfo {
                     name: row.get(1),
                     data_type,

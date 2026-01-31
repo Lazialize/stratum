@@ -205,15 +205,14 @@ impl InitCommandHandler {
                 }
             }
             // 既存の .gitignore に追記
-            let mut content = fs::read_to_string(&gitignore_path)
-                .with_context(|| "Failed to read .gitignore")?;
+            let mut content =
+                fs::read_to_string(&gitignore_path).with_context(|| "Failed to read .gitignore")?;
             if !content.ends_with('\n') {
                 content.push('\n');
             }
             content.push_str(config_file_name);
             content.push('\n');
-            fs::write(&gitignore_path, content)
-                .with_context(|| "Failed to write .gitignore")?;
+            fs::write(&gitignore_path, content).with_context(|| "Failed to write .gitignore")?;
         } else {
             // 新しい .gitignore を作成
             fs::write(&gitignore_path, format!("{}\n", config_file_name))
@@ -248,7 +247,11 @@ impl InitCommandHandler {
         let port = if is_sqlite {
             params.port
         } else {
-            Some(params.port.unwrap_or_else(|| params.dialect.default_port().unwrap_or(0)))
+            Some(
+                params
+                    .port
+                    .unwrap_or_else(|| params.dialect.default_port().unwrap_or(0)),
+            )
         };
 
         let user = if is_sqlite {
@@ -260,7 +263,11 @@ impl InitCommandHandler {
         let password = if is_sqlite {
             params.password
         } else {
-            Some(params.password.unwrap_or_else(|| "your_password".to_string()))
+            Some(
+                params
+                    .password
+                    .unwrap_or_else(|| "your_password".to_string()),
+            )
         };
 
         // データベース設定を作成

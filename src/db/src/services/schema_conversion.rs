@@ -181,15 +181,19 @@ impl SchemaConversionService {
             .indexes
             .iter()
             .filter(|idx| idx.unique)
-            .map(|idx| idx.columns.iter().map(|c| c.as_str()).collect::<HashSet<_>>())
+            .map(|idx| {
+                idx.columns
+                    .iter()
+                    .map(|c| c.as_str())
+                    .collect::<HashSet<_>>()
+            })
             .collect();
 
         // 制約を変換（UNIQUEインデックスと重複するUNIQUE制約をスキップ）
         for raw_constraint in &raw.constraints {
             // UNIQUE制約がユニークインデックスと同じカラムセットの場合はスキップ
             if let RawConstraintInfo::Unique { columns } = raw_constraint {
-                let constraint_cols: HashSet<&str> =
-                    columns.iter().map(|c| c.as_str()).collect();
+                let constraint_cols: HashSet<&str> = columns.iter().map(|c| c.as_str()).collect();
                 if unique_index_column_sets
                     .iter()
                     .any(|idx_cols| *idx_cols == constraint_cols)

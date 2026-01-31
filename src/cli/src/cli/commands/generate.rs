@@ -590,7 +590,10 @@ impl GenerateCommandHandler {
             if verbose {
                 for col in &table.columns {
                     let nullable = if col.nullable { "NULL" } else { "NOT NULL" };
-                    lines.push(format!("      {} {:?} {}", col.name, col.column_type, nullable));
+                    lines.push(format!(
+                        "      {} {:?} {}",
+                        col.name, col.column_type, nullable
+                    ));
                 }
             }
         }
