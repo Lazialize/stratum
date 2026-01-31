@@ -76,7 +76,16 @@ impl SchemaConversionService {
             .with_context(|| format!("Failed to parse column type for '{}'", raw.name))?;
 
         let mut column = Column::new(raw.name.clone(), column_type, raw.is_nullable);
-        column.default_value = raw.default_value.clone();
+
+        // PostgreSQL の SERIAL カラムは nextval('...') をデフォルト値として持つ
+        // これを auto_increment: true として認識し、default_value は省略する
+        if let Some(ref default) = raw.default_value {
+            if default.contains("nextval(") {
+                column.auto_increment = Some(true);
+            } else {
+                column.default_value = Some(default.clone());
+            }
+        }
 
         Ok(column)
     }
@@ -100,13 +109,24 @@ impl SchemaConversionService {
                 columns,
                 referenced_table,
                 referenced_columns,
-            } => Constraint::FOREIGN_KEY {
-                columns: columns.clone(),
-                referenced_table: referenced_table.clone(),
-                referenced_columns: referenced_columns.clone(),
-                on_delete: None,
-                on_update: None,
-            },
+                on_delete,
+            } => {
+                let on_delete_action = on_delete.as_deref().and_then(|s| match s {
+                    "CASCADE" => Some(crate::core::schema::ReferentialAction::Cascade),
+                    "SET NULL" => Some(crate::core::schema::ReferentialAction::SetNull),
+                    "SET DEFAULT" => Some(crate::core::schema::ReferentialAction::SetDefault),
+                    "RESTRICT" => Some(crate::core::schema::ReferentialAction::Restrict),
+                    // NO ACTION はデフォルトなので省略
+                    _ => None,
+                });
+                Constraint::FOREIGN_KEY {
+                    columns: columns.clone(),
+                    referenced_table: referenced_table.clone(),
+                    referenced_columns: referenced_columns.clone(),
+                    on_delete: on_delete_action,
+                    on_update: None,
+                }
+            }
             RawConstraintInfo::Unique { columns } => Constraint::UNIQUE {
                 columns: columns.clone(),
             },
@@ -410,6 +430,7 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
         };
 
         let constraint = service.convert_constraint(&raw).unwrap();
@@ -565,6 +586,7 @@ mod tests {
                     columns: vec!["user_id".to_string()],
                     referenced_table: "users".to_string(),
                     referenced_columns: vec!["id".to_string()],
+                    on_delete: None,
                 },
             ],
         };

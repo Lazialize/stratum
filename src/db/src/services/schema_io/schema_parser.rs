@@ -47,6 +47,12 @@ impl SchemaParserService {
     /// - ディレクトリが存在しない場合
     /// - YAMLファイルの解析に失敗した場合
     pub fn parse_schema_directory(&self, schema_dir: &Path) -> Result<Schema> {
+        let (schema, _) = self.parse_schema_directory_with_files(schema_dir)?;
+        Ok(schema)
+    }
+
+    /// 指定されたディレクトリからすべてのYAMLファイルを読み込み、統合されたスキーマとファイルリストを返す
+    pub fn parse_schema_directory_with_files(&self, schema_dir: &Path) -> Result<(Schema, Vec<std::path::PathBuf>)> {
         // ディレクトリの存在確認
         if !schema_dir.exists() {
             return Err(IoError::FileNotFound {
@@ -67,11 +73,12 @@ impl SchemaParserService {
 
         // YAMLファイルが存在しない場合は空のスキーマを返す
         if yaml_files.is_empty() {
-            return Ok(Schema::new("1.0".to_string()));
+            return Ok((Schema::new("1.0".to_string()), Vec::new()));
         }
 
         // 各YAMLファイルを解析してスキーマをマージ
         let mut merged_schema = Schema::new("1.0".to_string());
+        let parsed_files = yaml_files.clone();
 
         for file_path in yaml_files {
             let schema = self
@@ -94,7 +101,7 @@ impl SchemaParserService {
             }
         }
 
-        Ok(merged_schema)
+        Ok((merged_schema, parsed_files))
     }
 
     /// 単一のYAMLファイルを解析してスキーマオブジェクトに変換

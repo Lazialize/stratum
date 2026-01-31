@@ -47,7 +47,7 @@ pub fn build_connection_string(dialect: Dialect, config: &DatabaseConfig) -> Str
             );
             append_query_params(base, config)
         }
-        Dialect::SQLite => format!("sqlite://{}", config.database),
+        Dialect::SQLite => format!("sqlite://{}?mode=rwc", config.database),
     }
 }
 
@@ -271,7 +271,7 @@ mod tests {
 
         let conn_str = build_connection_string(Dialect::SQLite, &config);
 
-        // SQLiteはクエリパラメータを付与しない
-        assert_eq!(conn_str, "sqlite:///path/to/test.db");
+        // SQLiteは ?mode=rwc のみ付与
+        assert_eq!(conn_str, "sqlite:///path/to/test.db?mode=rwc");
     }
 }

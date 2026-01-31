@@ -227,11 +227,18 @@ impl GenerateCommandHandler {
                 None
             };
 
-        let text_message = if let Some(ref warning) = destructive_warning {
-            format!("{}\n{}", warning, migration_name)
-        } else {
-            migration_name.clone()
-        };
+        let change_summary = self.format_change_summary(&dvr.diff);
+
+        let mut text_message = String::new();
+        if let Some(ref warning) = destructive_warning {
+            text_message.push_str(warning);
+            text_message.push('\n');
+        }
+        text_message.push_str(&migration_name);
+        if !change_summary.is_empty() {
+            text_message.push_str("\n\nChanges:\n");
+            text_message.push_str(&change_summary);
+        }
 
         let output = GenerateOutput {
             dry_run: false,
@@ -566,6 +573,82 @@ impl GenerateCommandHandler {
             .with_context(|| format!("Failed to write schema snapshot: {:?}", snapshot_path))?;
 
         Ok(())
+    }
+
+    /// 差分から変更サマリを生成
+    fn format_change_summary(&self, diff: &crate::core::schema_diff::SchemaDiff) -> String {
+        let mut lines = Vec::new();
+
+        for table in &diff.added_tables {
+            lines.push(format!("  + ADD TABLE {}", table.name));
+        }
+
+        for table_name in &diff.removed_tables {
+            lines.push(format!("  - DROP TABLE {}", table_name));
+        }
+
+        for table_diff in &diff.modified_tables {
+            for col in &table_diff.added_columns {
+                lines.push(format!(
+                    "  + ADD COLUMN {}.{}",
+                    table_diff.table_name, col.name
+                ));
+            }
+            for col_name in &table_diff.removed_columns {
+                lines.push(format!(
+                    "  - DROP COLUMN {}.{}",
+                    table_diff.table_name, col_name
+                ));
+            }
+            for col_diff in &table_diff.modified_columns {
+                lines.push(format!(
+                    "  ~ MODIFY COLUMN {}.{}",
+                    table_diff.table_name, col_diff.column_name
+                ));
+            }
+            for renamed in &table_diff.renamed_columns {
+                lines.push(format!(
+                    "  ~ RENAME COLUMN {}.{} -> {}",
+                    table_diff.table_name, renamed.old_name, renamed.new_column.name
+                ));
+            }
+            for idx in &table_diff.added_indexes {
+                lines.push(format!(
+                    "  + ADD INDEX {} ON {}",
+                    idx.name, table_diff.table_name
+                ));
+            }
+            for idx_name in &table_diff.removed_indexes {
+                lines.push(format!(
+                    "  - DROP INDEX {} ON {}",
+                    idx_name, table_diff.table_name
+                ));
+            }
+            for constraint in &table_diff.added_constraints {
+                lines.push(format!(
+                    "  + ADD {} ON {}",
+                    constraint.kind(),
+                    table_diff.table_name
+                ));
+            }
+            for constraint in &table_diff.removed_constraints {
+                lines.push(format!(
+                    "  - DROP {} ON {}",
+                    constraint.kind(),
+                    table_diff.table_name
+                ));
+            }
+        }
+
+        for enum_def in &diff.added_enums {
+            lines.push(format!("  + ADD ENUM {}", enum_def.name));
+        }
+
+        for enum_name in &diff.removed_enums {
+            lines.push(format!("  - DROP ENUM {}", enum_name));
+        }
+
+        lines.join("\n")
     }
 
     /// 差分から自動的にdescriptionを生成

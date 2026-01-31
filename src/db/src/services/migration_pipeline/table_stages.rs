@@ -86,6 +86,12 @@ impl<'a> MigrationPipeline<'a> {
                 statements.push(generator.generate_add_column(&table_diff.table_name, column));
             }
 
+            // カラムの削除
+            for column_name in &table_diff.removed_columns {
+                statements
+                    .push(generator.generate_drop_column(&table_diff.table_name, column_name));
+            }
+
             // リネームカラムの処理（Up方向: リネーム → 型変更の順序）
             for renamed_column in &table_diff.renamed_columns {
                 if let Some(new_schema) = self.new_schema {

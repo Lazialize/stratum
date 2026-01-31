@@ -55,7 +55,10 @@ fn test_generate_allows_destructive_with_flag_and_writes_metadata() {
     };
 
     let output = handler.execute(&command).expect("generate should succeed");
-    let migration_name = output.lines().last().unwrap_or("");
+    let migration_name = output
+        .lines()
+        .find(|line| line.starts_with("20"))
+        .unwrap_or("");
     let meta_path = project_path
         .join("migrations")
         .join(migration_name)
@@ -236,7 +239,10 @@ async fn test_e2e_destructive_generate_apply_flow() {
     };
 
     let output = handler.execute(&command).expect("generate should succeed");
-    let migration_name = output.lines().last().unwrap_or("");
+    let migration_name = output
+        .lines()
+        .find(|line| line.starts_with("20"))
+        .unwrap_or("");
 
     let pool = sqlx::AnyPool::connect(&format!("sqlite://{}", db_path.display()))
         .await

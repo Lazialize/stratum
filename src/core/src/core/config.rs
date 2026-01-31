@@ -144,7 +144,7 @@ impl Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
     /// ホスト名（SQLiteの場合は不要）
-    #[serde(default = "default_host")]
+    #[serde(default = "default_host", skip_serializing_if = "String::is_empty")]
     pub host: String,
 
     /// ポート番号（Noneの場合はDialectのデフォルトポートを使用）
@@ -155,12 +155,15 @@ pub struct DatabaseConfig {
     pub database: String,
 
     /// ユーザー名
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
 
     /// パスワード
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
 
     /// 接続タイムアウト（秒）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
 
     /// SSL接続モード

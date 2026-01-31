@@ -238,6 +238,8 @@ fn parse_dialect(dialect: Option<&str>) -> Result<Dialect> {
             "Unsupported database dialect: {}. Please specify one of: postgresql, mysql, sqlite.",
             other
         )),
-        None => Ok(Dialect::SQLite), // デフォルトはSQLite
+        None => Err(anyhow::anyhow!(
+            "Database dialect is required. Please specify one of: postgresql, mysql, sqlite.\n  Example: strata init --dialect postgresql"
+        ))
     }
 }

@@ -163,9 +163,11 @@ pub struct Column {
     pub nullable: bool,
 
     /// デフォルト値
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_value: Option<String>,
 
     /// 自動増分フラグ
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_increment: Option<bool>,
 
     /// リネーム元のカラム名（オプショナル）
@@ -217,6 +219,7 @@ pub enum ColumnType {
     /// 整数型
     INTEGER {
         /// 精度（ビット数）
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         precision: Option<u32>,
     },
 
@@ -235,6 +238,7 @@ pub enum ColumnType {
     /// タイムスタンプ型
     TIMESTAMP {
         /// タイムゾーン付きかどうか
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         with_time_zone: Option<bool>,
     },
 
@@ -267,6 +271,7 @@ pub enum ColumnType {
     /// 時刻型
     TIME {
         /// タイムゾーン付きかどうか (PostgreSQL only)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         with_time_zone: Option<bool>,
     },
 
@@ -313,6 +318,7 @@ pub struct Index {
     pub columns: Vec<String>,
 
     /// ユニークインデックスかどうか
+    #[serde(default, skip_serializing_if = "is_false")]
     pub unique: bool,
 }
 

@@ -21,6 +21,8 @@ use tracing::debug;
 pub struct ValidateOutput {
     /// 検証が成功したかどうか
     pub is_valid: bool,
+    /// 読み込んだスキーマファイル
+    pub schema_files: Vec<String>,
     /// エラー一覧
     pub errors: Vec<ValidationIssue>,
     /// 警告一覧
@@ -117,8 +119,8 @@ impl ValidateCommandHandler {
 
         // スキーマ定義を読み込む
         let parser = SchemaParserService::new();
-        let schema = parser
-            .parse_schema_directory(&schema_dir)
+        let (schema, schema_files) = parser
+            .parse_schema_directory_with_files(&schema_dir)
             .with_context(|| "Failed to parse schema")?;
         debug!(tables = schema.table_count(), "Schema parsed successfully");
 
@@ -132,7 +134,7 @@ impl ValidateCommandHandler {
         );
 
         // 検証結果を表示用にフォーマット
-        let text_message = self.format_validation_result(&validation_result, &schema);
+        let text_message = self.format_validation_result(&validation_result, &schema, &schema_files);
         let stats = self.calculate_statistics(&schema);
 
         // 構造化出力データを構築
@@ -164,8 +166,18 @@ impl ValidateCommandHandler {
             })
             .collect();
 
+        let file_names: Vec<String> = schema_files
+            .iter()
+            .map(|f| {
+                f.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| f.display().to_string())
+            })
+            .collect();
+
         let output = ValidateOutput {
             is_valid: validation_result.is_valid(),
+            schema_files: file_names,
             errors,
             warnings,
             statistics: ValidationStatistics {
@@ -207,10 +219,24 @@ impl ValidateCommandHandler {
         &self,
         result: &crate::core::error::ValidationResult,
         schema: &crate::core::schema::Schema,
+        schema_files: &[std::path::PathBuf],
     ) -> String {
         let mut output = String::new();
 
         output.push_str("=== Schema Validation Results ===\n\n");
+
+        // 読み込んだファイル一覧
+        if !schema_files.is_empty() {
+            output.push_str(&format!("Schema files ({}):\n", schema_files.len()));
+            for file in schema_files {
+                let display_name = file
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| file.display().to_string());
+                output.push_str(&format!("  - {}\n", display_name));
+            }
+            output.push('\n');
+        }
 
         // エラーの表示
         if !result.errors.is_empty() {
@@ -449,6 +475,7 @@ mod tests {
     fn test_validate_output_json_serialization() {
         let output = ValidateOutput {
             is_valid: false,
+            schema_files: vec!["users.yaml".to_string()],
             errors: vec![ValidationIssue {
                 message: "No primary key".to_string(),
                 table: Some("users".to_string()),

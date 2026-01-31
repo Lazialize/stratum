@@ -223,6 +223,20 @@ impl<'a> MigrationPipeline<'a> {
                     .push(generator.generate_drop_column(&table_diff.table_name, &column.name));
             }
 
+            // 削除されたカラムを再追加
+            if let Some(old_schema) = self.old_schema {
+                if let Some(old_table) = old_schema.tables.get(&table_diff.table_name) {
+                    for column_name in &table_diff.removed_columns {
+                        if let Some(old_column) = old_table.get_column(column_name) {
+                            statements.push(
+                                generator
+                                    .generate_add_column(&table_diff.table_name, old_column),
+                            );
+                        }
+                    }
+                }
+            }
+
             // 型変更の逆処理（リネーム以外のカラム）
             for column_diff in &table_diff.modified_columns {
                 if self.has_type_change(column_diff) {

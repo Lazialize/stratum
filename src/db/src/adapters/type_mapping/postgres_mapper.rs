@@ -12,7 +12,7 @@ pub struct PostgresTypeMapper;
 impl TypeMapper for PostgresTypeMapper {
     fn parse_sql_type(&self, sql_type: &str, metadata: &TypeMetadata) -> Option<ColumnType> {
         match sql_type {
-            "integer" | "int4" => Some(ColumnType::INTEGER { precision: Some(4) }),
+            "integer" | "int4" => Some(ColumnType::INTEGER { precision: None }),
             "smallint" | "int2" => Some(ColumnType::INTEGER { precision: Some(2) }),
             "bigint" | "int8" => Some(ColumnType::INTEGER { precision: Some(8) }),
             "character varying" | "varchar" => Some(ColumnType::VARCHAR {
@@ -24,7 +24,7 @@ impl TypeMapper for PostgresTypeMapper {
                 with_time_zone: Some(true),
             }),
             "timestamp without time zone" | "timestamp" => Some(ColumnType::TIMESTAMP {
-                with_time_zone: Some(false),
+                with_time_zone: None,
             }),
             "json" => Some(ColumnType::JSON),
             "jsonb" => Some(ColumnType::JSONB),
@@ -42,7 +42,7 @@ impl TypeMapper for PostgresTypeMapper {
                 with_time_zone: Some(true),
             }),
             "time without time zone" | "time" => Some(ColumnType::TIME {
-                with_time_zone: Some(false),
+                with_time_zone: None,
             }),
             "bytea" => Some(ColumnType::BLOB),
             "uuid" => Some(ColumnType::UUID),
@@ -270,7 +270,7 @@ mod tests {
         let metadata = TypeMetadata::default();
 
         let result = service.from_sql_type("integer", &metadata).unwrap();
-        assert!(matches!(result, ColumnType::INTEGER { precision: Some(4) }));
+        assert!(matches!(result, ColumnType::INTEGER { precision: None }));
 
         let result = service.from_sql_type("bigint", &metadata).unwrap();
         assert!(matches!(result, ColumnType::INTEGER { precision: Some(8) }));
@@ -311,7 +311,7 @@ mod tests {
         assert!(matches!(
             result,
             ColumnType::TIMESTAMP {
-                with_time_zone: Some(false)
+                with_time_zone: None
             }
         ));
     }
@@ -389,7 +389,7 @@ mod tests {
         // int aliases
         assert!(matches!(
             mapper.parse_sql_type("int4", &meta),
-            Some(ColumnType::INTEGER { precision: Some(4) })
+            Some(ColumnType::INTEGER { precision: None })
         ));
         assert!(matches!(
             mapper.parse_sql_type("int2", &meta),
@@ -440,7 +440,7 @@ mod tests {
         assert!(matches!(
             mapper.parse_sql_type("timestamp", &meta),
             Some(ColumnType::TIMESTAMP {
-                with_time_zone: Some(false)
+                with_time_zone: None
             })
         ));
 
@@ -529,13 +529,13 @@ mod tests {
         assert!(matches!(
             mapper.parse_sql_type("time without time zone", &meta),
             Some(ColumnType::TIME {
-                with_time_zone: Some(false)
+                with_time_zone: None
             })
         ));
         assert!(matches!(
             mapper.parse_sql_type("time", &meta),
             Some(ColumnType::TIME {
-                with_time_zone: Some(false)
+                with_time_zone: None
             })
         ));
 

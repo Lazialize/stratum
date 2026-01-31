@@ -10,10 +10,10 @@ use std::path::PathBuf;
 /// 出力フォーマット
 #[derive(Clone, Debug, Default, ValueEnum)]
 pub enum OutputFormat {
-    /// 人間向けテキスト出力（デフォルト）
+    /// Human-readable text output (default)
     #[default]
     Text,
-    /// JSON構造化出力
+    /// Structured JSON output
     Json,
 }
 

@@ -195,7 +195,12 @@ impl InitCommandHandler {
         params: ConfigFileParams,
     ) -> Result<()> {
         // デフォルト値を設定
-        let host = params.host.unwrap_or("localhost".to_string());
+        // SQLiteはファイルベースのためhost不要
+        let host = if matches!(params.dialect, Dialect::SQLite) {
+            params.host.unwrap_or_default()
+        } else {
+            params.host.unwrap_or("localhost".to_string())
+        };
 
         // データベース設定を作成
         // portがNoneの場合はDialectのデフォルトポートが使用される
@@ -205,7 +210,7 @@ impl InitCommandHandler {
             database: params.database_name.clone(),
             user: params.user,
             password: params.password,
-            timeout: Some(30),
+            timeout: if matches!(params.dialect, Dialect::SQLite) { None } else { Some(30) },
             ssl_mode: None,
             max_connections: None,
             min_connections: None,

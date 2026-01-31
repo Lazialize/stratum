@@ -6,6 +6,30 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use sqlx::AnyPool;
+use sqlx::Row;
+
+/// MySQL の information_schema は多くのカラムを BLOB/VARBINARY 型で返す。
+/// sqlx の Any ドライバは String として直接デコードできないため、
+/// まず String を試し、失敗したら Vec<u8> → String 変換にフォールバックする。
+fn mysql_get_string(row: &sqlx::any::AnyRow, index: usize) -> String {
+    row.try_get::<String, _>(index).unwrap_or_else(|_| {
+        let bytes: Vec<u8> = row.get(index);
+        String::from_utf8_lossy(&bytes).to_string()
+    })
+}
+
+/// MySQL 向け: NULL 可能な文字列カラムを安全に取得する
+fn mysql_get_optional_string(row: &sqlx::any::AnyRow, index: usize) -> Option<String> {
+    // まず Option<String> を試す
+    if let Ok(val) = row.try_get::<Option<String>, _>(index) {
+        return val;
+    }
+    // BLOB の場合は Option<Vec<u8>> → String 変換
+    if let Ok(Some(bytes)) = row.try_get::<Option<Vec<u8>>, _>(index) {
+        return Some(String::from_utf8_lossy(&bytes).to_string());
+    }
+    None
+}
 
 /// 生のカラム情報（DB固有フォーマット）
 ///
@@ -52,6 +76,8 @@ pub enum RawConstraintInfo {
         columns: Vec<String>,
         referenced_table: String,
         referenced_columns: Vec<String>,
+        /// ON DELETE アクション（例: "CASCADE", "SET NULL", "RESTRICT", "NO ACTION"）
+        on_delete: Option<String>,
     },
     /// ユニーク制約
     Unique { columns: Vec<String> },
@@ -124,9 +150,10 @@ impl DatabaseIntrospector for PostgresIntrospector {
         use sqlx::Row;
 
         let sql = r#"
-            SELECT table_name
+            SELECT table_name::text
             FROM information_schema.tables
             WHERE table_schema = 'public'
+                AND table_name != 'schema_migrations'
             ORDER BY table_name
         "#;
 
@@ -141,14 +168,14 @@ impl DatabaseIntrospector for PostgresIntrospector {
 
         let sql = r#"
             SELECT
-                column_name,
-                data_type,
-                is_nullable,
-                column_default,
-                character_maximum_length,
-                numeric_precision,
-                numeric_scale,
-                udt_name
+                column_name::text,
+                data_type::text,
+                is_nullable::text,
+                column_default::text,
+                character_maximum_length::integer,
+                numeric_precision::integer,
+                numeric_scale::integer,
+                udt_name::text
             FROM information_schema.columns
             WHERE table_name = $1 AND table_schema = 'public'
             ORDER BY ordinal_position
@@ -178,8 +205,8 @@ impl DatabaseIntrospector for PostgresIntrospector {
 
         let sql = r#"
             SELECT
-                i.relname as index_name,
-                a.attname as column_name,
+                i.relname::text as index_name,
+                a.attname::text as column_name,
                 ix.indisunique as is_unique
             FROM pg_class t
             JOIN pg_index ix ON t.oid = ix.indrelid
@@ -233,7 +260,7 @@ impl DatabaseIntrospector for PostgresIntrospector {
 
         // PRIMARY KEY
         let pk_sql = r#"
-            SELECT a.attname
+            SELECT a.attname::text
             FROM pg_index i
             JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
             JOIN pg_class c ON c.oid = i.indrelid
@@ -255,12 +282,21 @@ impl DatabaseIntrospector for PostgresIntrospector {
 
         // FOREIGN KEY
         // 制約名でグループ化して、同一テーブルへの複数FKを正しく区別する
+        // pg_constraint から on_delete アクションも取得
         let fk_sql = r#"
             SELECT
-                tc.constraint_name,
-                kcu.column_name,
-                ccu.table_name AS referenced_table,
-                ccu.column_name AS referenced_column
+                tc.constraint_name::text,
+                kcu.column_name::text,
+                ccu.table_name::text AS referenced_table,
+                ccu.column_name::text AS referenced_column,
+                CASE pgc.confdeltype
+                    WHEN 'a' THEN 'NO ACTION'
+                    WHEN 'r' THEN 'RESTRICT'
+                    WHEN 'c' THEN 'CASCADE'
+                    WHEN 'n' THEN 'SET NULL'
+                    WHEN 'd' THEN 'SET DEFAULT'
+                    ELSE 'NO ACTION'
+                END::text AS on_delete
             FROM information_schema.table_constraints tc
             JOIN information_schema.key_column_usage kcu
                 ON tc.constraint_name = kcu.constraint_name
@@ -268,6 +304,9 @@ impl DatabaseIntrospector for PostgresIntrospector {
             JOIN information_schema.constraint_column_usage ccu
                 ON ccu.constraint_name = tc.constraint_name
                 AND ccu.table_schema = tc.table_schema
+            LEFT JOIN pg_constraint pgc
+                ON pgc.conname = tc.constraint_name::name
+                AND pgc.connamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
             WHERE tc.constraint_type = 'FOREIGN KEY'
                 AND tc.table_name = $1
                 AND tc.table_schema = 'public'
@@ -277,34 +316,39 @@ impl DatabaseIntrospector for PostgresIntrospector {
         let fk_rows = sqlx::query(fk_sql).bind(table_name).fetch_all(pool).await?;
 
         // 制約名でグループ化（複合外部キー対応）
-        let mut fk_map: std::collections::HashMap<String, (String, Vec<String>, Vec<String>)> =
-            std::collections::HashMap::new();
+        // (referenced_table, columns, referenced_columns, on_delete)
+        let mut fk_map: std::collections::HashMap<
+            String,
+            (String, Vec<String>, Vec<String>, Option<String>),
+        > = std::collections::HashMap::new();
 
         for row in &fk_rows {
             let constraint_name: String = row.get(0);
             let column: String = row.get(1);
             let ref_table: String = row.get(2);
             let ref_column: String = row.get(3);
+            let on_delete: Option<String> = row.get(4);
 
             let entry = fk_map
                 .entry(constraint_name)
-                .or_insert_with(|| (ref_table.clone(), Vec::new(), Vec::new()));
+                .or_insert_with(|| (ref_table.clone(), Vec::new(), Vec::new(), on_delete));
             entry.1.push(column);
             entry.2.push(ref_column);
         }
 
-        for (_constraint_name, (ref_table, columns, ref_columns)) in fk_map {
+        for (_constraint_name, (ref_table, columns, ref_columns, on_delete)) in fk_map {
             constraints.push(RawConstraintInfo::ForeignKey {
                 columns,
                 referenced_table: ref_table,
                 referenced_columns: ref_columns,
+                on_delete,
             });
         }
 
         // UNIQUE (インデックスとは別の制約として取得)
         // 制約名でグループ化して、複数のUNIQUE制約を正しく区別する
         let unique_sql = r#"
-            SELECT tc.constraint_name, kcu.column_name
+            SELECT tc.constraint_name::text, kcu.column_name::text
             FROM information_schema.table_constraints tc
             JOIN information_schema.key_column_usage kcu
                 ON tc.constraint_name = kcu.constraint_name
@@ -342,7 +386,7 @@ impl DatabaseIntrospector for PostgresIntrospector {
         use sqlx::Row;
 
         let sql = r#"
-            SELECT t.typname, e.enumlabel, e.enumsortorder
+            SELECT t.typname::text, e.enumlabel::text, e.enumsortorder::double precision
             FROM pg_type t
             JOIN pg_enum e ON t.oid = e.enumtypid
             JOIN pg_namespace n ON n.oid = t.typnamespace
@@ -386,17 +430,17 @@ impl DatabaseIntrospector for PostgresIntrospector {
 #[async_trait]
 impl DatabaseIntrospector for MySqlIntrospector {
     async fn get_table_names(&self, pool: &AnyPool) -> Result<Vec<String>> {
-        use sqlx::Row;
 
         let sql = r#"
             SELECT table_name
             FROM information_schema.tables
             WHERE table_schema = DATABASE()
+                AND table_name != 'schema_migrations'
             ORDER BY table_name
         "#;
 
         let rows = sqlx::query(sql).fetch_all(pool).await?;
-        let table_names = rows.iter().map(|row| row.get::<String, _>(0)).collect();
+        let table_names = rows.iter().map(|row| mysql_get_string(row, 0)).collect();
 
         Ok(table_names)
     }
@@ -423,10 +467,10 @@ impl DatabaseIntrospector for MySqlIntrospector {
         let columns = rows
             .iter()
             .map(|row| RawColumnInfo {
-                name: row.get(0),
-                data_type: row.get(1),
-                is_nullable: row.get::<String, _>(2) == "YES",
-                default_value: row.get(3),
+                name: mysql_get_string(row, 0),
+                data_type: mysql_get_string(row, 1),
+                is_nullable: mysql_get_string(row, 2) == "YES",
+                default_value: mysql_get_optional_string(row, 3),
                 char_max_length: row.get(4),
                 numeric_precision: row.get(5),
                 numeric_scale: row.get(6),
@@ -457,8 +501,8 @@ impl DatabaseIntrospector for MySqlIntrospector {
             std::collections::HashMap::new();
 
         for row in rows {
-            let index_name: String = row.get(0);
-            let column_name: String = row.get(1);
+            let index_name = mysql_get_string(&row, 0);
+            let column_name = mysql_get_string(&row, 1);
             let non_unique: i32 = row.get(2);
 
             let entry = index_map
@@ -484,7 +528,6 @@ impl DatabaseIntrospector for MySqlIntrospector {
         pool: &AnyPool,
         table_name: &str,
     ) -> Result<Vec<RawConstraintInfo>> {
-        use sqlx::Row;
 
         let mut constraints = Vec::new();
 
@@ -498,7 +541,7 @@ impl DatabaseIntrospector for MySqlIntrospector {
         "#;
 
         let pk_rows = sqlx::query(pk_sql).bind(table_name).fetch_all(pool).await?;
-        let pk_columns: Vec<String> = pk_rows.iter().map(|row| row.get(0)).collect();
+        let pk_columns: Vec<String> = pk_rows.iter().map(|row| mysql_get_string(row, 0)).collect();
 
         if !pk_columns.is_empty() {
             constraints.push(RawConstraintInfo::PrimaryKey {
@@ -527,10 +570,10 @@ impl DatabaseIntrospector for MySqlIntrospector {
             std::collections::HashMap::new();
 
         for row in &fk_rows {
-            let constraint_name: String = row.get(0);
-            let column: String = row.get(1);
-            let ref_table: String = row.get(2);
-            let ref_column: String = row.get(3);
+            let constraint_name = mysql_get_string(row, 0);
+            let column = mysql_get_string(row, 1);
+            let ref_table = mysql_get_string(row, 2);
+            let ref_column = mysql_get_string(row, 3);
 
             let entry = fk_map
                 .entry(constraint_name)
@@ -544,6 +587,7 @@ impl DatabaseIntrospector for MySqlIntrospector {
                 columns,
                 referenced_table: ref_table,
                 referenced_columns: ref_columns,
+                on_delete: None,
             });
         }
 
@@ -568,8 +612,8 @@ impl DatabaseIntrospector for MySqlIntrospector {
             std::collections::HashMap::new();
 
         for row in unique_rows {
-            let index_name: String = row.get(0);
-            let column: String = row.get(1);
+            let index_name = mysql_get_string(&row, 0);
+            let column = mysql_get_string(&row, 1);
 
             unique_map.entry(index_name).or_default().push(column);
         }
@@ -707,28 +751,40 @@ impl DatabaseIntrospector for SqliteIntrospector {
         let fk_sql = format!("PRAGMA foreign_key_list({})", quoted_table);
         let fk_rows = sqlx::query(&fk_sql).fetch_all(pool).await?;
 
-        let mut fk_map: std::collections::HashMap<i32, (String, Vec<String>, Vec<String>)> =
-            std::collections::HashMap::new();
+        // PRAGMA foreign_key_list columns: id, seq, table, from, to, on_update, on_delete, match
+        let mut fk_map: std::collections::HashMap<
+            i32,
+            (String, Vec<String>, Vec<String>, Option<String>),
+        > = std::collections::HashMap::new();
 
         for row in fk_rows {
             let id: i32 = row.get(0);
             let ref_table: String = row.get(2);
             let from_col: String = row.get(3);
             let to_col: String = row.get(4);
+            let on_delete: String = row.get(6);
 
             let entry = fk_map
                 .entry(id)
-                .or_insert_with(|| (ref_table.clone(), Vec::new(), Vec::new()));
+                .or_insert_with(|| {
+                    let od = if on_delete == "NO ACTION" {
+                        None
+                    } else {
+                        Some(on_delete.clone())
+                    };
+                    (ref_table.clone(), Vec::new(), Vec::new(), od)
+                });
 
             entry.1.push(from_col);
             entry.2.push(to_col);
         }
 
-        for (_id, (ref_table, from_cols, to_cols)) in fk_map {
+        for (_id, (ref_table, from_cols, to_cols, on_delete)) in fk_map {
             constraints.push(RawConstraintInfo::ForeignKey {
                 columns: from_cols,
                 referenced_table: ref_table,
                 referenced_columns: to_cols,
+                on_delete,
             });
         }
 
@@ -845,6 +901,7 @@ mod tests {
             columns: vec!["user_id".to_string()],
             referenced_table: "users".to_string(),
             referenced_columns: vec!["id".to_string()],
+            on_delete: None,
         };
         assert!(format!("{:?}", fk).contains("ForeignKey"));
     }
