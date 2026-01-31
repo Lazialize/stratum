@@ -12,7 +12,6 @@
 #### CLI & User Interface
 - **clap 4.5** (derive features): Type-safe CLI argument parsing with derive macros
 - **colored 3.1**: Terminal color output for user feedback
-- **indicatif 0.18**: Progress bars for long-running operations
 
 #### Database Connectivity
 - **sqlx 0.8**: Async database driver with compile-time query verification
@@ -21,6 +20,7 @@
 
 #### Data Processing
 - **serde 1.x** (derive features): Serialization framework
+- **serde_json 1.x**: JSON serialization (schema export, metadata)
 - **serde-saphyr 0.0.16**: Panic-free YAML parser (chosen over serde_yaml)
 - **sha2 0.10**: SHA-256 checksums for migration integrity
 
@@ -28,16 +28,21 @@
 - **anyhow 1.x**: Application-level error context
 - **thiserror 2.x**: Library-level custom error types
 
+#### Observability
+- **tracing 0.1**: Structured tracing for diagnostic output
+- **tracing-subscriber 0.3** (env-filter): Subscriber for filtering and rendering trace events
+
 #### Utilities
 - **chrono 0.4**: Timestamp handling with serde integration
 - **regex 1.x**: Pattern matching for validation
 - **async-trait 0.1**: Async trait definitions
+- **urlencoding 2**: URL-safe encoding for connection strings
 
 ### Development Dependencies
-- **tokio-test 0.4**: Async testing utilities
 - **tempfile 3.x**: Temporary file/directory creation for tests
 - **testcontainers 0.26**: Container-based integration testing
 - **testcontainers-modules 0.14**: PostgreSQL/MySQL test containers
+- **serial_test 3.3**: Prevent test race conditions with sequential execution
 
 ## Architectural Decisions
 
@@ -101,7 +106,8 @@ pub trait SqlGenerator {
 
 - **Unit tests**: Inline `#[cfg(test)]` modules for business logic
 - **Integration tests**: `tests/` directory with real database containers
-- **Test coverage**: 152+ unit tests, 27+ test suites
+- **Test coverage**: 37テストファイル、カバレッジ94%
+- **Test categories**: cmd, e2e, edge, gen, integ, model, service, unit
 - **Philosophy**: Test behavior, not implementation; focus on public APIs
 
 ## Development Workflow (`.github/instructions`)
@@ -217,6 +223,11 @@ panic = "abort"         # Faster panics (no unwinding)
 - `cargo check`: Fast compile-time checks without codegen
 - `cargo bench`: Benchmark performance (future)
 
+### Cross-Platform Build
+- `scripts/cross-build.sh`: Release binary生成スクリプト
+- ターゲット: Linux (x86_64, ARM64), macOS (x86_64, ARM64, universal)
+- 成果物: `dist/` ディレクトリ
+
 ### Testing Philosophy
 - **Test public APIs**: Focus on behavior, not implementation
 - **Edge cases first**: Boundary conditions, empty inputs, invalid data
@@ -237,3 +248,8 @@ panic = "abort"         # Faster panics (no unwinding)
 - **Parallel migrations**: Apply independent migrations concurrently
 - **Query performance hints**: Analyze schema for index recommendations
 - **Schema linting**: Enforce naming conventions and best practices
+
+---
+
+updated_at: 2026-02-01
+change_note: indicatif削除（未使用）、tracing/serde_json/urlencoding/serial_test追加、テストカバレッジ更新、クロスビルド追加

@@ -23,11 +23,17 @@ stratum/
 │           └── services/   # DB関連サービス
 ├── example/                # Example schema files
 │   └── schema/             # Sample YAML schemas
+├── resources/schemas/      # JSON Schema for YAML validation
+├── scripts/                # Build automation (cross-build.sh)
+├── dist/                   # Release binaries (gitignored)
 ├── .kiro/                  # Kiro AI-assisted development
 │   ├── specs/              # Feature specifications (TDD/BDD)
 │   └── steering/           # Project knowledge (this file)
 ├── README.md               # User-facing documentation
 ├── BUILDING.md             # Build instructions
+├── CHANGELOG.md            # Version history
+├── CONTRIBUTING.md         # Contribution guidelines
+├── ROADMAP.md              # Future plans
 └── CLAUDE.md               # AI development guidelines
 ```
 
@@ -38,8 +44,10 @@ stratum/
 - **Pattern**: コマンド毎にファイル分割（例: `init.rs`, `generate.rs`, `apply.rs`）
 - **Key files**:
   - `cli.rs`: clapベースのCLI定義
-  - `commands/mod.rs`: コマンド登録
-  - `commands/{command}.rs`: 各コマンドハンドラー
+  - `commands/mod.rs`: コマンド登録とCommandOutput trait
+  - `commands/{command}.rs`: 各コマンドハンドラー (init, generate, apply, rollback, status, validate, export)
+  - `commands/command_context.rs`: コマンド共通コンテキスト
+  - `commands/*_formatter.rs`: 出力整形（dry_run, destructive_change）
 
 #### Coreクレート (`src/core/src/core/`)
 - **Purpose**: ドメインモデル/ロジック（純粋なRust）
@@ -50,28 +58,44 @@ stratum/
   - `config.rs`: 設定モデル（`.strata.yaml`）
   - `schema_diff.rs`: スキーマ差分
   - `error.rs`: ドメインエラー
+  - `destructive_change_report.rs`: 破壊的変更レポート
+  - `naming.rs`: 命名規則ロジック
+  - `type_category.rs`: 型カテゴリ分類
 
 #### DBクレート (`src/db/src/`)
 - **Purpose**: DB連携とDB関連サービスの集約
 - **Pattern**: adapters/servicesで責務分離
-- **Key files**:
-  - `adapters/`: SQL生成・DBアクセス
-  - `services/`: マイグレーション/検証などのサービス
+- **Key modules**:
+  - `adapters/sql_generator/`: 方言別SQL生成 (postgres, mysql, sqlite)
+  - `adapters/database_introspector.rs`: 既存DBからのスキーマ取得（export用）
+  - `adapters/database_migrator.rs`: マイグレーション実行
+  - `adapters/type_mapping/`: 方言間の型マッピング (common, postgres, mysql, sqlite)
+  - `adapters/connection_string.rs`: 接続文字列パース
+  - `services/schema_validator/`: モジュール化された検証サブシステム (table, column_type, constraint, index, enum, dialect, rename)
+  - `services/schema_diff_detector/`: スキーマ差分検出 (table, column, constraint, index, enum)
+  - `services/schema_io/`: スキーマ読み書き (dto, parser, serializer)
+  - `services/migration_pipeline/`: 多段マイグレーション生成 (table, enum, index_constraint)
+  - `services/destructive_change_detector.rs`: 破壊的変更検出
+  - `services/migration_generator.rs`: マイグレーション生成
 
 ### Testing Structure
 
 #### Integration Tests (`src/cli/tests/`)
-- **Pattern**: 機能単位でファイル分割
-- **Examples**:
-  - `schema_model_test.rs`: スキーマのシリアライズ/デシリアライズ
-  - `postgres_sql_generator_test.rs`: PostgreSQL SQL生成
-  - `schema_validator_test.rs`: バリデーション
-  - `database_integration_test.rs`: 実DBテスト（testcontainers）
+- **Pattern**: カテゴリプレフィックスによるファイル分割
+- **Categories**:
+  - `cmd_*.rs`: コマンド単位テスト (apply, export, generate, init, rollback, status, validate)
+  - `e2e_*.rs`: エンドツーエンドテスト
+  - `edge_*.rs`: エッジケーステスト (rename, constraint, enum, type_change等)
+  - `gen_*.rs`: SQL生成テスト (postgres, mysql, sqlite, dialect_specific)
+  - `integ_*.rs`: 統合テスト (cli, database, destructive_change, dialect_specific)
+  - `model_*.rs`: モデルテスト (migration, schema)
+  - `service_*.rs`: サービス層テスト (migrator, generator, checksum, diff, parser, validator)
+  - `unit_*.rs`: ユニットテスト (cli_parsing, config, connection, dependencies, dialect等)
 
 #### Unit Tests
 - **Location**: Inline `#[cfg(test)]` modules in source files
 - **Pattern**: Test public APIs and edge cases
-- **Coverage**: 152+ unit tests across core/services/adapters
+- **Coverage**: 37テストファイル、カバレッジ94%
 
 ## File Naming Conventions
 
@@ -164,6 +188,7 @@ use serde::{Deserialize, Serialize};
 - `users.yaml`: Basic table with constraints
 - `products.yaml`: Comprehensive example with all 15 data types
 - `dialect_specific_example.yaml`: 方言別の型・制約の差分を示す例
+- `DIALECT_SPECIFIC_TYPES.md`: 方言固有型のドキュメント
 
 ### Dialect-Specific Examples
 - `*_specific_types.yml`: 方言固有の型マッピングを単独で示す例
@@ -192,5 +217,5 @@ use serde::{Deserialize, Serialize};
 
 ---
 
-updated_at: 2026-01-26  
-change_note: 仮想ワークスペース構成（src/cli, src/core, src/db）と統合テスト配置の更新を反映
+updated_at: 2026-02-01
+change_note: 新モジュール（破壊的変更検出、型マッピング、検証サブシステム等）、テストカテゴリ分類、resources/scripts/dist追加、ドキュメントファイル追加
