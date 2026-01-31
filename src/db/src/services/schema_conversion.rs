@@ -194,10 +194,7 @@ impl SchemaConversionService {
             // UNIQUE制約がユニークインデックスと同じカラムセットの場合はスキップ
             if let RawConstraintInfo::Unique { columns } = raw_constraint {
                 let constraint_cols: HashSet<&str> = columns.iter().map(|c| c.as_str()).collect();
-                if unique_index_column_sets
-                    .iter()
-                    .any(|idx_cols| *idx_cols == constraint_cols)
-                {
+                if unique_index_column_sets.contains(&constraint_cols) {
                     continue; // ユニークインデックスで既にカバー済み
                 }
             }
