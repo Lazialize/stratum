@@ -91,8 +91,8 @@
           "description": "Whether the column can be null"
         },
         "default_value": {
-          "type": ["string", "null"],
-          "description": "Default value for the column"
+          "type": ["string", "number", "boolean", "null"],
+          "description": "Default value for the column (strings, numbers, and booleans are accepted and converted to string internally)"
         },
         "auto_increment": {
           "type": ["boolean", "null"],
@@ -538,7 +538,7 @@
     },
     "index": {
       "type": "object",
-      "required": ["name", "columns", "unique"],
+      "required": ["name", "columns"],
       "additionalProperties": false,
       "properties": {
         "name": {
