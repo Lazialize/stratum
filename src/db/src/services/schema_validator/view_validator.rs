@@ -3,7 +3,7 @@
 // ビュー名の命名規則・衝突チェック、depends_on 依存検証・循環検出、
 // definition の妥当性検証を行います。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::core::error::{ErrorLocation, ValidationError, ValidationResult};
 use crate::core::schema::Schema;
