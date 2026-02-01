@@ -176,6 +176,10 @@ pub struct Schema {
 
     /// テーブル定義のマップ（テーブル名 -> Table）
     pub tables: BTreeMap<String, Table>,
+
+    /// ビュー定義のマップ（ビュー名 -> View）
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub views: BTreeMap<String, View>,
 }
 
 impl Schema {
@@ -186,6 +190,7 @@ impl Schema {
             enum_recreate_allowed: false,
             enums: BTreeMap::new(),
             tables: BTreeMap::new(),
+            views: BTreeMap::new(),
         }
     }
 
@@ -229,6 +234,27 @@ impl Schema {
     /// テーブル数を取得
     pub fn table_count(&self) -> usize {
         self.tables.len()
+    }
+
+    /// ビューを追加
+    pub fn add_view(&mut self, view: View) {
+        let view_name = view.name.clone();
+        self.views.insert(view_name, view);
+    }
+
+    /// 指定されたビューが存在するか確認
+    pub fn has_view(&self, view_name: &str) -> bool {
+        self.views.contains_key(view_name)
+    }
+
+    /// 指定されたビューを取得
+    pub fn get_view(&self, view_name: &str) -> Option<&View> {
+        self.views.get(view_name)
+    }
+
+    /// ビュー数を取得
+    pub fn view_count(&self) -> usize {
+        self.views.len()
     }
 }
 
@@ -341,6 +367,38 @@ pub struct EnumDefinition {
 
     /// ENUM値（順序を保持）
     pub values: Vec<String>,
+}
+
+/// ビュー定義
+///
+/// データベースビューの構造を表現します。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct View {
+    /// ビュー名
+    pub name: String,
+
+    /// ビュー定義（SELECT文）
+    pub definition: String,
+
+    /// 依存先のテーブルまたはビュー名（明示宣言）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
+
+    /// リネーム元のビュー名（オプショナル）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+}
+
+impl View {
+    /// 新しいビューを作成
+    pub fn new(name: String, definition: String) -> Self {
+        Self {
+            name,
+            definition,
+            depends_on: Vec::new(),
+            renamed_from: None,
+        }
+    }
 }
 
 impl Column {
@@ -842,5 +900,92 @@ mod tests {
         let column: Column = serde_json::from_str(json).unwrap();
         assert_eq!(column.name, "user_name");
         assert!(column.renamed_from.is_none());
+    }
+
+    // ==========================================
+    // View テスト
+    // ==========================================
+
+    #[test]
+    fn test_view_new() {
+        let view = View::new(
+            "active_users".to_string(),
+            "SELECT * FROM users WHERE active = true".to_string(),
+        );
+        assert_eq!(view.name, "active_users");
+        assert_eq!(view.definition, "SELECT * FROM users WHERE active = true");
+        assert!(view.depends_on.is_empty());
+        assert!(view.renamed_from.is_none());
+    }
+
+    #[test]
+    fn test_view_with_depends_on() {
+        let mut view = View::new(
+            "active_users".to_string(),
+            "SELECT * FROM users WHERE active = true".to_string(),
+        );
+        view.depends_on = vec!["users".to_string()];
+        assert_eq!(view.depends_on, vec!["users"]);
+    }
+
+    #[test]
+    fn test_view_with_renamed_from() {
+        let mut view = View::new(
+            "active_users".to_string(),
+            "SELECT * FROM users WHERE active = true".to_string(),
+        );
+        view.renamed_from = Some("enabled_users".to_string());
+        assert_eq!(view.renamed_from, Some("enabled_users".to_string()));
+    }
+
+    #[test]
+    fn test_view_serialization() {
+        let view = View::new(
+            "active_users".to_string(),
+            "SELECT * FROM users WHERE active = true".to_string(),
+        );
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains("active_users"));
+        assert!(json.contains("SELECT * FROM users WHERE active = true"));
+        // depends_on is empty, should not be serialized
+        assert!(!json.contains("depends_on"));
+        // renamed_from is None, should not be serialized
+        assert!(!json.contains("renamed_from"));
+    }
+
+    #[test]
+    fn test_view_deserialization() {
+        let json = r#"{
+            "name": "active_users",
+            "definition": "SELECT * FROM users WHERE active = true",
+            "depends_on": ["users"]
+        }"#;
+        let view: View = serde_json::from_str(json).unwrap();
+        assert_eq!(view.name, "active_users");
+        assert_eq!(view.depends_on, vec!["users"]);
+    }
+
+    #[test]
+    fn test_schema_add_view() {
+        let mut schema = Schema::new("1.0".to_string());
+        let view = View::new(
+            "active_users".to_string(),
+            "SELECT * FROM users WHERE active = true".to_string(),
+        );
+        schema.add_view(view);
+
+        assert!(schema.has_view("active_users"));
+        assert!(!schema.has_view("nonexistent"));
+        assert_eq!(schema.view_count(), 1);
+
+        let stored = schema.get_view("active_users").unwrap();
+        assert_eq!(stored.definition, "SELECT * FROM users WHERE active = true");
+    }
+
+    #[test]
+    fn test_schema_new_has_empty_views() {
+        let schema = Schema::new("1.0".to_string());
+        assert_eq!(schema.view_count(), 0);
+        assert!(schema.views.is_empty());
     }
 }

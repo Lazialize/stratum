@@ -237,7 +237,7 @@ fn test_format_export_summary() {
     let table_names = vec!["users".to_string(), "posts".to_string()];
     let output_path = Some(PathBuf::from("/test/output"));
 
-    let summary = handler.format_export_summary(&table_names, output_path.as_ref(), false);
+    let summary = handler.format_export_summary(&table_names, &[], output_path.as_ref(), false);
 
     assert!(summary.contains("Export Complete"));
     assert!(summary.contains("Exported tables: 2"));
@@ -252,7 +252,7 @@ fn test_format_export_summary_stdout() {
 
     let table_names = vec!["users".to_string()];
 
-    let summary = handler.format_export_summary(&table_names, None, false);
+    let summary = handler.format_export_summary(&table_names, &[], None, false);
 
     assert!(summary.contains("Export Complete"));
     assert!(summary.contains("Exported tables: 1"));

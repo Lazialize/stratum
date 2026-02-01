@@ -102,6 +102,20 @@ fn format_change_lines(report: &DestructiveChangeReport) -> Vec<String> {
         ));
     }
 
+    if !report.views_dropped.is_empty() {
+        lines.push(format!(
+            "Views to be dropped: {}",
+            report.views_dropped.join(", ")
+        ));
+    }
+
+    if !report.views_modified.is_empty() {
+        lines.push(format!(
+            "Views with definition changes: {}",
+            report.views_modified.join(", ")
+        ));
+    }
+
     lines
 }
 
@@ -126,6 +140,8 @@ mod tests {
             }],
             enums_dropped: vec!["old_status".to_string()],
             enums_recreated: vec!["priority".to_string()],
+            views_dropped: vec!["old_summary".to_string()],
+            views_modified: vec!["active_users".to_string()],
         }
     }
 
@@ -142,6 +158,8 @@ mod tests {
         assert!(output.contains("orders: old_status -> status"));
         assert!(output.contains("Enums to be dropped: old_status"));
         assert!(output.contains("Enums to be recreated: priority"));
+        assert!(output.contains("Views to be dropped: old_summary"));
+        assert!(output.contains("Views with definition changes: active_users"));
         assert!(output.contains("Review changes: strata generate --dry-run"));
         assert!(output.contains("Allow destructive changes: strata generate --allow-destructive"));
     }

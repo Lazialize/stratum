@@ -163,7 +163,9 @@ impl GenerateCommandHandler {
             self.load_schemas(&context, &command.project_path, config)?;
         debug!(
             current_tables = current_schema.table_count(),
+            current_views = current_schema.view_count(),
             previous_tables = previous_schema.table_count(),
+            previous_views = previous_schema.view_count(),
             "Schemas loaded"
         );
 

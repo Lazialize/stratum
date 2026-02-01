@@ -99,6 +99,17 @@ pub struct RawEnumInfo {
     pub values: Vec<String>,
 }
 
+/// 生のView情報（DB固有フォーマット）
+#[derive(Debug, Clone)]
+pub struct RawViewInfo {
+    /// ビュー名
+    pub name: String,
+    /// ビュー定義（SELECT文）
+    pub definition: String,
+    /// マテリアライズドビューかどうか
+    pub is_materialized: bool,
+}
+
 /// データベーススキーマ取得インターフェース
 ///
 /// 各データベース方言固有のイントロスペクション処理を抽象化します。
@@ -122,6 +133,9 @@ pub trait DatabaseIntrospector: Send + Sync {
 
     /// ENUM定義を取得（PostgreSQL専用、他方言では空を返す）
     async fn get_enums(&self, pool: &AnyPool) -> Result<Vec<RawEnumInfo>>;
+
+    /// View定義を取得
+    async fn get_views(&self, pool: &AnyPool) -> Result<Vec<RawViewInfo>>;
 }
 
 /// PostgreSQL用イントロスペクター
@@ -424,6 +438,56 @@ impl DatabaseIntrospector for PostgresIntrospector {
 
         Ok(enums)
     }
+
+    async fn get_views(&self, pool: &AnyPool) -> Result<Vec<RawViewInfo>> {
+        use sqlx::Row;
+
+        let mut views = Vec::new();
+
+        // 通常のビューを取得
+        let sql = r#"
+            SELECT
+                table_name::text,
+                view_definition::text
+            FROM information_schema.views
+            WHERE table_schema = 'public'
+            ORDER BY table_name
+        "#;
+
+        let rows = sqlx::query(sql).fetch_all(pool).await?;
+
+        for row in rows {
+            let name: String = row.get(0);
+            let definition: String = row.get(1);
+            views.push(RawViewInfo {
+                name,
+                definition,
+                is_materialized: false,
+            });
+        }
+
+        // マテリアライズドビューを検出（未サポート警告用）
+        let matview_sql = r#"
+            SELECT matviewname::text, definition::text
+            FROM pg_matviews
+            WHERE schemaname = 'public'
+            ORDER BY matviewname
+        "#;
+
+        let matview_rows = sqlx::query(matview_sql).fetch_all(pool).await?;
+
+        for row in matview_rows {
+            let name: String = row.get(0);
+            let definition: String = row.get(1);
+            views.push(RawViewInfo {
+                name,
+                definition,
+                is_materialized: true,
+            });
+        }
+
+        Ok(views)
+    }
 }
 
 // =============================================================================
@@ -648,6 +712,34 @@ impl DatabaseIntrospector for MySqlIntrospector {
         // 独立したENUM定義は取得できない
         Ok(Vec::new())
     }
+
+    async fn get_views(&self, pool: &AnyPool) -> Result<Vec<RawViewInfo>> {
+        let sql = r#"
+            SELECT
+                table_name,
+                view_definition
+            FROM information_schema.views
+            WHERE table_schema = DATABASE()
+            ORDER BY table_name
+        "#;
+
+        let rows = sqlx::query(sql).fetch_all(pool).await?;
+
+        let views = rows
+            .iter()
+            .map(|row| {
+                let name = mysql_get_string(row, 0);
+                let definition = mysql_get_string(row, 1);
+                RawViewInfo {
+                    name,
+                    definition,
+                    is_materialized: false,
+                }
+            })
+            .collect();
+
+        Ok(views)
+    }
 }
 
 // =============================================================================
@@ -832,6 +924,51 @@ impl DatabaseIntrospector for SqliteIntrospector {
         // SQLiteはENUM型をサポートしていない
         Ok(Vec::new())
     }
+
+    async fn get_views(&self, pool: &AnyPool) -> Result<Vec<RawViewInfo>> {
+        use sqlx::Row;
+
+        let sql = r#"
+            SELECT name, sql
+            FROM sqlite_master
+            WHERE type = 'view'
+            ORDER BY name
+        "#;
+
+        let rows = sqlx::query(sql).fetch_all(pool).await?;
+
+        let views = rows
+            .iter()
+            .filter_map(|row| {
+                let name: String = row.get(0);
+                let create_sql: Option<String> = row.get(1);
+                // SQLite の sql カラムには CREATE VIEW ... AS ... が入る
+                // AS 以降を抽出して definition とする
+                create_sql.map(|sql| {
+                    let definition = extract_view_definition_from_create_sql(&sql);
+                    RawViewInfo {
+                        name,
+                        definition,
+                        is_materialized: false,
+                    }
+                })
+            })
+            .collect();
+
+        Ok(views)
+    }
+}
+
+/// CREATE VIEW 文からビュー定義（AS以降）を抽出する
+fn extract_view_definition_from_create_sql(create_sql: &str) -> String {
+    // 大文字小文字を無視して \s+AS\s+ パターンを検索（改行・タブにも対応）
+    let re = regex::Regex::new(r"(?i)\bAS\s").unwrap();
+    if let Some(m) = re.find(create_sql) {
+        create_sql[m.end()..].trim().to_string()
+    } else {
+        // フォールバック: そのまま返す
+        create_sql.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -983,5 +1120,77 @@ mod tests {
         };
         let cloned = enum_info.clone();
         assert_eq!(cloned.values.len(), 2);
+    }
+
+    // =========================================================================
+    // RawViewInfo 構造体テスト
+    // =========================================================================
+
+    #[test]
+    fn test_raw_view_info_debug() {
+        let view = RawViewInfo {
+            name: "active_users".to_string(),
+            definition: "SELECT * FROM users WHERE active = true".to_string(),
+            is_materialized: false,
+        };
+        assert!(format!("{:?}", view).contains("active_users"));
+    }
+
+    #[test]
+    fn test_raw_view_info_clone() {
+        let view = RawViewInfo {
+            name: "user_stats".to_string(),
+            definition: "SELECT count(*) FROM users".to_string(),
+            is_materialized: true,
+        };
+        let cloned = view.clone();
+        assert_eq!(cloned.name, "user_stats");
+        assert!(cloned.is_materialized);
+    }
+
+    // =========================================================================
+    // extract_view_definition_from_create_sql テスト
+    // =========================================================================
+
+    #[test]
+    fn test_extract_view_definition_simple() {
+        let sql = "CREATE VIEW active_users AS SELECT * FROM users WHERE active = 1";
+        let definition = super::extract_view_definition_from_create_sql(sql);
+        assert_eq!(definition, "SELECT * FROM users WHERE active = 1");
+    }
+
+    #[test]
+    fn test_extract_view_definition_case_insensitive() {
+        let sql = "CREATE VIEW my_view as select id from users";
+        let definition = super::extract_view_definition_from_create_sql(sql);
+        assert_eq!(definition, "select id from users");
+    }
+
+    #[test]
+    fn test_extract_view_definition_with_extra_whitespace() {
+        let sql = "CREATE VIEW  my_view  AS  SELECT id FROM users";
+        let definition = super::extract_view_definition_from_create_sql(sql);
+        assert_eq!(definition, "SELECT id FROM users");
+    }
+
+    #[test]
+    fn test_extract_view_definition_no_as_fallback() {
+        let sql = "some weird sql without the keyword";
+        let definition = super::extract_view_definition_from_create_sql(sql);
+        assert_eq!(definition, sql);
+    }
+
+    #[test]
+    fn test_extract_view_definition_newline_after_as() {
+        let sql = "CREATE VIEW my_view AS\nSELECT id FROM users";
+        let definition = super::extract_view_definition_from_create_sql(sql);
+        assert_eq!(definition, "SELECT id FROM users");
+    }
+
+    #[test]
+    fn test_extract_view_definition_tab_after_as() {
+        let sql = "CREATE VIEW my_view AS\tSELECT id FROM users";
+        let definition = super::extract_view_definition_from_create_sql(sql);
+        assert_eq!(definition, "SELECT id FROM users");
     }
 }

@@ -22,6 +22,14 @@ pub struct DestructiveChangeReport {
     /// 再作成されるENUM
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enums_recreated: Vec<String>,
+
+    /// 削除されるView名のリスト
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub views_dropped: Vec<String>,
+
+    /// 定義が変更されるView名のリスト
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub views_modified: Vec<String>,
 }
 
 /// 削除されるカラム情報
@@ -54,6 +62,8 @@ impl DestructiveChangeReport {
             columns_renamed: Vec::new(),
             enums_dropped: Vec::new(),
             enums_recreated: Vec::new(),
+            views_dropped: Vec::new(),
+            views_modified: Vec::new(),
         }
     }
 
@@ -64,6 +74,8 @@ impl DestructiveChangeReport {
             || !self.columns_renamed.is_empty()
             || !self.enums_dropped.is_empty()
             || !self.enums_recreated.is_empty()
+            || !self.views_dropped.is_empty()
+            || !self.views_modified.is_empty()
     }
 
     /// 破壊的変更の総数をカウント
@@ -79,6 +91,8 @@ impl DestructiveChangeReport {
             + self.columns_renamed.len()
             + self.enums_dropped.len()
             + self.enums_recreated.len()
+            + self.views_dropped.len()
+            + self.views_modified.len()
     }
 }
 
@@ -101,6 +115,8 @@ mod tests {
             columns_renamed: Vec::new(),
             enums_dropped: Vec::new(),
             enums_recreated: Vec::new(),
+            views_dropped: Vec::new(),
+            views_modified: Vec::new(),
         };
 
         assert!(report.has_destructive_changes());
@@ -134,9 +150,11 @@ mod tests {
             ],
             enums_dropped: vec!["old_status".to_string()],
             enums_recreated: vec!["priority".to_string()],
+            views_dropped: vec!["old_view".to_string()],
+            views_modified: vec!["changed_view".to_string()],
         };
 
-        assert_eq!(report.total_change_count(), 2 + 3 + 2 + 1 + 1);
+        assert_eq!(report.total_change_count(), 2 + 3 + 2 + 1 + 1 + 1 + 1);
     }
 
     #[test]
@@ -154,6 +172,8 @@ mod tests {
             }],
             enums_dropped: vec!["old_status".to_string()],
             enums_recreated: vec!["priority".to_string()],
+            views_dropped: vec!["old_view".to_string()],
+            views_modified: vec!["changed_view".to_string()],
         };
 
         let yaml = serde_saphyr::to_string(&report).expect("serialize report");
@@ -173,5 +193,7 @@ mod tests {
         assert!(!yaml.contains("columns_renamed"));
         assert!(!yaml.contains("enums_dropped"));
         assert!(!yaml.contains("enums_recreated"));
+        assert!(!yaml.contains("views_dropped"));
+        assert!(!yaml.contains("views_modified"));
     }
 }

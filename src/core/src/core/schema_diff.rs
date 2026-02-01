@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::core::error::ValidationError;
-use crate::core::schema::{Column, Constraint, EnumDefinition, Index, Table};
+use crate::core::schema::{Column, Constraint, EnumDefinition, Index, Table, View};
 
 /// FK制約から依存関係グラフを構築
 ///
@@ -127,6 +127,55 @@ pub struct SchemaDiff {
     /// リネームされたテーブル
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub renamed_tables: Vec<RenamedTable>,
+
+    /// 追加されたビュー
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added_views: Vec<View>,
+
+    /// 削除されたビュー
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed_views: Vec<String>,
+
+    /// 変更されたビュー（definition が変更されたもの）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modified_views: Vec<ViewDiff>,
+
+    /// リネームされたビュー
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub renamed_views: Vec<RenamedView>,
+}
+
+/// ビュー差分
+///
+/// ビューの変更内容を表現します。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ViewDiff {
+    /// ビュー名
+    pub view_name: String,
+
+    /// 変更前の定義
+    pub old_definition: String,
+
+    /// 変更後の定義
+    pub new_definition: String,
+
+    /// 変更前のビュー
+    pub old_view: View,
+
+    /// 変更後のビュー
+    pub new_view: View,
+}
+
+/// リネームされたビュー
+///
+/// ビュー名の変更を表現します。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RenamedView {
+    /// 旧ビュー名
+    pub old_name: String,
+
+    /// 新ビュー定義
+    pub new_view: View,
 }
 
 /// リネームされたテーブル
@@ -153,6 +202,10 @@ impl SchemaDiff {
             removed_tables: Vec::new(),
             modified_tables: Vec::new(),
             renamed_tables: Vec::new(),
+            added_views: Vec::new(),
+            removed_views: Vec::new(),
+            modified_views: Vec::new(),
+            renamed_views: Vec::new(),
         }
     }
 
@@ -165,6 +218,10 @@ impl SchemaDiff {
             && self.removed_tables.is_empty()
             && self.modified_tables.is_empty()
             && self.renamed_tables.is_empty()
+            && self.added_views.is_empty()
+            && self.removed_views.is_empty()
+            && self.modified_views.is_empty()
+            && self.renamed_views.is_empty()
     }
 
     /// 差分の項目数を取得
@@ -176,6 +233,10 @@ impl SchemaDiff {
             + self.removed_tables.len()
             + self.renamed_tables.len()
             + self.modified_tables.len()
+            + self.added_views.len()
+            + self.removed_views.len()
+            + self.modified_views.len()
+            + self.renamed_views.len()
     }
 
     /// 外部キー制約による依存関係を考慮して、追加テーブルをトポロジカルソート
@@ -257,6 +318,50 @@ impl SchemaDiff {
         // 作成順の逆 = 参照元テーブルを先に削除
         sorted.reverse();
         sorted.into_iter().map(|s| s.to_string()).collect()
+    }
+
+    /// depends_onによる依存関係を考慮して、追加ビューをトポロジカルソート
+    ///
+    /// 依存先ビューが先に作成されるように並び替えます。
+    ///
+    /// # Returns
+    ///
+    /// ソートされたビューのリスト
+    pub fn sort_added_views_by_dependency(&self) -> Vec<View> {
+        if self.added_views.is_empty() {
+            return Vec::new();
+        }
+
+        let view_map: HashMap<&str, &View> = self
+            .added_views
+            .iter()
+            .map(|v| (v.name.as_str(), v))
+            .collect();
+
+        let view_names: HashSet<&str> = view_map.keys().copied().collect();
+
+        // depends_on から依存関係グラフを構築
+        let mut dependencies: HashMap<&str, Vec<&str>> = HashMap::new();
+        for &name in &view_names {
+            let mut deps = Vec::new();
+            if let Some(view) = view_map.get(name) {
+                for dep in &view.depends_on {
+                    // ビュー間の依存のみを対象（テーブル依存はソートに影響しない）
+                    if view_names.contains(dep.as_str()) {
+                        deps.push(dep.as_str());
+                    }
+                }
+            }
+            dependencies.insert(name, deps);
+        }
+
+        let (sorted_names, _remaining) = topological_sort_kahn(&view_names, &dependencies);
+
+        // 循環参照はvalidation段階で検出済みなので、ここではベストエフォートで返す
+        sorted_names
+            .into_iter()
+            .filter_map(|name| view_map.get(name).map(|v| (*v).clone()))
+            .collect()
     }
 }
 

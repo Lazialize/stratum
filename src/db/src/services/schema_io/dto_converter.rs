@@ -3,8 +3,8 @@
 // Schema ↔ SchemaDto の双方向変換を一元管理するサービス。
 // パース(DTO→Schema)とシリアライズ(Schema→DTO)の整合性を保証します。
 
-use crate::core::schema::{Constraint, Schema, Table};
-use crate::services::schema_io::dto::{ConstraintDto, SchemaDto, TableDto};
+use crate::core::schema::{Constraint, Schema, Table, View};
+use crate::services::schema_io::dto::{ConstraintDto, SchemaDto, TableDto, ViewDto};
 use std::collections::BTreeMap;
 
 /// DTO変換サービス
@@ -32,6 +32,12 @@ impl DtoConverterService {
             tables.insert(table_name.clone(), table_dto);
         }
 
+        let mut views = BTreeMap::new();
+        for (view_name, view) in &schema.views {
+            let view_dto = self.view_to_dto(view);
+            views.insert(view_name.clone(), view_dto);
+        }
+
         SchemaDto {
             version: schema.version.clone(),
             enum_recreate_allowed: schema.enum_recreate_allowed,
@@ -41,6 +47,7 @@ impl DtoConverterService {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             tables,
+            views,
         }
     }
 
@@ -61,6 +68,12 @@ impl DtoConverterService {
         for (table_name, table_dto) in &dto.tables {
             let table = self.dto_to_table(table_name, table_dto);
             schema.add_table(table);
+        }
+
+        // ビューを変換
+        for (view_name, view_dto) in &dto.views {
+            let view = self.dto_to_view(view_name, view_dto);
+            schema.add_view(view);
         }
 
         schema
@@ -172,6 +185,23 @@ impl DtoConverterService {
         }
     }
 
+    /// View → ViewDto 変換
+    pub fn view_to_dto(&self, view: &View) -> ViewDto {
+        ViewDto {
+            definition: view.definition.clone(),
+            depends_on: view.depends_on.clone(),
+            renamed_from: view.renamed_from.clone(),
+        }
+    }
+
+    /// ViewDto → View 変換
+    pub fn dto_to_view(&self, name: &str, dto: &ViewDto) -> View {
+        let mut view = View::new(name.to_string(), dto.definition.clone());
+        view.depends_on = dto.depends_on.clone();
+        view.renamed_from = dto.renamed_from.clone();
+        view
+    }
+
     /// PRIMARY_KEY制約を抽出
     fn extract_primary_key(&self, constraints: &[Constraint]) -> Option<Vec<String>> {
         constraints.iter().find_map(|c| {
@@ -269,6 +299,7 @@ mod tests {
             enum_recreate_allowed: false,
             enums: BTreeMap::new(),
             tables: BTreeMap::new(),
+            views: BTreeMap::new(),
         };
         let service = DtoConverterService::new();
 
@@ -287,6 +318,7 @@ mod tests {
             enum_recreate_allowed: true,
             enums: BTreeMap::new(),
             tables: BTreeMap::new(),
+            views: BTreeMap::new(),
         };
         let service = DtoConverterService::new();
 

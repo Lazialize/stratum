@@ -53,6 +53,7 @@ pub struct ValidationStatistics {
     pub columns: usize,
     pub indexes: usize,
     pub constraints: usize,
+    pub views: usize,
 }
 
 impl CommandOutput for ValidateOutput {
@@ -71,6 +72,7 @@ pub struct ValidationSummary {
     pub column_count: usize,
     pub index_count: usize,
     pub constraint_count: usize,
+    pub view_count: usize,
 }
 
 /// validateコマンドの入力パラメータ
@@ -186,6 +188,7 @@ impl ValidateCommandHandler {
                 columns: stats.1,
                 indexes: stats.2,
                 constraints: stats.3,
+                views: stats.4,
             },
             text_message: text_message.clone(),
         };
@@ -295,6 +298,9 @@ impl ValidateCommandHandler {
         output.push_str(&format!("Columns: {}\n", stats.1));
         output.push_str(&format!("Indexes: {}\n", stats.2));
         output.push_str(&format!("Constraints: {}\n", stats.3));
+        if stats.4 > 0 {
+            output.push_str(&format!("Views: {}\n", stats.4));
+        }
 
         // 結果サマリー
         output.push_str("\n=== Result ===\n");
@@ -346,8 +352,9 @@ impl ValidateCommandHandler {
     fn calculate_statistics(
         &self,
         schema: &crate::core::schema::Schema,
-    ) -> (usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize) {
         let table_count = schema.table_count();
+        let view_count = schema.view_count();
         let mut column_count = 0;
         let mut index_count = 0;
         let mut constraint_count = 0;
@@ -358,7 +365,13 @@ impl ValidateCommandHandler {
             constraint_count += table.constraints.len();
         }
 
-        (table_count, column_count, index_count, constraint_count)
+        (
+            table_count,
+            column_count,
+            index_count,
+            constraint_count,
+            view_count,
+        )
     }
 
     /// 検証結果のサマリーをフォーマット（テスト用）
@@ -380,6 +393,9 @@ impl ValidateCommandHandler {
         output.push_str(&format!("Columns: {}\n", summary.column_count));
         output.push_str(&format!("Indexes: {}\n", summary.index_count));
         output.push_str(&format!("Constraints: {}\n", summary.constraint_count));
+        if summary.view_count > 0 {
+            output.push_str(&format!("Views: {}\n", summary.view_count));
+        }
 
         output.push_str("\n=== Result ===\n");
         if summary.is_valid && summary.error_count == 0 {
@@ -418,6 +434,7 @@ mod tests {
             column_count: 5,
             index_count: 3,
             constraint_count: 1,
+            view_count: 0,
         };
         let summary = handler.format_validation_summary(summary_data);
         assert!(summary.contains("Validation complete"));
@@ -433,6 +450,7 @@ mod tests {
             column_count: 5,
             index_count: 3,
             constraint_count: 1,
+            view_count: 0,
         };
         let summary = handler.format_validation_summary(summary_data_with_errors);
         assert!(summary.contains("3 error(s) found"));
@@ -463,13 +481,14 @@ mod tests {
 
         schema.add_table(table);
 
-        let (table_count, column_count, index_count, constraint_count) =
+        let (table_count, column_count, index_count, constraint_count, view_count) =
             handler.calculate_statistics(&schema);
 
         assert_eq!(table_count, 1);
         assert_eq!(column_count, 2);
         assert_eq!(index_count, 0);
         assert_eq!(constraint_count, 1);
+        assert_eq!(view_count, 0);
     }
 
     #[test]
@@ -494,6 +513,7 @@ mod tests {
                 columns: 3,
                 indexes: 0,
                 constraints: 0,
+                views: 0,
             },
             text_message: "should not appear in JSON".to_string(),
         };

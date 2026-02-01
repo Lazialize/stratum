@@ -172,6 +172,27 @@ impl SqlGenerator for SqliteSqlGenerator {
             quote_identifier_sqlite(to_name)
         )]
     }
+
+    /// SQLiteでは CREATE OR REPLACE VIEW が使えないため DROP + CREATE を使用
+    fn generate_create_view(&self, view_name: &str, definition: &str) -> String {
+        format!(
+            "DROP VIEW IF EXISTS {};\n\nCREATE VIEW {} AS\n{}",
+            quote_identifier_sqlite(view_name),
+            quote_identifier_sqlite(view_name),
+            definition
+        )
+    }
+
+    /// SQLiteでは ALTER VIEW RENAME TO が使えないため DROP + CREATE を使用
+    fn generate_rename_view(&self, old_name: &str, _new_name: &str) -> String {
+        // SQLiteではビューリネームはサポートされない。
+        // 呼び出し元で DROP + CREATE の組み合わせが使われることを想定。
+        // migration pipeline側で DROP + CREATE に変換する。
+        format!(
+            "-- SQLite does not support ALTER VIEW RENAME. Use DROP + CREATE instead.\nDROP VIEW IF EXISTS {}",
+            quote_identifier_sqlite(old_name),
+        )
+    }
 }
 
 impl Default for SqliteSqlGenerator {

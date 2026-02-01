@@ -27,6 +27,9 @@ use tracing::debug;
 pub struct ExportOutput {
     /// エクスポートされたテーブル一覧
     pub tables: Vec<String>,
+    /// エクスポートされたビュー一覧
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub views: Vec<String>,
     /// 出力先パス（Noneの場合はstdout）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_path: Option<String>,
@@ -124,7 +127,16 @@ impl ExportCommandHandler {
         // テーブル名のリストを取得
         let mut table_names: Vec<String> = schema.tables.keys().cloned().collect();
         table_names.sort();
-        debug!(tables = table_names.len(), "Schema extracted successfully");
+
+        // ビュー名のリストを取得
+        let mut view_names: Vec<String> = schema.views.keys().cloned().collect();
+        view_names.sort();
+
+        debug!(
+            tables = table_names.len(),
+            views = view_names.len(),
+            "Schema extracted successfully"
+        );
 
         let serializer = SchemaSerializerService::new();
 
@@ -141,8 +153,14 @@ impl ExportCommandHandler {
 
                 let output = ExportOutput {
                     tables: table_names.clone(),
+                    views: view_names.clone(),
                     output_path: Some(output_dir.to_string_lossy().to_string()),
-                    text_message: self.format_export_summary(&table_names, Some(output_dir), true),
+                    text_message: self.format_export_summary(
+                        &table_names,
+                        &view_names,
+                        Some(output_dir),
+                        true,
+                    ),
                 };
 
                 render_output(&output, &command.format)
@@ -167,8 +185,14 @@ impl ExportCommandHandler {
 
                 let output = ExportOutput {
                     tables: table_names.clone(),
+                    views: view_names.clone(),
                     output_path: Some(output_file.to_string_lossy().to_string()),
-                    text_message: self.format_export_summary(&table_names, Some(output_dir), false),
+                    text_message: self.format_export_summary(
+                        &table_names,
+                        &view_names,
+                        Some(output_dir),
+                        false,
+                    ),
                 };
 
                 render_output(&output, &command.format)
@@ -181,6 +205,7 @@ impl ExportCommandHandler {
 
             let output = ExportOutput {
                 tables: table_names,
+                views: view_names,
                 output_path: None,
                 text_message: yaml_content,
             };
@@ -329,9 +354,28 @@ impl ExportCommandHandler {
             raw_tables.push(raw_table);
         }
 
-        // スキーマを構築
+        // View定義を取得
+        let raw_views = introspector
+            .get_views(pool)
+            .await
+            .with_context(|| "Failed to get view definitions")?;
+
+        // マテリアライズドビューの警告を出力
+        let materialized_views: Vec<&str> = raw_views
+            .iter()
+            .filter(|v| v.is_materialized)
+            .map(|v| v.name.as_str())
+            .collect();
+        if !materialized_views.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Materialized views are not supported: {}. Remove or exclude them before exporting.",
+                materialized_views.join(", ")
+            ));
+        }
+
+        // スキーマを構築（マテリアライズドビューは内部でフィルタリング）
         conversion_service
-            .build_schema(raw_tables, raw_enums)
+            .build_schema_with_views(raw_tables, raw_enums, raw_views)
             .with_context(|| "Failed to build schema from raw data")
     }
 
@@ -369,6 +413,7 @@ impl ExportCommandHandler {
     pub fn format_export_summary(
         &self,
         table_names: &[String],
+        view_names: &[String],
         output_dir: Option<&PathBuf>,
         split: bool,
     ) -> String {
@@ -380,6 +425,14 @@ impl ExportCommandHandler {
 
         for table_name in table_names {
             output.push_str(&format!("  - {}\n", table_name));
+        }
+
+        if !view_names.is_empty() {
+            output.push_str(&format!("\nExported views: {}\n\n", view_names.len()));
+
+            for view_name in view_names {
+                output.push_str(&format!("  - {}\n", view_name));
+            }
         }
 
         output.push('\n');
@@ -465,7 +518,7 @@ mod tests {
         let table_names = vec!["users".to_string(), "posts".to_string()];
         let output_path = Some(PathBuf::from("/test/output"));
 
-        let summary = handler.format_export_summary(&table_names, output_path.as_ref(), false);
+        let summary = handler.format_export_summary(&table_names, &[], output_path.as_ref(), false);
 
         assert!(summary.contains("Export Complete"));
         assert!(summary.contains("2"));
@@ -480,7 +533,7 @@ mod tests {
 
         let table_names = vec!["users".to_string()];
 
-        let summary = handler.format_export_summary(&table_names, None, false);
+        let summary = handler.format_export_summary(&table_names, &[], None, false);
 
         assert!(summary.contains("stdout"));
     }
@@ -492,12 +545,28 @@ mod tests {
         let table_names = vec!["users".to_string(), "posts".to_string()];
         let output_path = Some(PathBuf::from("/test/output"));
 
-        let summary = handler.format_export_summary(&table_names, output_path.as_ref(), true);
+        let summary = handler.format_export_summary(&table_names, &[], output_path.as_ref(), true);
 
         assert!(summary.contains("Export Complete"));
         assert!(summary.contains("split mode"));
         assert!(summary.contains("users.yaml"));
         assert!(summary.contains("posts.yaml"));
+    }
+
+    #[test]
+    fn test_format_export_summary_with_views() {
+        let handler = ExportCommandHandler::new();
+
+        let table_names = vec!["users".to_string()];
+        let view_names = vec!["active_users".to_string()];
+        let output_path = Some(PathBuf::from("/test/output"));
+
+        let summary =
+            handler.format_export_summary(&table_names, &view_names, output_path.as_ref(), false);
+
+        assert!(summary.contains("Exported tables: 1"));
+        assert!(summary.contains("Exported views: 1"));
+        assert!(summary.contains("active_users"));
     }
 
     #[test]
@@ -652,6 +721,7 @@ mod tests {
     fn test_export_output_json_serialization() {
         let output = ExportOutput {
             tables: vec!["users".to_string(), "posts".to_string()],
+            views: Vec::new(),
             output_path: Some("/output/schema.yaml".to_string()),
             text_message: "should not appear in JSON".to_string(),
         };
@@ -668,6 +738,7 @@ mod tests {
         // output_path が None の場合はフィールドがスキップされる
         let output_no_path = ExportOutput {
             tables: vec!["users".to_string()],
+            views: Vec::new(),
             output_path: None,
             text_message: "text".to_string(),
         };

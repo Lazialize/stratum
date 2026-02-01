@@ -277,6 +277,7 @@ check_expression: "age >= 0"
             enum_recreate_allowed: false,
             enums: BTreeMap::new(),
             tables,
+            views: BTreeMap::new(),
         };
 
         assert_eq!(schema.tables.len(), 2);
@@ -304,6 +305,7 @@ check_expression: "age >= 0"
             enum_recreate_allowed: false,
             enums: BTreeMap::new(),
             tables,
+            views: BTreeMap::new(),
         };
 
         assert!(schema.has_table("users"));

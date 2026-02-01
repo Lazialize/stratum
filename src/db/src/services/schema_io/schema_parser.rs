@@ -88,7 +88,10 @@ impl SchemaParserService {
             match self.parse_schema_file(&file_path) {
                 Ok(schema) => {
                     // バージョンを保持（最初に見つかったバージョンを使用）
-                    if merged_schema.table_count() == 0 && merged_schema.enums.is_empty() {
+                    if merged_schema.table_count() == 0
+                        && merged_schema.enums.is_empty()
+                        && merged_schema.views.is_empty()
+                    {
                         merged_schema.version = schema.version;
                     }
 
@@ -100,6 +103,11 @@ impl SchemaParserService {
                     // ENUMをマージ
                     for (enum_name, enum_def) in schema.enums {
                         merged_schema.enums.insert(enum_name, enum_def);
+                    }
+
+                    // ビューをマージ
+                    for (view_name, view) in schema.views {
+                        merged_schema.views.insert(view_name, view);
                     }
                 }
                 Err(e) => {
@@ -673,6 +681,59 @@ tables:
         assert_eq!(schema.enums.len(), 2);
         assert!(schema.enums.contains_key("status"));
         assert!(schema.enums.contains_key("role"));
+    }
+
+    #[test]
+    fn test_parse_directory_merges_views_from_multiple_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir = temp_dir.path();
+
+        let file1 = r#"
+version: "1.0"
+tables:
+  users:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - id
+views:
+  active_users:
+    name: active_users
+    definition: "SELECT * FROM users WHERE active = true"
+"#;
+
+        let file2 = r#"
+version: "1.0"
+tables:
+  posts:
+    columns:
+      - name: id
+        type:
+          kind: INTEGER
+        nullable: false
+    primary_key:
+      - id
+views:
+  recent_posts:
+    name: recent_posts
+    definition: "SELECT * FROM posts WHERE created_at > NOW()"
+"#;
+
+        fs::write(dir.join("01_users.yaml"), file1).unwrap();
+        fs::write(dir.join("02_posts.yaml"), file2).unwrap();
+
+        let service = SchemaParserService::new();
+        let schema = service.parse_schema_directory(dir).unwrap();
+
+        // テーブルがマージされること
+        assert_eq!(schema.tables.len(), 2);
+        // ビューがマージされること
+        assert_eq!(schema.views.len(), 2);
+        assert!(schema.has_view("active_users"));
+        assert!(schema.has_view("recent_posts"));
     }
 
     #[test]
