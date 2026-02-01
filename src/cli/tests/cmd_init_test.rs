@@ -52,7 +52,7 @@ mod init_command_tests {
             password: Some("pass".to_string()),
         };
         handler
-            .generate_config_file(project_path, params)
+            .generate_config_file(project_path, params, None)
             .expect("Failed to generate config file");
 
         // 設定ファイルが作成されているか確認
@@ -86,7 +86,7 @@ mod init_command_tests {
             password: Some("pass".to_string()),
         };
         handler
-            .generate_config_file(project_path, params)
+            .generate_config_file(project_path, params, None)
             .expect("Failed to generate config file");
 
         assert!(config_path.exists());
@@ -113,7 +113,7 @@ mod init_command_tests {
             password: None,
         };
         handler
-            .generate_config_file(project_path, params)
+            .generate_config_file(project_path, params, None)
             .expect("Failed to generate config file");
 
         assert!(config_path.exists());
@@ -162,7 +162,7 @@ mod init_command_tests {
             user: Some("user".to_string()),
             password: Some("pass".to_string()),
         };
-        handler.generate_config_file(project_path, params).unwrap();
+        handler.generate_config_file(project_path, params, None).unwrap();
 
         // 再初期化を試みる（force=false）
         let command = InitCommand {
@@ -201,7 +201,7 @@ mod init_command_tests {
             user: Some("user".to_string()),
             password: Some("pass".to_string()),
         };
-        handler.generate_config_file(project_path, params).unwrap();
+        handler.generate_config_file(project_path, params, None).unwrap();
 
         // 再初期化を試みる（force=true）
         let command = InitCommand {
@@ -283,7 +283,7 @@ mod init_command_tests {
             user: Some("user".to_string()),
             password: Some("pass".to_string()),
         };
-        handler.generate_config_file(project_path, params).unwrap();
+        handler.generate_config_file(project_path, params, None).unwrap();
 
         let config_path = project_path.join(".strata.yaml");
         let config = ConfigLoader::from_file(&config_path).unwrap();

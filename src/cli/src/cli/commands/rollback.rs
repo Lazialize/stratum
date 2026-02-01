@@ -428,7 +428,7 @@ impl RollbackCommandHandler {
         }
 
         if has_destructive {
-            output.push_str("To proceed, run with --allow-destructive flag\n");
+            output.push_str("To proceed, run without --dry-run and with --allow-destructive flag.\n");
         }
 
         output

@@ -115,7 +115,11 @@ async fn run_command(cli: Cli) -> Result<String> {
                 project_path,
                 dialect,
                 force,
-                database_name: format!("{}_db", dialect),
+                database_name: if matches!(dialect, Dialect::SQLite) {
+                    "strata.db".to_string()
+                } else {
+                    format!("{}_db", dialect)
+                },
                 host: None,
                 port: None,
                 user: None,

@@ -8,13 +8,14 @@
 use crate::cli::commands::{render_output, CommandOutput};
 use crate::cli::OutputFormat;
 use crate::core::config::{Config, DatabaseConfig, Dialect};
+use crate::services::config_loader::ConfigLoader;
 use crate::services::config_serializer::ConfigSerializer;
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// initコマンドの出力構造体
 #[derive(Debug, Clone, Serialize)]
@@ -92,6 +93,13 @@ impl InitCommandHandler {
     /// 成功時は出力文字列、失敗時はエラーメッセージ
     pub fn execute(&self, command: &InitCommand) -> Result<String> {
         debug!(project_path = %command.project_path.display(), dialect = ?command.dialect, force = command.force, "Initializing project");
+        // 既存の設定を読み込み（--force時にマージするため）
+        let existing_config = if command.force {
+            self.load_existing_config(&command.project_path)
+        } else {
+            None
+        };
+
         // 初期化済みチェック
         if self.is_already_initialized(&command.project_path) && !command.force {
             return Err(anyhow!(
@@ -111,7 +119,7 @@ impl InitCommandHandler {
             user: command.user.clone(),
             password: command.password.clone(),
         };
-        self.generate_config_file(&command.project_path, config_params)?;
+        self.generate_config_file(&command.project_path, config_params, existing_config.as_ref())?;
 
         // .gitignoreに設定ファイルを自動追記 or 警告
         if command.add_gitignore {
@@ -222,16 +230,33 @@ impl InitCommandHandler {
         Ok(())
     }
 
+    /// 既存の設定ファイルを読み込む
+    fn load_existing_config(&self, project_path: &Path) -> Option<Config> {
+        let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
+        if !config_path.exists() {
+            return None;
+        }
+        match ConfigLoader::from_file(&config_path) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                warn!("Failed to load existing config file, will overwrite: {}", e);
+                None
+            }
+        }
+    }
+
     /// 設定ファイルを生成
     ///
     /// # Arguments
     ///
     /// * `project_path` - プロジェクトのルートパス
     /// * `params` - 設定ファイル生成のパラメータ
+    /// * `existing_config` - 既存の設定（--force時にマージ用）
     pub fn generate_config_file(
         &self,
         project_path: &Path,
         params: ConfigFileParams,
+        existing_config: Option<&Config>,
     ) -> Result<()> {
         // デフォルト値を設定
         let is_sqlite = matches!(params.dialect, Dialect::SQLite);
@@ -285,16 +310,25 @@ impl InitCommandHandler {
             options: None,
         };
 
-        // 環境設定を作成（developmentのみ）
-        let mut environments = HashMap::new();
+        // 環境設定を作成
+        let mut environments = if let Some(existing) = existing_config {
+            // 既存の環境設定を保持し、developmentのみ新しい設定で上書き
+            existing.environments.clone()
+        } else {
+            HashMap::new()
+        };
         environments.insert("development".to_string(), db_config);
 
         // 設定オブジェクトを作成
         let config = Config {
             version: "1.0".to_string(),
             dialect: params.dialect,
-            schema_dir: PathBuf::from("schema"),
-            migrations_dir: PathBuf::from("migrations"),
+            schema_dir: existing_config
+                .map(|c| c.schema_dir.clone())
+                .unwrap_or_else(|| PathBuf::from("schema")),
+            migrations_dir: existing_config
+                .map(|c| c.migrations_dir.clone())
+                .unwrap_or_else(|| PathBuf::from("migrations")),
             environments,
         };
 
@@ -392,6 +426,83 @@ mod tests {
         .unwrap();
         let handler = InitCommandHandler::new();
         handler.warn_gitignore(temp_dir.path()); // パニックしなければOK
+    }
+
+    #[test]
+    fn test_force_init_preserves_existing_environments() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_path = temp_dir.path();
+
+        let handler = InitCommandHandler::new();
+
+        // 初回のinit（PostgreSQLでdevelopment環境を作成）
+        let params = ConfigFileParams {
+            dialect: Dialect::PostgreSQL,
+            database_name: "mydb".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(5432),
+            user: Some("admin".to_string()),
+            password: Some("secret".to_string()),
+        };
+        handler
+            .generate_config_file(project_path, params, None)
+            .unwrap();
+
+        // 既存の設定にstaging環境を手動追加
+        let config_path = project_path.join(Config::DEFAULT_CONFIG_PATH);
+        let mut config: Config =
+            serde_saphyr::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        config.environments.insert(
+            "staging".to_string(),
+            DatabaseConfig {
+                host: "staging-host".to_string(),
+                port: Some(5432),
+                database: "staging_db".to_string(),
+                user: Some("staging_user".to_string()),
+                password: Some("staging_pass".to_string()),
+                ..Default::default()
+            },
+        );
+        let yaml = crate::services::config_serializer::ConfigSerializer::to_yaml(&config).unwrap();
+        fs::write(&config_path, yaml).unwrap();
+
+        // --forceで再init（development環境のみ更新、staging環境は保持されるべき）
+        let existing = handler.load_existing_config(project_path);
+        assert!(existing.is_some());
+        let existing = existing.unwrap();
+        assert!(existing.environments.contains_key("staging"));
+
+        let new_params = ConfigFileParams {
+            dialect: Dialect::PostgreSQL,
+            database_name: "new_db".to_string(),
+            host: Some("new-host".to_string()),
+            port: Some(5433),
+            user: Some("new_user".to_string()),
+            password: Some("new_pass".to_string()),
+        };
+        handler
+            .generate_config_file(project_path, new_params, Some(&existing))
+            .unwrap();
+
+        // 結果を検証
+        let result: Config =
+            serde_saphyr::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        // staging環境が保持されている
+        assert!(result.environments.contains_key("staging"));
+        assert_eq!(
+            result.environments["staging"].database,
+            "staging_db"
+        );
+        // development環境が新しい設定で上書きされている
+        assert!(result.environments.contains_key("development"));
+        assert_eq!(
+            result.environments["development"].database,
+            "new_db"
+        );
+        assert_eq!(
+            result.environments["development"].host,
+            "new-host"
+        );
     }
 
     #[test]

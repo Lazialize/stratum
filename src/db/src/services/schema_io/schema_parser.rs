@@ -9,7 +9,7 @@ use crate::core::error::IoError;
 use crate::core::schema::Schema;
 use crate::services::schema_io::dto::SchemaDto;
 use crate::services::schema_io::dto_converter::DtoConverterService;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use regex::Regex;
 use std::fs;
 use std::path::Path;
@@ -82,26 +82,44 @@ impl SchemaParserService {
         // 各YAMLファイルを解析してスキーマをマージ
         let mut merged_schema = Schema::new("1.0".to_string());
         let parsed_files = yaml_files.clone();
+        let mut errors: Vec<String> = Vec::new();
 
         for file_path in yaml_files {
-            let schema = self
-                .parse_schema_file(&file_path)
-                .with_context(|| format!("Failed to parse schema file: {:?}", file_path))?;
+            match self.parse_schema_file(&file_path) {
+                Ok(schema) => {
+                    // バージョンを保持（最初に見つかったバージョンを使用）
+                    if merged_schema.table_count() == 0 && merged_schema.enums.is_empty() {
+                        merged_schema.version = schema.version;
+                    }
 
-            // バージョンを保持（最初に見つかったバージョンを使用）
-            if merged_schema.table_count() == 0 {
-                merged_schema.version = schema.version;
-            }
+                    // テーブルをマージ
+                    for (table_name, table) in schema.tables {
+                        merged_schema.tables.insert(table_name, table);
+                    }
 
-            // テーブルをマージ
-            for (table_name, table) in schema.tables {
-                merged_schema.tables.insert(table_name, table);
+                    // ENUMをマージ
+                    for (enum_name, enum_def) in schema.enums {
+                        merged_schema.enums.insert(enum_name, enum_def);
+                    }
+                }
+                Err(e) => {
+                    errors.push(format!("{:?}: {:#}", file_path, e));
+                }
             }
+        }
 
-            // ENUMをマージ
-            for (enum_name, enum_def) in schema.enums {
-                merged_schema.enums.insert(enum_name, enum_def);
-            }
+        if !errors.is_empty() {
+            let error_msg = format!(
+                "Failed to parse {} schema file(s):\n{}",
+                errors.len(),
+                errors
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| format!("  {}. {}", i + 1, e))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+            return Err(anyhow::anyhow!(error_msg));
         }
 
         Ok((merged_schema, parsed_files))

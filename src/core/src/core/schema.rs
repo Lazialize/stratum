@@ -310,7 +310,8 @@ pub struct Column {
     #[serde(rename = "type")]
     pub column_type: ColumnType,
 
-    /// NULL許可フラグ
+    /// NULL許可フラグ（デフォルト: false = NOT NULL）
+    #[serde(default)]
     pub nullable: bool,
 
     /// デフォルト値
