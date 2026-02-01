@@ -155,9 +155,7 @@ fn validate_view_dependency_cycle(schema: &Schema) -> ValidationResult {
                     cycle_views.join(", ")
                 ),
                 location: None,
-                suggestion: Some(
-                    "Remove circular depends_on references between views".to_string(),
-                ),
+                suggestion: Some("Remove circular depends_on references between views".to_string()),
             });
         }
     }
