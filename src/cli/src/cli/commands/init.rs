@@ -119,7 +119,11 @@ impl InitCommandHandler {
             user: command.user.clone(),
             password: command.password.clone(),
         };
-        self.generate_config_file(&command.project_path, config_params, existing_config.as_ref())?;
+        self.generate_config_file(
+            &command.project_path,
+            config_params,
+            existing_config.as_ref(),
+        )?;
 
         // .gitignoreに設定ファイルを自動追記 or 警告
         if command.add_gitignore {
@@ -489,20 +493,11 @@ mod tests {
             serde_saphyr::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
         // staging環境が保持されている
         assert!(result.environments.contains_key("staging"));
-        assert_eq!(
-            result.environments["staging"].database,
-            "staging_db"
-        );
+        assert_eq!(result.environments["staging"].database, "staging_db");
         // development環境が新しい設定で上書きされている
         assert!(result.environments.contains_key("development"));
-        assert_eq!(
-            result.environments["development"].database,
-            "new_db"
-        );
-        assert_eq!(
-            result.environments["development"].host,
-            "new-host"
-        );
+        assert_eq!(result.environments["development"].database, "new_db");
+        assert_eq!(result.environments["development"].host, "new-host");
     }
 
     #[test]
