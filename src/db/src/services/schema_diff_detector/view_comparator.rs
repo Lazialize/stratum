@@ -13,23 +13,42 @@ use std::collections::HashSet;
 /// 空白・改行・連続スペースの差異のみを除去する最小ルール。
 /// SQL 意味の同一性判定ではなく、表面的な空白差異を無視する。
 /// シングルクォート内の文字列リテラルは正規化しない。
+/// SQL エスケープクォート（''）はリテラル文字として扱い、クォート状態を変更しない。
 pub fn normalize_definition(definition: &str) -> String {
     let mut result = String::with_capacity(definition.len());
     let mut in_quote = false;
     let mut last_was_whitespace = false;
+    let chars: Vec<char> = definition.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
 
-    for ch in definition.chars() {
+    while i < len {
+        let ch = chars[i];
+
         if ch == '\'' {
-            if !in_quote && last_was_whitespace && !result.is_empty() {
-                result.push(' ');
+            if in_quote {
+                // クォート内で '' が来たらエスケープクォート（リテラル '）
+                if i + 1 < len && chars[i + 1] == '\'' {
+                    result.push('\'');
+                    result.push('\'');
+                    i += 2;
+                    continue;
+                }
+                // クォート終了
+                in_quote = false;
+                result.push(ch);
+            } else {
+                // クォート開始
+                if last_was_whitespace && !result.is_empty() {
+                    result.push(' ');
+                }
+                last_was_whitespace = false;
+                in_quote = true;
+                result.push(ch);
             }
-            last_was_whitespace = false;
-            in_quote = !in_quote;
-            result.push(ch);
         } else if in_quote {
             // クォート内はそのまま保持
             result.push(ch);
-            last_was_whitespace = false;
         } else if ch.is_whitespace() {
             last_was_whitespace = true;
         } else {
@@ -39,6 +58,8 @@ pub fn normalize_definition(definition: &str) -> String {
             last_was_whitespace = false;
             result.push(ch);
         }
+
+        i += 1;
     }
 
     result
@@ -56,12 +77,26 @@ pub fn detect_view_diff(old_schema: &Schema, new_schema: &Schema, diff: &mut Sch
     for view_name in new_view_names.difference(&old_view_names) {
         if let Some(view) = new_schema.views.get(*view_name) {
             if let Some(ref old_name) = view.renamed_from {
-                if old_schema.views.contains_key(old_name) {
+                if let Some(old_view) = old_schema.views.get(old_name) {
                     diff.renamed_views.push(RenamedView {
                         old_name: old_name.clone(),
                         new_view: view.clone(),
                     });
                     renamed_old_names.insert(old_name.clone());
+
+                    // リネームと同時に definition が変更されている場合も記録
+                    let old_normalized = normalize_definition(&old_view.definition);
+                    let new_normalized = normalize_definition(&view.definition);
+                    if old_normalized != new_normalized {
+                        diff.modified_views.push(ViewDiff {
+                            view_name: (*view_name).clone(),
+                            old_definition: old_view.definition.clone(),
+                            new_definition: view.definition.clone(),
+                            old_view: old_view.clone(),
+                            new_view: view.clone(),
+                        });
+                    }
+
                     continue;
                 }
             }
@@ -156,6 +191,40 @@ mod tests {
         assert_eq!(
             normalize_definition("SELECT  *  FROM  t  WHERE  v = 'hello  world'  AND  x = 1"),
             "SELECT * FROM t WHERE v = 'hello  world' AND x = 1"
+        );
+    }
+
+    #[test]
+    fn test_normalize_definition_escaped_quote_in_string() {
+        // SQL の '' はリテラルのシングルクォート
+        assert_eq!(
+            normalize_definition("SELECT * FROM t WHERE v = 'it''s  a  test'"),
+            "SELECT * FROM t WHERE v = 'it''s  a  test'"
+        );
+    }
+
+    #[test]
+    fn test_normalize_definition_escaped_quote_preserves_inner_whitespace() {
+        assert_eq!(
+            normalize_definition("SELECT  *  FROM  t  WHERE  v = 'hello''  world'  AND  x = 1"),
+            "SELECT * FROM t WHERE v = 'hello''  world' AND x = 1"
+        );
+    }
+
+    #[test]
+    fn test_normalize_definition_multiple_escaped_quotes() {
+        assert_eq!(
+            normalize_definition("SELECT * FROM t WHERE v = '''quoted'''"),
+            "SELECT * FROM t WHERE v = '''quoted'''"
+        );
+    }
+
+    #[test]
+    fn test_normalize_definition_escaped_quote_does_not_end_string() {
+        // '' の後もまだクォート内であることを確認
+        assert_eq!(
+            normalize_definition("SELECT * FROM t WHERE v = 'a''b  c'  AND  x = 1"),
+            "SELECT * FROM t WHERE v = 'a''b  c' AND x = 1"
         );
     }
 
@@ -270,6 +339,67 @@ mod tests {
         assert_eq!(diff.renamed_views.len(), 1);
         assert_eq!(diff.renamed_views[0].old_name, "active_users");
         assert_eq!(diff.renamed_views[0].new_view.name, "enabled_users");
+    }
+
+    #[test]
+    fn test_detect_view_renamed_with_definition_change() {
+        let mut old = Schema::new("1.0".to_string());
+        old.add_view(View::new(
+            "active_users".to_string(),
+            "SELECT * FROM users WHERE active = true".to_string(),
+        ));
+
+        let mut new = Schema::new("1.0".to_string());
+        let mut renamed_view = View::new(
+            "enabled_users".to_string(),
+            "SELECT id, email FROM users WHERE active = true".to_string(),
+        );
+        renamed_view.renamed_from = Some("active_users".to_string());
+        new.add_view(renamed_view);
+
+        let mut diff = SchemaDiff::new();
+        detect_view_diff(&old, &new, &mut diff);
+
+        // Both rename and definition change should be recorded
+        assert!(diff.added_views.is_empty());
+        assert!(diff.removed_views.is_empty());
+        assert_eq!(diff.renamed_views.len(), 1);
+        assert_eq!(diff.renamed_views[0].old_name, "active_users");
+        assert_eq!(diff.renamed_views[0].new_view.name, "enabled_users");
+        assert_eq!(diff.modified_views.len(), 1);
+        assert_eq!(diff.modified_views[0].view_name, "enabled_users");
+        assert_eq!(
+            diff.modified_views[0].old_definition,
+            "SELECT * FROM users WHERE active = true"
+        );
+        assert_eq!(
+            diff.modified_views[0].new_definition,
+            "SELECT id, email FROM users WHERE active = true"
+        );
+    }
+
+    #[test]
+    fn test_detect_view_renamed_without_definition_change() {
+        let mut old = Schema::new("1.0".to_string());
+        old.add_view(View::new(
+            "active_users".to_string(),
+            "SELECT * FROM users WHERE active = true".to_string(),
+        ));
+
+        let mut new = Schema::new("1.0".to_string());
+        let mut renamed_view = View::new(
+            "enabled_users".to_string(),
+            "SELECT * FROM users WHERE active = true".to_string(),
+        );
+        renamed_view.renamed_from = Some("active_users".to_string());
+        new.add_view(renamed_view);
+
+        let mut diff = SchemaDiff::new();
+        detect_view_diff(&old, &new, &mut diff);
+
+        // Only rename, no definition change
+        assert_eq!(diff.renamed_views.len(), 1);
+        assert!(diff.modified_views.is_empty());
     }
 
     #[test]
