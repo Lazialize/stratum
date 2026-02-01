@@ -27,7 +27,11 @@ impl GenerateCommandHandler {
     }
 
     /// 前回のスキーマ状態を読み込む
-    pub(super) fn load_previous_schema(&self, project_path: &Path, config: &Config) -> Result<Schema> {
+    pub(super) fn load_previous_schema(
+        &self,
+        project_path: &Path,
+        config: &Config,
+    ) -> Result<Schema> {
         let snapshot_path = project_path
             .join(&config.migrations_dir)
             .join(".schema_snapshot.yaml");
