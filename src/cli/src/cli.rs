@@ -4,7 +4,7 @@
 pub mod command_context;
 pub mod commands;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 /// 出力フォーマット
@@ -15,6 +15,30 @@ pub enum OutputFormat {
     Text,
     /// Structured JSON output
     Json,
+}
+
+/// Dry runオプション
+#[derive(Args, Debug, Clone)]
+pub struct DryRunArg {
+    /// Dry run - show SQL without creating/executing
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+/// 破壊的変更許可オプション
+#[derive(Args, Debug, Clone)]
+pub struct AllowDestructiveArg {
+    /// Allow destructive changes (DROP, RENAME, ENUM removal)
+    #[arg(long)]
+    pub allow_destructive: bool,
+}
+
+/// 環境指定オプション
+#[derive(Args, Debug, Clone)]
+pub struct EnvArg {
+    /// Target environment (development, staging, production)
+    #[arg(short, long, value_name = "ENV", default_value = "development")]
+    pub env: String,
 }
 
 /// Strata - Database Schema Management CLI
@@ -120,13 +144,11 @@ pub enum Commands {
         #[arg(short, long, value_name = "DESCRIPTION")]
         description: Option<String>,
 
-        /// Dry run - show SQL without creating files
-        #[arg(long)]
-        dry_run: bool,
+        #[command(flatten)]
+        dry_run: DryRunArg,
 
-        /// Allow destructive changes (DROP, RENAME, ENUM removal)
-        #[arg(long)]
-        allow_destructive: bool,
+        #[command(flatten)]
+        allow_destructive: AllowDestructiveArg,
     },
 
     /// Apply pending migrations to the database
@@ -144,21 +166,18 @@ pub enum Commands {
     ///   # Apply to production with timeout
     ///   strata apply --env production --timeout 30
     Apply {
-        /// Dry run - show SQL without executing
-        #[arg(long)]
-        dry_run: bool,
+        #[command(flatten)]
+        dry_run: DryRunArg,
 
-        /// Target environment (development, staging, production)
-        #[arg(short, long, value_name = "ENV", default_value = "development")]
-        env: String,
+        #[command(flatten)]
+        env: EnvArg,
 
         /// Timeout for database operations (in seconds)
         #[arg(long, value_name = "SECONDS")]
         timeout: Option<u64>,
 
-        /// Allow destructive changes (DROP, RENAME, ENUM removal)
-        #[arg(long)]
-        allow_destructive: bool,
+        #[command(flatten)]
+        allow_destructive: AllowDestructiveArg,
     },
 
     /// Rollback applied migrations
@@ -186,17 +205,14 @@ pub enum Commands {
         #[arg(long, value_name = "N")]
         steps: Option<u32>,
 
-        /// Target environment
-        #[arg(short, long, value_name = "ENV", default_value = "development")]
-        env: String,
+        #[command(flatten)]
+        env: EnvArg,
 
-        /// Dry run - show SQL without executing
-        #[arg(long)]
-        dry_run: bool,
+        #[command(flatten)]
+        dry_run: DryRunArg,
 
-        /// Allow destructive changes (DROP, RENAME, etc.)
-        #[arg(long)]
-        allow_destructive: bool,
+        #[command(flatten)]
+        allow_destructive: AllowDestructiveArg,
     },
 
     /// Validate schema definitions
@@ -229,9 +245,8 @@ pub enum Commands {
     ///   # Show status for production
     ///   strata status --env production
     Status {
-        /// Target environment
-        #[arg(short, long, value_name = "ENV", default_value = "development")]
-        env: String,
+        #[command(flatten)]
+        env: EnvArg,
     },
 
     /// Export existing database schema to code
@@ -256,9 +271,8 @@ pub enum Commands {
         #[arg(short, long, value_name = "DIR")]
         output: Option<PathBuf>,
 
-        /// Target environment
-        #[arg(short, long, value_name = "ENV", default_value = "development")]
-        env: String,
+        #[command(flatten)]
+        env: EnvArg,
 
         /// Overwrite existing files without confirmation
         #[arg(long)]

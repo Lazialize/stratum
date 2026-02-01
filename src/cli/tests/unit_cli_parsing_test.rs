@@ -140,7 +140,7 @@ mod cli_tests {
 
         match cli.command {
             strata::cli::Commands::Apply { dry_run, .. } => {
-                assert!(dry_run);
+                assert!(dry_run.dry_run);
             }
             _ => panic!("Expected Apply command"),
         }
@@ -157,7 +157,7 @@ mod cli_tests {
             strata::cli::Commands::Generate {
                 allow_destructive, ..
             } => {
-                assert!(allow_destructive);
+                assert!(allow_destructive.allow_destructive);
             }
             _ => panic!("Expected Generate command"),
         }
@@ -174,7 +174,7 @@ mod cli_tests {
             strata::cli::Commands::Apply {
                 allow_destructive, ..
             } => {
-                assert!(allow_destructive);
+                assert!(allow_destructive.allow_destructive);
             }
             _ => panic!("Expected Apply command"),
         }

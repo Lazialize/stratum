@@ -135,14 +135,19 @@ async fn run_command(cli: Cli) -> Result<String> {
             dry_run,
             allow_destructive,
         } => {
-            debug!(description = ?description, dry_run = dry_run, allow_destructive = allow_destructive, "Executing generate command");
+            debug!(
+                description = ?description,
+                dry_run = dry_run.dry_run,
+                allow_destructive = allow_destructive.allow_destructive,
+                "Executing generate command"
+            );
             let handler = GenerateCommandHandler::new();
             let command = GenerateCommand {
                 project_path,
                 config_path,
                 description,
-                dry_run,
-                allow_destructive,
+                dry_run: dry_run.dry_run,
+                allow_destructive: allow_destructive.allow_destructive,
                 verbose,
                 format,
             };
@@ -155,15 +160,21 @@ async fn run_command(cli: Cli) -> Result<String> {
             timeout,
             allow_destructive,
         } => {
-            debug!(env = %env, dry_run = dry_run, timeout = ?timeout, allow_destructive = allow_destructive, "Executing apply command");
+            debug!(
+                env = %env.env,
+                dry_run = dry_run.dry_run,
+                timeout = ?timeout,
+                allow_destructive = allow_destructive.allow_destructive,
+                "Executing apply command"
+            );
             let handler = ApplyCommandHandler::new();
             let command = ApplyCommand {
                 project_path,
                 config_path,
-                dry_run,
-                env,
+                dry_run: dry_run.dry_run,
+                env: env.env,
                 timeout,
-                allow_destructive,
+                allow_destructive: allow_destructive.allow_destructive,
                 format,
             };
             handler.execute(&command).await
@@ -175,15 +186,21 @@ async fn run_command(cli: Cli) -> Result<String> {
             dry_run,
             allow_destructive,
         } => {
-            debug!(env = %env, steps = ?steps, dry_run = dry_run, allow_destructive = allow_destructive, "Executing rollback command");
+            debug!(
+                env = %env.env,
+                steps = ?steps,
+                dry_run = dry_run.dry_run,
+                allow_destructive = allow_destructive.allow_destructive,
+                "Executing rollback command"
+            );
             let handler = RollbackCommandHandler::new();
             let command = RollbackCommand {
                 project_path,
                 config_path,
                 steps,
-                env,
-                dry_run,
-                allow_destructive,
+                env: env.env,
+                dry_run: dry_run.dry_run,
+                allow_destructive: allow_destructive.allow_destructive,
                 format,
             };
             handler.execute(&command).await
@@ -202,12 +219,12 @@ async fn run_command(cli: Cli) -> Result<String> {
         }
 
         Commands::Status { env } => {
-            debug!(env = %env, "Executing status command");
+            debug!(env = %env.env, "Executing status command");
             let handler = StatusCommandHandler::new();
             let command = StatusCommand {
                 project_path,
                 config_path,
-                env,
+                env: env.env,
                 format,
             };
             handler.execute(&command).await
@@ -221,12 +238,20 @@ async fn run_command(cli: Cli) -> Result<String> {
             tables,
             exclude_tables,
         } => {
-            debug!(env = %env, output = ?output, force = force, split = split, tables = ?tables, exclude_tables = ?exclude_tables, "Executing export command");
+            debug!(
+                env = %env.env,
+                output = ?output,
+                force = force,
+                split = split,
+                tables = ?tables,
+                exclude_tables = ?exclude_tables,
+                "Executing export command"
+            );
             let handler = ExportCommandHandler::new();
             let command = ExportCommand {
                 project_path,
                 config_path,
-                env,
+                env: env.env,
                 output_dir: output,
                 force,
                 format,
