@@ -462,6 +462,45 @@ mod tests {
         assert_eq!(renames[0].new_name, "display_name");
     }
 
+    #[test]
+    fn test_collect_rename_changes_only_no_type_change() {
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(RenamedColumn {
+            old_name: "name".to_string(),
+            old_column: make_column("name", ColumnType::VARCHAR { length: 100 }),
+            new_column: make_column("user_name", ColumnType::VARCHAR { length: 100 }),
+            changes: vec![],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let changes = DryRunFormatter::collect_type_changes(&diff);
+        assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn test_collect_type_changes_from_renamed_columns_includes_types() {
+        let mut diff = SchemaDiff::new();
+        let mut table_diff = TableDiff::new("users".to_string());
+        table_diff.renamed_columns.push(RenamedColumn {
+            old_name: "name".to_string(),
+            old_column: make_column("name", ColumnType::VARCHAR { length: 50 }),
+            new_column: make_column("user_name", ColumnType::VARCHAR { length: 100 }),
+            changes: vec![ColumnChange::TypeChanged {
+                old_type: "VARCHAR(50)".to_string(),
+                new_type: "VARCHAR(100)".to_string(),
+            }],
+        });
+        diff.modified_tables.push(table_diff);
+
+        let changes = DryRunFormatter::collect_type_changes(&diff);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].table, "users");
+        assert_eq!(changes[0].column, "user_name");
+        assert_eq!(changes[0].old_type, "VARCHAR(50)");
+        assert_eq!(changes[0].new_type, "VARCHAR(100)");
+    }
+
     // --- format ---
 
     #[test]
