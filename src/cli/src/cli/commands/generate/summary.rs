@@ -87,6 +87,25 @@ impl GenerateCommandHandler {
             lines.push(format!("  - DROP ENUM {}", enum_name));
         }
 
+        for view in &diff.added_views {
+            lines.push(format!("  + CREATE VIEW {}", view.name));
+        }
+
+        for view_name in &diff.removed_views {
+            lines.push(format!("  - DROP VIEW {}", view_name));
+        }
+
+        for view_diff in &diff.modified_views {
+            lines.push(format!("  ~ MODIFY VIEW {}", view_diff.view_name));
+        }
+
+        for renamed in &diff.renamed_views {
+            lines.push(format!(
+                "  ~ RENAME VIEW {} -> {}",
+                renamed.old_name, renamed.new_view.name
+            ));
+        }
+
         lines.join("\n")
     }
 
@@ -115,6 +134,25 @@ impl GenerateCommandHandler {
                 .map(|t| t.table_name.as_str())
                 .collect();
             parts.push(format!("modify tables {}", table_names.join(", ")));
+        }
+
+        if !diff.added_views.is_empty() {
+            let view_names: Vec<&str> = diff.added_views.iter().map(|v| v.name.as_str()).collect();
+            parts.push(format!("add views {}", view_names.join(", ")));
+        }
+
+        if !diff.removed_views.is_empty() {
+            let removed_names: Vec<&str> = diff.removed_views.iter().map(|s| s.as_str()).collect();
+            parts.push(format!("remove views {}", removed_names.join(", ")));
+        }
+
+        if !diff.modified_views.is_empty() {
+            let view_names: Vec<&str> = diff
+                .modified_views
+                .iter()
+                .map(|v| v.view_name.as_str())
+                .collect();
+            parts.push(format!("modify views {}", view_names.join(", ")));
         }
 
         if parts.is_empty() {

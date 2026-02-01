@@ -8,6 +8,7 @@ mod constraint_comparator;
 mod enum_comparator;
 mod index_comparator;
 mod table_comparator;
+pub(crate) mod view_comparator;
 
 use crate::core::error::ValidationWarning;
 use crate::core::schema::Schema;
@@ -85,6 +86,9 @@ impl SchemaDiffDetectorService {
             }
         }
 
+        // ビュー差分の検出
+        view_comparator::detect_view_diff(old_schema, new_schema, &mut diff);
+
         diff
     }
 
@@ -155,6 +159,9 @@ impl SchemaDiffDetectorService {
                 warnings.extend(table_warnings);
             }
         }
+
+        // ビュー差分の検出
+        view_comparator::detect_view_diff(old_schema, new_schema, &mut diff);
 
         (diff, warnings)
     }

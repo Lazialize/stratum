@@ -31,6 +31,10 @@ pub struct SchemaDto {
 
     /// テーブル定義のマップ（テーブル名 -> TableDto）
     pub tables: BTreeMap<String, TableDto>,
+
+    /// ビュー定義のマップ（ビュー名 -> ViewDto）
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub views: BTreeMap<String, ViewDto>,
 }
 
 /// YAML テーブル定義用DTO
@@ -97,6 +101,24 @@ pub enum ConstraintDto {
     },
 }
 
+/// YAML ビュー定義用DTO
+///
+/// ビュー定義の中間表現。
+/// `name`フィールドを持たず、キー名からビュー名を取得します。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ViewDto {
+    /// ビュー定義（SELECT文、必須）
+    pub definition: String,
+
+    /// 依存先のテーブルまたはビュー名（オプショナル）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
+
+    /// リネーム元のビュー名（オプショナル）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed_from: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +179,7 @@ tables: {}
             enum_recreate_allowed: false,
             enums: BTreeMap::new(),
             tables: BTreeMap::new(),
+            views: BTreeMap::new(),
         };
 
         let yaml = serde_saphyr::to_string(&dto).unwrap();
@@ -174,6 +197,7 @@ tables: {}
             enum_recreate_allowed: true,
             enums: BTreeMap::new(),
             tables: BTreeMap::new(),
+            views: BTreeMap::new(),
         };
 
         let yaml = serde_saphyr::to_string(&dto).unwrap();
@@ -504,6 +528,7 @@ tables:
             version: "1.0".to_string(),
             enum_recreate_allowed: false,
             enums: BTreeMap::new(),
+            views: BTreeMap::new(),
             tables: {
                 let mut tables = BTreeMap::new();
                 tables.insert(

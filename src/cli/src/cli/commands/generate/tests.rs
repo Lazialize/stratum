@@ -84,6 +84,8 @@ fn test_execute_dry_run_includes_destructive_preview() {
         columns_renamed: Vec::new(),
         enums_dropped: Vec::new(),
         enums_recreated: Vec::new(),
+        views_dropped: Vec::new(),
+        views_modified: Vec::new(),
     };
 
     let result = handler.execute_dry_run(

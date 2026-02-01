@@ -151,6 +151,10 @@ impl<'a> MigrationPipeline<'a> {
         let cleanup_stmts = self.stage_cleanup_statements(&*generator)?;
         statements.extend(cleanup_stmts);
 
+        // ステージ: view_statements - CREATE/ALTER/DROP VIEW
+        let view_stmts = self.stage_view_statements(&*generator);
+        statements.extend(view_stmts);
+
         // ステージ7: finalize - SQL結合
         let sql = self.stage_finalize(statements);
         let sql = self.add_transaction_header(sql);
@@ -394,6 +398,10 @@ impl<'a> MigrationPipeline<'a> {
             }
         }
 
+        // ビューの逆処理
+        let view_down_stmts = self.stage_view_down_statements(&*generator);
+        statements.extend(view_down_stmts);
+
         // リネームされたテーブルの逆処理（new_name → old_name）
         for renamed_table in &self.diff.renamed_tables {
             statements.push(
@@ -441,6 +449,122 @@ impl<'a> MigrationPipeline<'a> {
         let sql = self.add_transaction_header(sql);
 
         Ok((sql, ValidationResult::new()))
+    }
+
+    /// ビューステージ（UP）: CREATE/ALTER/DROP VIEW
+    fn stage_view_statements(&self, generator: &dyn SqlGenerator) -> Vec<String> {
+        let mut statements = Vec::new();
+
+        // 削除されたビューを DROP
+        for view_name in &self.diff.removed_views {
+            statements.push(generator.generate_drop_view(view_name));
+        }
+
+        // リネームされたビュー
+        for renamed_view in &self.diff.renamed_views {
+            if matches!(self.dialect, Dialect::SQLite) {
+                // SQLite: DROP + CREATE
+                statements.push(generator.generate_drop_view(&renamed_view.old_name));
+                statements.push(generator.generate_create_view(
+                    &renamed_view.new_view.name,
+                    &renamed_view.new_view.definition,
+                ));
+            } else {
+                statements.push(
+                    generator
+                        .generate_rename_view(&renamed_view.old_name, &renamed_view.new_view.name),
+                );
+                // definition が変わっている場合は更新も必要
+                if let Some(old_schema) = self.old_schema {
+                    if let Some(old_view) = old_schema.views.get(&renamed_view.old_name) {
+                        let old_norm = crate::services::schema_diff_detector::view_comparator::normalize_definition(&old_view.definition);
+                        let new_norm = crate::services::schema_diff_detector::view_comparator::normalize_definition(&renamed_view.new_view.definition);
+                        if old_norm != new_norm {
+                            statements.push(generator.generate_create_view(
+                                &renamed_view.new_view.name,
+                                &renamed_view.new_view.definition,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // 追加されたビューを CREATE（depends_on に基づくトポロジカル順序）
+        let sorted_views = self.diff.sort_added_views_by_dependency();
+        for view in &sorted_views {
+            statements.push(generator.generate_create_view(&view.name, &view.definition));
+        }
+
+        // 変更されたビュー（CREATE OR REPLACE / DROP+CREATE）
+        for view_diff in &self.diff.modified_views {
+            statements.push(
+                generator.generate_create_view(&view_diff.view_name, &view_diff.new_definition),
+            );
+        }
+
+        statements
+    }
+
+    /// ビューステージ（DOWN）: 逆操作
+    fn stage_view_down_statements(&self, generator: &dyn SqlGenerator) -> Vec<String> {
+        let mut statements = Vec::new();
+
+        // 追加されたビューを削除（依存関係の逆順）
+        let sorted_views = self.diff.sort_added_views_by_dependency();
+        for view in sorted_views.iter().rev() {
+            statements.push(generator.generate_drop_view(&view.name));
+        }
+
+        // 変更されたビューを旧定義に戻す
+        for view_diff in &self.diff.modified_views {
+            statements.push(
+                generator.generate_create_view(&view_diff.view_name, &view_diff.old_definition),
+            );
+        }
+
+        // リネームされたビューの逆処理
+        for renamed_view in &self.diff.renamed_views {
+            if matches!(self.dialect, Dialect::SQLite) {
+                // SQLite: DROP + CREATE with old name and old definition
+                statements.push(generator.generate_drop_view(&renamed_view.new_view.name));
+                if let Some(old_schema) = self.old_schema {
+                    if let Some(old_view) = old_schema.views.get(&renamed_view.old_name) {
+                        statements.push(
+                            generator
+                                .generate_create_view(&renamed_view.old_name, &old_view.definition),
+                        );
+                    }
+                }
+            } else {
+                statements.push(
+                    generator
+                        .generate_rename_view(&renamed_view.new_view.name, &renamed_view.old_name),
+                );
+            }
+        }
+
+        // 削除されたビューを再作成
+        for view_name in &self.diff.removed_views {
+            if let Some(old_schema) = self.old_schema {
+                if let Some(old_view) = old_schema.views.get(view_name) {
+                    statements
+                        .push(generator.generate_create_view(&old_view.name, &old_view.definition));
+                } else {
+                    statements.push(format!(
+                        "-- NOTE: Manually add CREATE VIEW statement for '{}' if rollback is needed",
+                        view_name
+                    ));
+                }
+            } else {
+                statements.push(format!(
+                    "-- NOTE: Manually add CREATE VIEW statement for '{}' if rollback is needed",
+                    view_name
+                ));
+            }
+        }
+
+        statements
     }
 
     /// SqlGenerator を取得
@@ -858,5 +982,154 @@ mod tests {
         let (sql, _) = result.unwrap();
         assert!(sql.contains("TODO"));
         assert!(sql.contains("status"));
+    }
+
+    // ==========================================
+    // View マイグレーションテスト
+    // ==========================================
+
+    #[test]
+    fn test_pipeline_generate_up_view_added() {
+        use crate::core::schema::View;
+
+        let mut diff = SchemaDiff::new();
+        diff.added_views.push(View::new(
+            "active_users".to_string(),
+            "SELECT * FROM users WHERE active = true".to_string(),
+        ));
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_up();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("CREATE OR REPLACE VIEW"));
+        assert!(sql.contains("active_users"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_up_view_removed() {
+        let mut diff = SchemaDiff::new();
+        diff.removed_views.push("old_view".to_string());
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_up();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("DROP VIEW"));
+        assert!(sql.contains("old_view"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_up_view_modified() {
+        use crate::core::schema::View;
+        use crate::core::schema_diff::ViewDiff;
+
+        let mut diff = SchemaDiff::new();
+        diff.modified_views.push(ViewDiff {
+            view_name: "active_users".to_string(),
+            old_definition: "SELECT * FROM users WHERE active = true".to_string(),
+            new_definition: "SELECT id, email FROM users WHERE active = true".to_string(),
+            old_view: View::new(
+                "active_users".to_string(),
+                "SELECT * FROM users WHERE active = true".to_string(),
+            ),
+            new_view: View::new(
+                "active_users".to_string(),
+                "SELECT id, email FROM users WHERE active = true".to_string(),
+            ),
+        });
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_up();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("CREATE OR REPLACE VIEW"));
+        assert!(sql.contains("SELECT id, email"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_view_added_drops() {
+        use crate::core::schema::View;
+
+        let mut diff = SchemaDiff::new();
+        diff.added_views
+            .push(View::new("new_view".to_string(), "SELECT 1".to_string()));
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("DROP VIEW"));
+        assert!(sql.contains("new_view"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_view_modified_restores_old() {
+        use crate::core::schema::View;
+        use crate::core::schema_diff::ViewDiff;
+
+        let mut diff = SchemaDiff::new();
+        diff.modified_views.push(ViewDiff {
+            view_name: "active_users".to_string(),
+            old_definition: "SELECT * FROM users WHERE active = true".to_string(),
+            new_definition: "SELECT id FROM users WHERE active = true".to_string(),
+            old_view: View::new(
+                "active_users".to_string(),
+                "SELECT * FROM users WHERE active = true".to_string(),
+            ),
+            new_view: View::new(
+                "active_users".to_string(),
+                "SELECT id FROM users WHERE active = true".to_string(),
+            ),
+        });
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("CREATE OR REPLACE VIEW"));
+        assert!(sql.contains("SELECT * FROM users WHERE active = true"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_down_view_removed_recreates() {
+        use crate::core::schema::View;
+
+        let mut diff = SchemaDiff::new();
+        diff.removed_views.push("old_view".to_string());
+
+        let mut old_schema = Schema::new("1.0".to_string());
+        old_schema.add_view(View::new(
+            "old_view".to_string(),
+            "SELECT * FROM data".to_string(),
+        ));
+        let new_schema = Schema::new("1.0".to_string());
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::PostgreSQL)
+            .with_schemas(&old_schema, &new_schema);
+        let result = pipeline.generate_down();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        assert!(sql.contains("CREATE OR REPLACE VIEW"));
+        assert!(sql.contains("SELECT * FROM data"));
+    }
+
+    #[test]
+    fn test_pipeline_generate_up_view_sqlite_drop_create() {
+        use crate::core::schema::View;
+
+        let mut diff = SchemaDiff::new();
+        diff.added_views.push(View::new(
+            "active_users".to_string(),
+            "SELECT * FROM users WHERE active = 1".to_string(),
+        ));
+
+        let pipeline = MigrationPipeline::new(&diff, Dialect::SQLite);
+        let result = pipeline.generate_up();
+        assert!(result.is_ok());
+        let (sql, _) = result.unwrap();
+        // SQLite uses DROP + CREATE instead of CREATE OR REPLACE
+        assert!(sql.contains("DROP VIEW IF EXISTS"));
+        assert!(sql.contains("CREATE VIEW"));
     }
 }

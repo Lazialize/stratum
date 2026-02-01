@@ -258,6 +258,15 @@ impl ErrorLocation {
         }
     }
 
+    /// ビュー名を指定してエラー位置を作成
+    pub fn with_view(view: &str) -> Self {
+        Self {
+            table: Some(format!("view:{}", view)),
+            column: None,
+            line: None,
+        }
+    }
+
     /// 位置情報をフォーマット
     pub fn format(&self) -> String {
         let mut parts = Vec::new();

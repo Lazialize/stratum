@@ -19,6 +19,12 @@ impl DestructiveChangeDetector {
 
         report.tables_dropped = schema_diff.removed_tables.clone();
         report.enums_dropped = schema_diff.removed_enums.clone();
+        report.views_dropped = schema_diff.removed_views.clone();
+        report.views_modified = schema_diff
+            .modified_views
+            .iter()
+            .map(|v| v.view_name.clone())
+            .collect();
 
         for table_diff in &schema_diff.modified_tables {
             if !table_diff.removed_columns.is_empty() {

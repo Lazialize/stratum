@@ -279,6 +279,7 @@ fn test_format_validation_summary() {
         column_count: 5,
         index_count: 3,
         constraint_count: 1,
+        view_count: 0,
     };
     let summary = handler.format_validation_summary(summary_data);
 

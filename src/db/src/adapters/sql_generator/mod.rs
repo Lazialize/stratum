@@ -593,6 +593,36 @@ pub trait SqlGenerator {
     fn generate_drop_enum_type(&self, _enum_name: &str) -> Vec<String> {
         Vec::new()
     }
+
+    // ===========================================
+    // ビュー関連メソッド
+    // ===========================================
+
+    /// CREATE VIEW文を生成
+    ///
+    /// PostgreSQL/MySQL: CREATE OR REPLACE VIEW
+    /// SQLite: CREATE VIEW (CREATE OR REPLACE 非対応)
+    fn generate_create_view(&self, view_name: &str, definition: &str) -> String {
+        format!(
+            "CREATE OR REPLACE VIEW {} AS\n{}",
+            self.quote_identifier(view_name),
+            definition
+        )
+    }
+
+    /// DROP VIEW文を生成
+    fn generate_drop_view(&self, view_name: &str) -> String {
+        format!("DROP VIEW IF EXISTS {}", self.quote_identifier(view_name))
+    }
+
+    /// ビューリネームSQL文を生成
+    fn generate_rename_view(&self, old_name: &str, new_name: &str) -> String {
+        format!(
+            "ALTER VIEW {} RENAME TO {}",
+            self.quote_identifier(old_name),
+            self.quote_identifier(new_name)
+        )
+    }
 }
 
 #[cfg(test)]

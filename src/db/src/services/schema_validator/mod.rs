@@ -11,6 +11,7 @@ mod index_validator;
 mod rename_validator;
 mod table_validator;
 mod validation_helpers;
+mod view_validator;
 
 use crate::core::config::Dialect;
 use crate::core::error::{ValidationError, ValidationResult, ValidationWarning};
@@ -59,8 +60,11 @@ impl SchemaValidatorService {
         // カテゴリ別に検証を実行（Task 5.1）
         result.merge(self.validate_enums(schema, dialect));
 
+        // ビュー定義の検証
+        result.merge(self.validate_views(schema));
+
         // 空のスキーマは有効
-        if schema.table_count() == 0 && schema.enums.is_empty() {
+        if schema.table_count() == 0 && schema.enums.is_empty() && schema.view_count() == 0 {
             return result;
         }
 
@@ -151,6 +155,16 @@ impl SchemaValidatorService {
     /// 重複UNIQUE制約チェック
     pub fn validate_duplicate_unique_constraints(&self, schema: &Schema) -> ValidationResult {
         constraint_validator::validate_duplicate_unique_constraints(schema)
+    }
+
+    /// ビュー定義の検証
+    ///
+    /// - ビュー名とテーブル名の衝突チェック
+    /// - definition の空チェック
+    /// - depends_on の参照先存在チェック
+    /// - 依存グラフの循環検出
+    pub fn validate_views(&self, schema: &Schema) -> ValidationResult {
+        view_validator::validate_views(schema)
     }
 
     /// 方言固有の警告を生成

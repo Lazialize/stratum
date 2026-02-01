@@ -169,6 +169,14 @@ impl DryRunFormatter {
             .unwrap();
         }
 
+        for view_name in &destructive_report.views_dropped {
+            writeln!(output, "  {}", format!("DROP VIEW: {}", view_name).red()).unwrap();
+        }
+
+        for view_name in &destructive_report.views_modified {
+            writeln!(output, "  {}", format!("MODIFY VIEW: {}", view_name).red()).unwrap();
+        }
+
         let dropped_column_count: usize = destructive_report
             .columns_dropped
             .iter()
@@ -179,12 +187,14 @@ impl DryRunFormatter {
             output,
             "  {}",
             format!(
-                "Impact summary: tables dropped={}, columns dropped={}, columns renamed={}, enums dropped={}, enums recreated={}",
+                "Impact summary: tables dropped={}, columns dropped={}, columns renamed={}, enums dropped={}, enums recreated={}, views dropped={}, views modified={}",
                 destructive_report.tables_dropped.len(),
                 dropped_column_count,
                 destructive_report.columns_renamed.len(),
                 destructive_report.enums_dropped.len(),
-                destructive_report.enums_recreated.len()
+                destructive_report.enums_recreated.len(),
+                destructive_report.views_dropped.len(),
+                destructive_report.views_modified.len()
             )
             .red()
         )

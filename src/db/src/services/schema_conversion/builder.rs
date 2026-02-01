@@ -1,6 +1,6 @@
 use super::{RawTableInfo, SchemaConversionService};
-use crate::adapters::database_introspector::RawEnumInfo;
-use crate::core::schema::{Schema, Table};
+use crate::adapters::database_introspector::{RawEnumInfo, RawViewInfo};
+use crate::core::schema::{Schema, Table, View};
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 
@@ -61,6 +61,16 @@ impl SchemaConversionService {
         raw_tables: Vec<RawTableInfo>,
         raw_enums: Vec<RawEnumInfo>,
     ) -> Result<Schema> {
+        self.build_schema_with_views(raw_tables, raw_enums, Vec::new())
+    }
+
+    /// 複数のテーブル情報とビュー情報から Schema を構築
+    pub fn build_schema_with_views(
+        &self,
+        raw_tables: Vec<RawTableInfo>,
+        raw_enums: Vec<RawEnumInfo>,
+        raw_views: Vec<RawViewInfo>,
+    ) -> Result<Schema> {
         let mut schema = Schema::new("1.0".to_string());
 
         // ENUMを変換
@@ -77,6 +87,14 @@ impl SchemaConversionService {
                 .convert_table(&raw_table)
                 .with_context(|| format!("Failed to convert table '{}'", raw_table.name))?;
             schema.add_table(table);
+        }
+
+        // Viewを変換（マテリアライズドビューは除外）
+        for raw_view in raw_views {
+            if !raw_view.is_materialized {
+                let view = View::new(raw_view.name, raw_view.definition);
+                schema.add_view(view);
+            }
         }
 
         Ok(schema)
