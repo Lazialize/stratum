@@ -327,6 +327,14 @@ impl SqlGenerator for MysqlSqlGenerator {
             }
         }
     }
+
+    fn generate_rename_view(&self, old_name: &str, new_name: &str) -> String {
+        format!(
+            "RENAME TABLE {} TO {}",
+            self.quote_identifier(old_name),
+            self.quote_identifier(new_name)
+        )
+    }
 }
 
 impl Default for MysqlSqlGenerator {
@@ -943,5 +951,12 @@ mod tests {
         let sql = generator.generate_drop_constraint_for_existing_table("users", &constraint);
 
         assert!(sql.is_empty());
+    }
+
+    #[test]
+    fn test_generate_rename_view_uses_rename_table() {
+        let generator = MysqlSqlGenerator::new();
+        let sql = generator.generate_rename_view("old_view", "new_view");
+        assert_eq!(sql, "RENAME TABLE `old_view` TO `new_view`");
     }
 }

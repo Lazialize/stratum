@@ -1,5 +1,5 @@
 use super::*;
-use crate::adapters::database_introspector::RawEnumInfo;
+use crate::adapters::database_introspector::{RawEnumInfo, RawViewInfo};
 use crate::core::config::Dialect;
 use crate::core::schema::{ColumnType, Constraint};
 use std::collections::HashSet;
@@ -540,4 +540,40 @@ fn test_build_schema_complex() {
     // status カラムが ENUM 型になっていることを確認
     let status_col = users.columns.iter().find(|c| c.name == "status").unwrap();
     assert!(matches!(status_col.column_type, ColumnType::Enum { .. }));
+}
+
+// =========================================================================
+// マテリアライズドビューのエラーテスト
+// =========================================================================
+
+#[test]
+fn test_build_schema_with_materialized_view_returns_error() {
+    let service = SchemaConversionService::new(Dialect::PostgreSQL);
+    let raw_views = vec![RawViewInfo {
+        name: "user_stats".to_string(),
+        definition: "SELECT count(*) FROM users".to_string(),
+        is_materialized: true,
+    }];
+
+    let result = service.build_schema_with_views(Vec::new(), Vec::new(), raw_views);
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Materialized view"));
+}
+
+#[test]
+fn test_build_schema_with_regular_view_succeeds() {
+    let service = SchemaConversionService::new(Dialect::PostgreSQL);
+    let raw_views = vec![RawViewInfo {
+        name: "active_users".to_string(),
+        definition: "SELECT * FROM users WHERE active = true".to_string(),
+        is_materialized: false,
+    }];
+
+    let result = service.build_schema_with_views(Vec::new(), Vec::new(), raw_views);
+    assert!(result.is_ok());
+    let schema = result.unwrap();
+    assert!(schema.views.contains_key("active_users"));
 }

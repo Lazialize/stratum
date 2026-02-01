@@ -961,10 +961,10 @@ impl DatabaseIntrospector for SqliteIntrospector {
 
 /// CREATE VIEW 文からビュー定義（AS以降）を抽出する
 fn extract_view_definition_from_create_sql(create_sql: &str) -> String {
-    // 大文字小文字を無視して最初の " AS " を検索
-    let upper = create_sql.to_uppercase();
-    if let Some(pos) = upper.find(" AS ") {
-        create_sql[pos + 4..].trim().to_string()
+    // 大文字小文字を無視して \s+AS\s+ パターンを検索（改行・タブにも対応）
+    let re = regex::Regex::new(r"(?i)\bAS\s").unwrap();
+    if let Some(m) = re.find(create_sql) {
+        create_sql[m.end()..].trim().to_string()
     } else {
         // フォールバック: そのまま返す
         create_sql.to_string()
@@ -1178,5 +1178,19 @@ mod tests {
         let sql = "some weird sql without the keyword";
         let definition = super::extract_view_definition_from_create_sql(sql);
         assert_eq!(definition, sql);
+    }
+
+    #[test]
+    fn test_extract_view_definition_newline_after_as() {
+        let sql = "CREATE VIEW my_view AS\nSELECT id FROM users";
+        let definition = super::extract_view_definition_from_create_sql(sql);
+        assert_eq!(definition, "SELECT id FROM users");
+    }
+
+    #[test]
+    fn test_extract_view_definition_tab_after_as() {
+        let sql = "CREATE VIEW my_view AS\tSELECT id FROM users";
+        let definition = super::extract_view_definition_from_create_sql(sql);
+        assert_eq!(definition, "SELECT id FROM users");
     }
 }

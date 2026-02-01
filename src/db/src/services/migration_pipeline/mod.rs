@@ -208,6 +208,10 @@ impl<'a> MigrationPipeline<'a> {
             }
         }
 
+        // ビューDROPフェーズ（テーブルDROPより前に実行）
+        let view_drop_stmts = self.stage_view_down_drop_statements(&*generator);
+        statements.extend(view_drop_stmts);
+
         // 追加されたテーブルを削除（依存関係の逆順）
         let sorted_tables = self.diff.sort_added_tables_by_dependency().map_err(|e| {
             PipelineStageError::CircularDependency {
@@ -398,10 +402,6 @@ impl<'a> MigrationPipeline<'a> {
             }
         }
 
-        // ビューの逆処理
-        let view_down_stmts = self.stage_view_down_statements(&*generator);
-        statements.extend(view_down_stmts);
-
         // リネームされたテーブルの逆処理（new_name → old_name）
         for renamed_table in &self.diff.renamed_tables {
             statements.push(
@@ -444,6 +444,10 @@ impl<'a> MigrationPipeline<'a> {
                 statements.push(generator.generate_missing_table_notice(table_name));
             }
         }
+
+        // ビューCREATEフェーズ（テーブル再作成の後に実行）
+        let view_create_stmts = self.stage_view_down_create_statements(&*generator);
+        statements.extend(view_create_stmts);
 
         let sql = self.stage_finalize(statements);
         let sql = self.add_transaction_header(sql);
@@ -506,8 +510,11 @@ impl<'a> MigrationPipeline<'a> {
         statements
     }
 
-    /// ビューステージ（DOWN）: 逆操作
-    fn stage_view_down_statements(&self, generator: &dyn SqlGenerator) -> Vec<String> {
+    /// ビューステージ（DOWN）DROPフェーズ: テーブルDROPより前に実行
+    ///
+    /// 追加されたビューの削除と、リネーム/変更ビューのDROPを行う。
+    /// ビューがテーブルを参照している場合、テーブルDROP前にビューを先に削除する必要がある。
+    fn stage_view_down_drop_statements(&self, generator: &dyn SqlGenerator) -> Vec<String> {
         let mut statements = Vec::new();
 
         // 追加されたビューを削除（依存関係の逆順）
@@ -543,6 +550,16 @@ impl<'a> MigrationPipeline<'a> {
                 );
             }
         }
+
+        statements
+    }
+
+    /// ビューステージ（DOWN）CREATEフェーズ: テーブル再作成の後に実行
+    ///
+    /// 削除されたビューの再作成を行う。
+    /// ビューが削除テーブルを参照している場合、テーブル再作成後にビューを作成する必要がある。
+    fn stage_view_down_create_statements(&self, generator: &dyn SqlGenerator) -> Vec<String> {
+        let mut statements = Vec::new();
 
         // 削除されたビューを再作成
         for view_name in &self.diff.removed_views {

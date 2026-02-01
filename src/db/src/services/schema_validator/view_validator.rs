@@ -94,76 +94,134 @@ fn validate_view_depends_on(schema: &Schema) -> ValidationResult {
     result
 }
 
-/// 依存グラフの循環検出（トポロジカルソートベース）
+/// 依存グラフの循環検出（Tarjan's SCC ベース）
+///
+/// 強連結成分（SCC）を検出し、サイズ2以上のSCCまたは自己参照を
+/// 循環依存としてエラー報告する。Kahn法と比べて循環に含まれるビューのみを
+/// 正確に報告できる。
 fn validate_view_dependency_cycle(schema: &Schema) -> ValidationResult {
     let mut result = ValidationResult::new();
 
     // ビュー間の依存のみを対象（テーブル依存は循環しない）
-    let view_names: HashSet<&str> = schema.views.keys().map(|s| s.as_str()).collect();
+    let view_names: Vec<&str> = {
+        let mut names: Vec<&str> = schema.views.keys().map(|s| s.as_str()).collect();
+        names.sort(); // 安定した出力のためソート
+        names
+    };
 
-    // 隣接リスト構築
-    let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
-    let mut in_degree: HashMap<&str, usize> = HashMap::new();
-
-    for name in &view_names {
-        adj.entry(name).or_default();
-        in_degree.entry(name).or_insert(0);
+    if view_names.is_empty() {
+        return result;
     }
+
+    let name_to_idx: HashMap<&str, usize> = view_names
+        .iter()
+        .enumerate()
+        .map(|(i, &name)| (name, i))
+        .collect();
+
+    // 隣接リスト構築（view_name → deps 方向: view_name depends on dep）
+    let n = view_names.len();
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
 
     for (view_name, view) in &schema.views {
-        for dep in &view.depends_on {
-            if view_names.contains(dep.as_str()) {
-                adj.entry(dep.as_str())
-                    .or_default()
-                    .push(view_name.as_str());
-                *in_degree.entry(view_name.as_str()).or_insert(0) += 1;
-            }
-        }
-    }
-
-    // Kahn's algorithm
-    let mut queue: Vec<&str> = in_degree
-        .iter()
-        .filter(|(_, &deg)| deg == 0)
-        .map(|(&name, _)| name)
-        .collect();
-    queue.sort(); // 安定ソートのためソート
-    let mut visited_count = 0;
-
-    while let Some(node) = queue.pop() {
-        visited_count += 1;
-        if let Some(neighbors) = adj.get(node) {
-            for &neighbor in neighbors {
-                if let Some(deg) = in_degree.get_mut(neighbor) {
-                    *deg -= 1;
-                    if *deg == 0 {
-                        queue.push(neighbor);
-                        queue.sort();
-                    }
+        if let Some(&from) = name_to_idx.get(view_name.as_str()) {
+            for dep in &view.depends_on {
+                if let Some(&to) = name_to_idx.get(dep.as_str()) {
+                    adj[from].push(to);
                 }
             }
         }
     }
 
-    if visited_count != view_names.len() {
-        // 循環が存在する：循環に含まれるビューを特定
-        let cycle_views: Vec<&str> = in_degree
-            .iter()
-            .filter(|(_, &deg)| deg > 0)
-            .map(|(&name, _)| name)
-            .collect();
+    // Tarjan's SCC algorithm
+    let sccs = tarjan_scc(&adj, n);
 
-        result.add_error(ValidationError::Reference {
-            message: format!(
-                "Circular dependency detected among views: [{}]",
-                cycle_views.join(", ")
-            ),
-            location: None,
-            suggestion: Some("Remove circular depends_on references between views".to_string()),
-        });
+    for scc in &sccs {
+        let is_cycle = if scc.len() == 1 {
+            // 自己参照チェック
+            let node = scc[0];
+            adj[node].contains(&node)
+        } else {
+            true
+        };
+
+        if is_cycle {
+            let mut cycle_views: Vec<&str> = scc.iter().map(|&i| view_names[i]).collect();
+            cycle_views.sort();
+
+            result.add_error(ValidationError::Reference {
+                message: format!(
+                    "Circular dependency detected among views: [{}]",
+                    cycle_views.join(", ")
+                ),
+                location: None,
+                suggestion: Some(
+                    "Remove circular depends_on references between views".to_string(),
+                ),
+            });
+        }
     }
 
     result
+}
+
+/// Tarjan's strongly connected components algorithm
+fn tarjan_scc(adj: &[Vec<usize>], n: usize) -> Vec<Vec<usize>> {
+    struct TarjanState {
+        index_counter: usize,
+        stack: Vec<usize>,
+        on_stack: Vec<bool>,
+        index: Vec<Option<usize>>,
+        lowlink: Vec<usize>,
+        sccs: Vec<Vec<usize>>,
+    }
+
+    fn strongconnect(v: usize, adj: &[Vec<usize>], state: &mut TarjanState) {
+        state.index[v] = Some(state.index_counter);
+        state.lowlink[v] = state.index_counter;
+        state.index_counter += 1;
+        state.stack.push(v);
+        state.on_stack[v] = true;
+
+        for &w in &adj[v] {
+            if state.index[w].is_none() {
+                strongconnect(w, adj, state);
+                state.lowlink[v] = state.lowlink[v].min(state.lowlink[w]);
+            } else if state.on_stack[w] {
+                state.lowlink[v] = state.lowlink[v].min(state.index[w].unwrap());
+            }
+        }
+
+        if state.lowlink[v] == state.index[v].unwrap() {
+            let mut scc = Vec::new();
+            loop {
+                let w = state.stack.pop().unwrap();
+                state.on_stack[w] = false;
+                scc.push(w);
+                if w == v {
+                    break;
+                }
+            }
+            state.sccs.push(scc);
+        }
+    }
+
+    let mut state = TarjanState {
+        index_counter: 0,
+        stack: Vec::new(),
+        on_stack: vec![false; n],
+        index: vec![None; n],
+        lowlink: vec![0; n],
+        sccs: Vec::new(),
+    };
+
+    for v in 0..n {
+        if state.index[v].is_none() {
+            strongconnect(v, adj, &mut state);
+        }
+    }
+
+    state.sccs
 }
 
 #[cfg(test)]

@@ -12,8 +12,36 @@ use std::collections::HashSet;
 ///
 /// 空白・改行・連続スペースの差異のみを除去する最小ルール。
 /// SQL 意味の同一性判定ではなく、表面的な空白差異を無視する。
+/// シングルクォート内の文字列リテラルは正規化しない。
 pub fn normalize_definition(definition: &str) -> String {
-    definition.split_whitespace().collect::<Vec<_>>().join(" ")
+    let mut result = String::with_capacity(definition.len());
+    let mut in_quote = false;
+    let mut last_was_whitespace = false;
+
+    for ch in definition.chars() {
+        if ch == '\'' {
+            if !in_quote && last_was_whitespace && !result.is_empty() {
+                result.push(' ');
+            }
+            last_was_whitespace = false;
+            in_quote = !in_quote;
+            result.push(ch);
+        } else if in_quote {
+            // クォート内はそのまま保持
+            result.push(ch);
+            last_was_whitespace = false;
+        } else if ch.is_whitespace() {
+            last_was_whitespace = true;
+        } else {
+            if last_was_whitespace && !result.is_empty() {
+                result.push(' ');
+            }
+            last_was_whitespace = false;
+            result.push(ch);
+        }
+    }
+
+    result
 }
 
 /// ビュー差分の検出
@@ -105,6 +133,30 @@ mod tests {
     fn test_normalize_definition_identical() {
         let def = "SELECT * FROM users";
         assert_eq!(normalize_definition(def), def);
+    }
+
+    #[test]
+    fn test_normalize_definition_preserves_quoted_whitespace() {
+        assert_eq!(
+            normalize_definition("SELECT * FROM users WHERE name = '  hello  world  '"),
+            "SELECT * FROM users WHERE name = '  hello  world  '"
+        );
+    }
+
+    #[test]
+    fn test_normalize_definition_preserves_quoted_newline() {
+        assert_eq!(
+            normalize_definition("SELECT * FROM t WHERE v = 'line1\nline2'"),
+            "SELECT * FROM t WHERE v = 'line1\nline2'"
+        );
+    }
+
+    #[test]
+    fn test_normalize_definition_mixed_quoted_and_unquoted() {
+        assert_eq!(
+            normalize_definition("SELECT  *  FROM  t  WHERE  v = 'hello  world'  AND  x = 1"),
+            "SELECT * FROM t WHERE v = 'hello  world' AND x = 1"
+        );
     }
 
     // ===== Task 3.1: 追加/更新/削除/rename の差分抽出 =====

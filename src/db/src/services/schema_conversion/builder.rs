@@ -89,12 +89,16 @@ impl SchemaConversionService {
             schema.add_table(table);
         }
 
-        // Viewを変換（マテリアライズドビューは除外）
+        // Viewを変換（マテリアライズドビューはエラー）
         for raw_view in raw_views {
-            if !raw_view.is_materialized {
-                let view = View::new(raw_view.name, raw_view.definition);
-                schema.add_view(view);
+            if raw_view.is_materialized {
+                anyhow::bail!(
+                    "Materialized view '{}' is not supported. Only regular views are supported.",
+                    raw_view.name
+                );
             }
+            let view = View::new(raw_view.name, raw_view.definition);
+            schema.add_view(view);
         }
 
         Ok(schema)

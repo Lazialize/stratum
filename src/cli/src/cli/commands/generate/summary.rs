@@ -155,6 +155,15 @@ impl GenerateCommandHandler {
             parts.push(format!("modify views {}", view_names.join(", ")));
         }
 
+        if !diff.renamed_views.is_empty() {
+            let renamed_descs: Vec<String> = diff
+                .renamed_views
+                .iter()
+                .map(|r| format!("{} -> {}", r.old_name, r.new_view.name))
+                .collect();
+            parts.push(format!("rename views {}", renamed_descs.join(", ")));
+        }
+
         if parts.is_empty() {
             "schema changes".to_string()
         } else {
