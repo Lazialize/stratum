@@ -25,6 +25,7 @@ mod generate_command_tests {
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
             config_path: None,
+            schema_dir: None,
             description: Some("test migration".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -53,6 +54,7 @@ mod generate_command_tests {
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
             config_path: None,
+            schema_dir: None,
             description: Some("test migration".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -80,6 +82,7 @@ mod generate_command_tests {
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
             config_path: None,
+            schema_dir: None,
             description: Some("initial migration".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -109,6 +112,7 @@ mod generate_command_tests {
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
             config_path: None,
+            schema_dir: None,
             description: Some("create users table".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -150,6 +154,7 @@ mod generate_command_tests {
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
             config_path: None,
+            schema_dir: None,
             description: None, // descriptionなし
             dry_run: false,
             allow_destructive: false,
@@ -177,6 +182,7 @@ mod generate_command_tests {
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
             config_path: None,
+            schema_dir: None,
             description: Some("create orders table".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -235,6 +241,7 @@ mod generate_command_tests {
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
             config_path: None,
+            schema_dir: None,
             description: Some("initial schema".to_string()),
             dry_run: false,
             allow_destructive: false,
@@ -273,6 +280,7 @@ mod generate_command_tests {
         let command = GenerateCommand {
             project_path: project_path.to_path_buf(),
             config_path: None,
+            schema_dir: None,
             description: Some("create customers".to_string()),
             dry_run: false,
             allow_destructive: false,

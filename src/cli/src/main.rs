@@ -5,6 +5,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process;
 use strata::cli::commands::apply::{ApplyCommand, ApplyCommandHandler};
+use strata::cli::commands::check::{CheckCommand, CheckCommandHandler};
 use strata::cli::commands::export::{ExportCommand, ExportCommandHandler};
 use strata::cli::commands::generate::{GenerateCommand, GenerateCommandHandler};
 use strata::cli::commands::init::{InitCommand, InitCommandHandler};
@@ -145,6 +146,7 @@ async fn run_command(cli: Cli) -> Result<String> {
             let command = GenerateCommand {
                 project_path,
                 config_path,
+                schema_dir: None,
                 description,
                 dry_run: dry_run.dry_run,
                 allow_destructive: allow_destructive.allow_destructive,
@@ -204,6 +206,18 @@ async fn run_command(cli: Cli) -> Result<String> {
                 format,
             };
             handler.execute(&command).await
+        }
+
+        Commands::Check { schema_dir } => {
+            debug!(schema_dir = ?schema_dir, "Executing check command");
+            let handler = CheckCommandHandler::new();
+            let command = CheckCommand {
+                project_path,
+                config_path,
+                schema_dir,
+                format,
+            };
+            handler.execute(&command)
         }
 
         Commands::Validate { schema_dir } => {

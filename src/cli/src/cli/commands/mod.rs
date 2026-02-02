@@ -2,6 +2,7 @@
 // 各CLIコマンドの実装
 
 pub mod apply;
+pub mod check;
 pub mod destructive_change_formatter;
 pub(crate) mod dry_run_formatter;
 pub mod export;

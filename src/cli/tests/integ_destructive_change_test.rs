@@ -22,6 +22,7 @@ fn test_generate_rejects_destructive_without_allow() {
     let command = GenerateCommand {
         project_path: project_path.to_path_buf(),
         config_path: None,
+        schema_dir: None,
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: false,
@@ -49,6 +50,7 @@ fn test_generate_allows_destructive_with_flag_and_writes_metadata() {
     let command = GenerateCommand {
         project_path: project_path.to_path_buf(),
         config_path: None,
+        schema_dir: None,
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: true,
@@ -234,6 +236,7 @@ async fn test_e2e_destructive_generate_apply_flow() {
     let command = GenerateCommand {
         project_path: project_path.clone(),
         config_path: None,
+        schema_dir: None,
         description: Some("drop_users".to_string()),
         dry_run: false,
         allow_destructive: true,
