@@ -246,7 +246,7 @@ strata rollback --allow-destructive
 
 ### `check` - Validate and Preview Migrations
 
-Run validate followed by generate --dry-run in a single command. If validation fails, generation is skipped.
+Run validate followed by generate `--dry-run` in a single command. If validation fails, generation is skipped.
 
 ```bash
 # Check default schema directory
