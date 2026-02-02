@@ -1,0 +1,194 @@
+# 正式リリースワークフロー
+#
+# v*.*.* 形式のタグpush時にGitHub Releaseを作成する。
+# マルチプラットフォームビルド (Linux, macOS, Windows) を実行し、
+# git-cliffでchangelogを生成してGitHub Releaseとしてアップロードする。
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  BINARY_NAME: strata
+
+jobs:
+  # テスト実行
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test -p strata
+
+  # マルチプラットフォームビルド
+  build:
+    name: Build (${{ matrix.name }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            use_cross: true
+          - name: linux-arm64
+            target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            use_cross: true
+          - name: macos-arm64
+            target: aarch64-apple-darwin
+            runner: macos-latest
+            use_cross: false
+          - name: macos-x86_64
+            target: x86_64-apple-darwin
+            runner: macos-latest
+            use_cross: false
+          - name: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            use_cross: false
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build (cross)
+        if: matrix.use_cross
+        run: cross build -p strata --release --target ${{ matrix.target }}
+
+      - name: Build (cargo)
+        if: "!matrix.use_cross"
+        run: cargo build -p strata --release --target ${{ matrix.target }}
+
+      - name: Create archive (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ env.BINARY_NAME }}-${{ matrix.name }}.tar.gz ${{ env.BINARY_NAME }}
+          cd ../../..
+          shasum -a 256 ${{ env.BINARY_NAME }}-${{ matrix.name }}.tar.gz > ${{ env.BINARY_NAME }}-${{ matrix.name }}.tar.gz.sha256
+
+      - name: Create archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe" -DestinationPath "${{ env.BINARY_NAME }}-${{ matrix.name }}.zip"
+          (Get-FileHash "${{ env.BINARY_NAME }}-${{ matrix.name }}.zip" -Algorithm SHA256).Hash.ToLower() + "  ${{ env.BINARY_NAME }}-${{ matrix.name }}.zip" | Out-File -Encoding utf8 "${{ env.BINARY_NAME }}-${{ matrix.name }}.zip.sha256"
+
+      - name: Upload artifact (Unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.name }}
+          path: |
+            ${{ env.BINARY_NAME }}-${{ matrix.name }}.tar.gz
+            ${{ env.BINARY_NAME }}-${{ matrix.name }}.tar.gz.sha256
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-${{ matrix.name }}
+          path: |
+            ${{ env.BINARY_NAME }}-${{ matrix.name }}.zip
+            ${{ env.BINARY_NAME }}-${{ matrix.name }}.zip.sha256
+
+  # macOS Universal Binary
+  build-macos-universal:
+    name: Build (macos-universal)
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS ARM64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos-arm64
+          path: arm64
+
+      - name: Download macOS x86_64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos-x86_64
+          path: x86_64
+
+      - name: Create universal binary
+        run: |
+          mkdir -p arm64-bin x86_64-bin
+          tar xzf arm64/${{ env.BINARY_NAME }}-macos-arm64.tar.gz -C arm64-bin
+          tar xzf x86_64/${{ env.BINARY_NAME }}-macos-x86_64.tar.gz -C x86_64-bin
+          lipo -create arm64-bin/${{ env.BINARY_NAME }} x86_64-bin/${{ env.BINARY_NAME }} -output ${{ env.BINARY_NAME }}
+          tar czf ${{ env.BINARY_NAME }}-macos-universal.tar.gz ${{ env.BINARY_NAME }}
+          shasum -a 256 ${{ env.BINARY_NAME }}-macos-universal.tar.gz > ${{ env.BINARY_NAME }}-macos-universal.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos-universal
+          path: |
+            ${{ env.BINARY_NAME }}-macos-universal.tar.gz
+            ${{ env.BINARY_NAME }}-macos-universal.tar.gz.sha256
+
+  # 正式リリース作成
+  publish:
+    name: Publish Release
+    needs: [build, build-macos-universal]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        id: changelog
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          CHANGELOG='${{ steps.changelog.outputs.content }}'
+
+          if [ -z "${CHANGELOG}" ]; then
+            CHANGELOG="See [CHANGELOG.md](CHANGELOG.md) for details."
+          fi
+
+          gh release create "${TAG}" \
+            --title "Release ${TAG}" \
+            --notes "${CHANGELOG}" \
+            --verify-tag \
+            artifacts/*
