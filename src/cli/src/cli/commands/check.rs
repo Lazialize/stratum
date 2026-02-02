@@ -132,19 +132,25 @@ impl CheckCommandHandler {
             Err(validate_err) => {
                 // validate 失敗 → generate を実行しない
                 debug!("Validation failed, skipping generate dry-run");
-                let validate_data = validate_data.unwrap_or_else(|_| CheckValidateResult {
-                    is_valid: false,
-                    schema_files: vec![],
-                    errors: vec![],
-                    warnings: vec![],
-                    statistics: ValidationStatistics {
-                        tables: 0,
-                        columns: 0,
-                        indexes: 0,
-                        constraints: 0,
-                        views: 0,
-                    },
-                });
+                let validate_data =
+                    validate_data.unwrap_or_else(|build_err| CheckValidateResult {
+                        is_valid: false,
+                        schema_files: vec![],
+                        errors: vec![crate::cli::commands::validate::ValidationIssue {
+                            message: build_err.to_string(),
+                            table: None,
+                            column: None,
+                            suggestion: None,
+                        }],
+                        warnings: vec![],
+                        statistics: ValidationStatistics {
+                            tables: 0,
+                            columns: 0,
+                            indexes: 0,
+                            constraints: 0,
+                            views: 0,
+                        },
+                    });
                 self.handle_validate_failure(command, &validate_err, validate_data)
             }
         }
@@ -165,7 +171,7 @@ impl CheckCommandHandler {
             schema_dir: command.schema_dir.clone(),
             description: None,
             dry_run: true,
-            allow_destructive: true, // dry-runなので破壊的変更も表示する
+            allow_destructive: false,
             verbose: false,
             format: OutputFormat::Text,
         };

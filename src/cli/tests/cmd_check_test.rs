@@ -420,11 +420,12 @@ tables:
     fs::write(project_path.join("schema/users.yaml"), schema_yaml).unwrap();
 
     // migrations/ 内のファイル一覧を記録
-    let before_entries: Vec<_> = fs::read_dir(project_path.join("migrations"))
+    let mut before_entries: Vec<_> = fs::read_dir(project_path.join("migrations"))
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().to_string())
         .collect();
+    before_entries.sort();
 
     let handler = CheckCommandHandler::new();
     let command = CheckCommand {
@@ -437,11 +438,12 @@ tables:
     let _result = handler.execute(&command);
 
     // migrations/ 内に新しいファイルが作成されていないことを確認
-    let after_entries: Vec<_> = fs::read_dir(project_path.join("migrations"))
+    let mut after_entries: Vec<_> = fs::read_dir(project_path.join("migrations"))
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().to_string())
         .collect();
+    after_entries.sort();
 
     assert_eq!(
         before_entries, after_entries,
