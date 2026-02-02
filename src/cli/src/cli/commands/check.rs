@@ -294,25 +294,35 @@ impl CheckCommandHandler {
             })
             .collect();
 
+        let validate_handler = ValidateCommandHandler::new();
+
         let errors: Vec<crate::cli::commands::validate::ValidationIssue> = validation_result
             .errors
             .iter()
-            .map(|error| crate::cli::commands::validate::ValidationIssue {
-                message: format!("{}", error),
-                table: None,
-                column: None,
-                suggestion: None,
+            .map(|error| {
+                let location = validate_handler.get_error_location(error);
+                crate::cli::commands::validate::ValidationIssue {
+                    message: format!("{}", error),
+                    table: location.and_then(|l| l.table.clone()),
+                    column: location.and_then(|l| l.column.clone()),
+                    suggestion: validate_handler
+                        .get_error_suggestion(error)
+                        .map(|s| s.to_string()),
+                }
             })
             .collect();
 
         let warnings: Vec<crate::cli::commands::validate::ValidationIssue> = validation_result
             .warnings
             .iter()
-            .map(|warning| crate::cli::commands::validate::ValidationIssue {
-                message: warning.message.clone(),
-                table: None,
-                column: None,
-                suggestion: None,
+            .map(|warning| {
+                let loc = &warning.location;
+                crate::cli::commands::validate::ValidationIssue {
+                    message: warning.message.clone(),
+                    table: loc.as_ref().and_then(|l| l.table.clone()),
+                    column: loc.as_ref().and_then(|l| l.column.clone()),
+                    suggestion: None,
+                }
             })
             .collect();
 
@@ -523,6 +533,61 @@ mod tests {
         assert_eq!(parsed["summary"]["validate_success"], false);
         assert!(parsed["summary"].get("generate_success").is_none());
         assert!(parsed.get("generate").is_none());
+    }
+
+    #[test]
+    fn test_check_output_json_includes_error_location_and_suggestion() {
+        use crate::cli::commands::validate::ValidationIssue;
+
+        let output = CheckOutput {
+            validate: CheckValidateResult {
+                is_valid: false,
+                schema_files: vec!["users.yaml".to_string()],
+                errors: vec![ValidationIssue {
+                    message: "No primary key defined".to_string(),
+                    table: Some("users".to_string()),
+                    column: None,
+                    suggestion: Some("Add a primary key constraint".to_string()),
+                }],
+                warnings: vec![ValidationIssue {
+                    message: "Wide column detected".to_string(),
+                    table: Some("users".to_string()),
+                    column: Some("bio".to_string()),
+                    suggestion: None,
+                }],
+                statistics: ValidationStatistics {
+                    tables: 1,
+                    columns: 2,
+                    indexes: 0,
+                    constraints: 0,
+                    views: 0,
+                },
+            },
+            generate: None,
+            summary: CheckSummary {
+                validate_success: false,
+                generate_success: None,
+            },
+            text_message: "text".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // エラーの location/suggestion が含まれる
+        assert_eq!(parsed["validate"]["errors"][0]["table"], "users");
+        assert!(parsed["validate"]["errors"][0].get("column").is_none()); // None はスキップ
+        assert_eq!(
+            parsed["validate"]["errors"][0]["suggestion"],
+            "Add a primary key constraint"
+        );
+
+        // 警告の location が含まれる
+        assert_eq!(parsed["validate"]["warnings"][0]["table"], "users");
+        assert_eq!(parsed["validate"]["warnings"][0]["column"], "bio");
+        assert!(parsed["validate"]["warnings"][0]
+            .get("suggestion")
+            .is_none());
     }
 
     #[test]
