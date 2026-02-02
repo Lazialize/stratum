@@ -1,10 +1,5 @@
 # Cross-compilation configuration for Strata
 
-[build]
-# Preserve target directory structure
-# This ensures that cross uses the same target directory as cargo
-target-dir = "target"
-
 [build.env]
 passthrough = [
     "CARGO_TERM_COLOR",
