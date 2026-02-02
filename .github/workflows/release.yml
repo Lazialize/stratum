@@ -114,47 +114,10 @@ jobs:
             ${{ env.BINARY_NAME }}-${{ matrix.name }}.zip
             ${{ env.BINARY_NAME }}-${{ matrix.name }}.zip.sha256
 
-  # macOS Universal Binary
-  build-macos-universal:
-    name: Build (macos-universal)
-    needs: build
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download macOS ARM64
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.BINARY_NAME }}-macos-arm64
-          path: arm64
-
-      - name: Download macOS x86_64
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.BINARY_NAME }}-macos-x86_64
-          path: x86_64
-
-      - name: Create universal binary
-        run: |
-          mkdir -p arm64-bin x86_64-bin
-          tar xzf arm64/${{ env.BINARY_NAME }}-macos-arm64.tar.gz -C arm64-bin
-          tar xzf x86_64/${{ env.BINARY_NAME }}-macos-x86_64.tar.gz -C x86_64-bin
-          lipo -create arm64-bin/${{ env.BINARY_NAME }} x86_64-bin/${{ env.BINARY_NAME }} -output ${{ env.BINARY_NAME }}
-          tar czf ${{ env.BINARY_NAME }}-macos-universal.tar.gz ${{ env.BINARY_NAME }}
-          shasum -a 256 ${{ env.BINARY_NAME }}-macos-universal.tar.gz > ${{ env.BINARY_NAME }}-macos-universal.tar.gz.sha256
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.BINARY_NAME }}-macos-universal
-          path: |
-            ${{ env.BINARY_NAME }}-macos-universal.tar.gz
-            ${{ env.BINARY_NAME }}-macos-universal.tar.gz.sha256
-
   # 正式リリース作成
   publish:
     name: Publish Release
-    needs: [build, build-macos-universal]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
