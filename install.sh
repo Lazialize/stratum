@@ -138,8 +138,8 @@ install_binary() {
     info "Architecture: $arch"
 
     # Build download URL
-    # Format: strata--{os}-{arch}.tar.gz
-    local archive_name="${BINARY_NAME}--${os}-${arch}.tar.gz"
+    # Format: strata-{os}-{arch}.tar.gz
+    local archive_name="${BINARY_NAME}-${os}-${arch}.tar.gz"
     local download_url="https://github.com/${REPO}/releases/download/${version}/${archive_name}"
     local checksum_url="${download_url}.sha256"
 
