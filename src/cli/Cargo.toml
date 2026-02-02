@@ -1,6 +1,6 @@
 [package]
 name = "strata"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Strata Contributors"]
 description = "Database schema management CLI tool - Infrastructure as Code for database schemas"
