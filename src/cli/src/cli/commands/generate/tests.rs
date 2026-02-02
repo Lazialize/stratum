@@ -27,6 +27,7 @@ fn test_generate_command_has_dry_run_field() {
     let command = GenerateCommand {
         project_path: std::path::PathBuf::from("/tmp"),
         config_path: None,
+        schema_dir: None,
         description: Some("test".to_string()),
         dry_run: true,
         allow_destructive: false,

@@ -244,6 +244,24 @@ strata rollback --allow-destructive
 - `--allow-destructive` - Allow destructive changes (DROP TABLE, DROP COLUMN, etc.)
 - `-e, --env <ENV>` - Target environment (default: development)
 
+### `check` - Validate and Preview Migrations
+
+Run validate followed by generate `--dry-run` in a single command. If validation fails, generation is skipped.
+
+```bash
+# Check default schema directory
+strata check
+
+# Check specific directory
+strata check --schema-dir ./custom-schema
+
+# JSON output for CI/CD
+strata check --format json
+```
+
+**Options:**
+- `-s, --schema-dir <DIR>` - Path to schema directory
+
 ### `validate` - Validate Schema
 
 Validate schema definition files.
@@ -790,7 +808,7 @@ The checksum ensures migration integrity - any modification to the migration aft
 
 ### 2. Migration Workflow
 
-1. **Always validate** before generating migrations: `strata validate`
+1. **Always check** before generating migrations: `strata check` (validates and previews in one step)
 2. **Review generated SQL** before applying: `strata apply --dry-run`
 3. **Test in development** before production
 4. **Never modify** applied migrations - create new ones instead

@@ -215,6 +215,23 @@ pub enum Commands {
         allow_destructive: AllowDestructiveArg,
     },
 
+    /// Check schema validity and preview migration changes
+    ///
+    /// Runs validate followed by generate --dry-run in a single command.
+    /// If validation fails, generation is skipped.
+    ///
+    /// EXAMPLES:
+    ///   # Check default schema directory
+    ///   strata check
+    ///
+    ///   # Check specific directory
+    ///   strata check --schema-dir ./custom-schema
+    Check {
+        /// Path to schema directory
+        #[arg(short, long, value_name = "DIR")]
+        schema_dir: Option<PathBuf>,
+    },
+
     /// Validate schema definitions
     ///
     /// Checks schema definition files for syntax errors, referential integrity,

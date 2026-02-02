@@ -65,6 +65,8 @@ pub struct GenerateCommand {
     pub project_path: PathBuf,
     /// カスタム設定ファイルパス
     pub config_path: Option<PathBuf>,
+    /// スキーマディレクトリのパス（指定されない場合は設定ファイルから取得）
+    pub schema_dir: Option<PathBuf>,
     /// マイグレーションの説明（オプション）
     pub description: Option<String>,
     /// ドライラン（SQLを表示するがファイルは作成しない）
@@ -159,8 +161,12 @@ impl GenerateCommandHandler {
 
         // スキーマの読み込み
         debug!("Loading current and previous schemas");
-        let (current_schema, previous_schema) =
-            self.load_schemas(&context, &command.project_path, config)?;
+        let (current_schema, previous_schema) = self.load_schemas(
+            &context,
+            &command.project_path,
+            config,
+            command.schema_dir.as_ref(),
+        )?;
         debug!(
             current_tables = current_schema.table_count(),
             current_views = current_schema.view_count(),

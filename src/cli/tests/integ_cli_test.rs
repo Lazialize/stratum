@@ -337,6 +337,7 @@ tables:
             let command = GenerateCommand {
                 project_path: self.project_path.clone(),
                 config_path: None,
+                schema_dir: None,
                 description: Some(description.to_string()),
                 dry_run: false,
                 allow_destructive,

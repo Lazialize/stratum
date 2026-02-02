@@ -317,7 +317,7 @@ impl ValidateCommandHandler {
     }
 
     /// エラーの場所を取得
-    fn get_error_location<'a>(
+    pub fn get_error_location<'a>(
         &self,
         error: &'a crate::core::error::ValidationError,
     ) -> Option<&'a crate::core::error::ErrorLocation> {
@@ -333,7 +333,7 @@ impl ValidateCommandHandler {
     }
 
     /// エラーの修正案を取得
-    fn get_error_suggestion<'a>(
+    pub fn get_error_suggestion<'a>(
         &self,
         error: &'a crate::core::error::ValidationError,
     ) -> Option<&'a str> {

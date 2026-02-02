@@ -11,13 +11,27 @@ use std::path::{Path, PathBuf};
 
 impl GenerateCommandHandler {
     /// スキーマの読み込み
+    ///
+    /// `schema_dir_override` が指定されている場合はそちらを優先する。
+    /// 指定されていない場合は設定ファイルのschema_dirを使用する。
     pub(super) fn load_schemas(
         &self,
         context: &CommandContext,
         project_path: &Path,
         config: &Config,
+        schema_dir_override: Option<&PathBuf>,
     ) -> Result<(Schema, Schema)> {
-        let schema_dir = context.require_schema_dir()?;
+        let schema_dir = if let Some(override_dir) = schema_dir_override {
+            if !override_dir.exists() {
+                return Err(anyhow::anyhow!(
+                    "Schema directory not found: {:?}",
+                    override_dir
+                ));
+            }
+            override_dir.clone()
+        } else {
+            context.require_schema_dir()?
+        };
         let parser = SchemaParserService::new();
         let current_schema = parser
             .parse_schema_directory(&schema_dir)
