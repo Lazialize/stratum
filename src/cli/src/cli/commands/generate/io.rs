@@ -1,5 +1,6 @@
 use super::{DiffValidationResult, GenerateCommand, GenerateCommandHandler, GeneratedSql};
 use crate::cli::command_context::CommandContext;
+use crate::cli::commands::migration_loader;
 use crate::core::config::Config;
 use crate::core::schema::Schema;
 use crate::services::schema_checksum::SchemaChecksumService;
@@ -8,6 +9,7 @@ use crate::services::schema_io::schema_serializer::SchemaSerializerService;
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
+use tracing::debug;
 
 impl GenerateCommandHandler {
     /// スキーマの読み込み
@@ -41,25 +43,84 @@ impl GenerateCommandHandler {
     }
 
     /// 前回のスキーマ状態を読み込む
+    ///
+    /// マイグレーションディレクトリ内のper-migrationスナップショットから前回のスキーマを復元する。
+    /// 最新のマイグレーションディレクトリにある `.schema_snapshot.yaml` を優先的に使用し、
+    /// 存在しない場合はグローバルスナップショットにフォールバックする。
+    /// これにより、失敗したマイグレーションのディレクトリが削除された場合でも
+    /// 正しいスキーマ状態を復元できる。
     pub(super) fn load_previous_schema(
         &self,
         project_path: &Path,
         config: &Config,
     ) -> Result<Schema> {
-        let snapshot_path = project_path
-            .join(&config.migrations_dir)
-            .join(".schema_snapshot.yaml");
+        let migrations_dir = project_path.join(&config.migrations_dir);
+        let parser = SchemaParserService::new();
 
-        if !snapshot_path.exists() {
-            // 初回の場合は空のスキーマを返す
-            return Ok(Schema::new("1.0".to_string()));
+        // マイグレーションディレクトリが存在する場合、per-migrationスナップショットを探す
+        if migrations_dir.exists() {
+            let migrations = migration_loader::load_available_migrations(&migrations_dir)
+                .with_context(|| {
+                    format!(
+                        "Failed to load available migrations from: {:?}",
+                        migrations_dir
+                    )
+                })?;
+
+            // 最新のマイグレーションから順にper-migrationスナップショットを探す
+            for (_version, _description, migration_path) in migrations.iter().rev() {
+                let per_migration_snapshot = migration_path.join(".schema_snapshot.yaml");
+                if per_migration_snapshot.exists() {
+                    debug!(
+                        snapshot = %per_migration_snapshot.display(),
+                        "Loading previous schema from per-migration snapshot"
+                    );
+                    return parser
+                        .parse_schema_file(&per_migration_snapshot)
+                        .with_context(|| {
+                            format!(
+                                "Failed to parse per-migration schema snapshot: {:?}",
+                                per_migration_snapshot
+                            )
+                        });
+                }
+            }
         }
 
-        // SchemaParserServiceを使って新構文形式のスナップショットを読み込む
-        let parser = SchemaParserService::new();
-        parser
-            .parse_schema_file(&snapshot_path)
-            .with_context(|| "Failed to parse schema snapshot")
+        // per-migrationスナップショットが見つからない場合、グローバルスナップショットにフォールバック
+        let global_snapshot_path = migrations_dir.join(".schema_snapshot.yaml");
+        if global_snapshot_path.exists() {
+            debug!("Falling back to global schema snapshot");
+            return parser
+                .parse_schema_file(&global_snapshot_path)
+                .with_context(|| "Failed to parse schema snapshot");
+        }
+
+        // 初回の場合は空のスキーマを返す
+        debug!("No schema snapshot found, using empty schema");
+        Ok(Schema::new("1.0".to_string()))
+    }
+
+    /// マイグレーションディレクトリ内にスキーマスナップショットを保存
+    ///
+    /// 各マイグレーションディレクトリに `.schema_snapshot.yaml` を保存することで、
+    /// マイグレーションディレクトリが削除された場合にも正しいスキーマ状態を復元できる。
+    fn save_migration_schema_snapshot(&self, migration_dir: &Path, schema: &Schema) -> Result<()> {
+        let snapshot_path = migration_dir.join(".schema_snapshot.yaml");
+
+        let serializer = SchemaSerializerService::new();
+        let yaml = serializer
+            .serialize_to_string(schema)
+            .with_context(|| "Failed to serialize schema for per-migration snapshot")?;
+
+        fs::write(&snapshot_path, yaml).with_context(|| {
+            format!(
+                "Failed to write per-migration schema snapshot: {:?}",
+                snapshot_path
+            )
+        })?;
+
+        Ok(())
     }
 
     /// 現在のスキーマを保存（新構文形式を使用）
@@ -126,7 +187,10 @@ impl GenerateCommandHandler {
         fs::write(&meta_path, metadata)
             .with_context(|| format!("Failed to write metadata: {:?}", meta_path))?;
 
-        // スキーマスナップショット保存
+        // per-migrationスナップショット保存（マイグレーションディレクトリ内）
+        self.save_migration_schema_snapshot(&migration_dir, current_schema)?;
+
+        // グローバルスナップショット保存（後方互換性のため維持）
         self.save_current_schema(&command.project_path, config, current_schema)?;
 
         Ok((dvr.migration_name.clone(), migration_dir))
