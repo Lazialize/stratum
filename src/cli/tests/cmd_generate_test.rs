@@ -304,6 +304,219 @@ mod generate_command_tests {
         assert!(meta.contains("MySQL") || meta.contains("mysql"));
     }
 
+    /// generate saves per-migration schema snapshot inside migration directory
+    #[test]
+    fn test_generate_saves_per_migration_snapshot() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_path = temp_dir.path();
+
+        setup_test_project(project_path, Dialect::PostgreSQL);
+        create_simple_schema_file(project_path, "users", &["id", "name"]);
+
+        let handler = GenerateCommandHandler::new();
+        let command = GenerateCommand {
+            project_path: project_path.to_path_buf(),
+            config_path: None,
+            schema_dir: None,
+            description: Some("create users table".to_string()),
+            dry_run: false,
+            allow_destructive: false,
+            verbose: false,
+            format: strata::cli::OutputFormat::Text,
+        };
+
+        handler.execute(&command).unwrap();
+
+        // Find the migration directory
+        let migrations_dir = project_path.join("migrations");
+        let migration_dirs: Vec<_> = fs::read_dir(&migrations_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .collect();
+
+        assert_eq!(migration_dirs.len(), 1);
+        let migration_dir = migration_dirs[0].path();
+
+        // Per-migration snapshot should exist inside the migration directory
+        let per_migration_snapshot = migration_dir.join(".schema_snapshot.yaml");
+        assert!(
+            per_migration_snapshot.exists(),
+            "Per-migration .schema_snapshot.yaml should exist in {:?}",
+            migration_dir
+        );
+
+        // It should contain the users table
+        let content = fs::read_to_string(&per_migration_snapshot).unwrap();
+        assert!(
+            content.contains("users"),
+            "Per-migration snapshot should contain 'users' table"
+        );
+    }
+
+    /// Deleting a failed migration directory causes the next generate to produce
+    /// correct CREATE TABLE instead of ALTER TABLE (issue #9 regression test)
+    #[test]
+    fn test_generate_after_deleting_failed_migration_produces_create_table() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_path = temp_dir.path();
+
+        setup_test_project(project_path, Dialect::PostgreSQL);
+
+        // Step 1: Create and generate the first table (users) - this is the "applied" baseline
+        create_simple_schema_file(project_path, "users", &["id", "name"]);
+
+        let handler = GenerateCommandHandler::new();
+        let command = GenerateCommand {
+            project_path: project_path.to_path_buf(),
+            config_path: None,
+            schema_dir: None,
+            description: Some("create users".to_string()),
+            dry_run: false,
+            allow_destructive: false,
+            verbose: false,
+            format: strata::cli::OutputFormat::Text,
+        };
+        handler.execute(&command).unwrap();
+
+        // Wait to ensure different timestamp for next migration
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Step 2: Add a new table (metadata) and generate migration
+        create_simple_schema_file(project_path, "metadata", &["id", "name"]);
+
+        let command2 = GenerateCommand {
+            project_path: project_path.to_path_buf(),
+            config_path: None,
+            schema_dir: None,
+            description: Some("create metadata".to_string()),
+            dry_run: false,
+            allow_destructive: false,
+            verbose: false,
+            format: strata::cli::OutputFormat::Text,
+        };
+        handler.execute(&command2).unwrap();
+
+        // Verify we now have 2 migration directories
+        let migrations_dir = project_path.join("migrations");
+        let mut migration_dirs: Vec<_> = fs::read_dir(&migrations_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.path())
+            .collect();
+        migration_dirs.sort();
+        assert_eq!(migration_dirs.len(), 2);
+
+        // Step 3: Simulate failed apply by deleting the second migration directory
+        fs::remove_dir_all(&migration_dirs[1]).unwrap();
+
+        // Wait to ensure different timestamp for next migration
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Step 4: Run generate again - should produce CREATE TABLE for metadata, not ALTER TABLE
+        let command3 = GenerateCommand {
+            project_path: project_path.to_path_buf(),
+            config_path: None,
+            schema_dir: None,
+            description: Some("recreate metadata".to_string()),
+            dry_run: false,
+            allow_destructive: false,
+            verbose: false,
+            format: strata::cli::OutputFormat::Text,
+        };
+        handler.execute(&command3).unwrap();
+
+        // Find the newly generated migration directory
+        let mut migration_dirs_after: Vec<_> = fs::read_dir(&migrations_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.path())
+            .collect();
+        migration_dirs_after.sort();
+        assert_eq!(migration_dirs_after.len(), 2);
+
+        // Read the new migration's up.sql
+        let new_migration_dir = &migration_dirs_after[1];
+        let up_sql = fs::read_to_string(new_migration_dir.join("up.sql")).unwrap();
+
+        // Should contain CREATE TABLE, not ALTER TABLE
+        assert!(
+            up_sql.contains("CREATE TABLE"),
+            "Expected CREATE TABLE in up.sql after deleting failed migration, got:\n{}",
+            up_sql
+        );
+        assert!(
+            !up_sql.contains("ALTER TABLE"),
+            "Should NOT contain ALTER TABLE after deleting failed migration, got:\n{}",
+            up_sql
+        );
+    }
+
+    /// Multiple generates without apply work correctly with per-migration snapshots
+    #[test]
+    fn test_multiple_generates_without_apply() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_path = temp_dir.path();
+
+        setup_test_project(project_path, Dialect::PostgreSQL);
+
+        let handler = GenerateCommandHandler::new();
+
+        // Step 1: Generate first migration (users table)
+        create_simple_schema_file(project_path, "users", &["id", "name"]);
+        let command1 = GenerateCommand {
+            project_path: project_path.to_path_buf(),
+            config_path: None,
+            schema_dir: None,
+            description: Some("create users".to_string()),
+            dry_run: false,
+            allow_destructive: false,
+            verbose: false,
+            format: strata::cli::OutputFormat::Text,
+        };
+        handler.execute(&command1).unwrap();
+
+        // Wait to ensure different timestamp for next migration
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Step 2: Generate second migration (posts table) - without applying first
+        create_simple_schema_file(project_path, "posts", &["id", "name"]);
+        let command2 = GenerateCommand {
+            project_path: project_path.to_path_buf(),
+            config_path: None,
+            schema_dir: None,
+            description: Some("create posts".to_string()),
+            dry_run: false,
+            allow_destructive: false,
+            verbose: false,
+            format: strata::cli::OutputFormat::Text,
+        };
+        handler.execute(&command2).unwrap();
+
+        // Find migration directories
+        let migrations_dir = project_path.join("migrations");
+        let mut migration_dirs: Vec<_> = fs::read_dir(&migrations_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.path())
+            .collect();
+        migration_dirs.sort();
+        assert_eq!(migration_dirs.len(), 2);
+
+        // First migration should CREATE users only
+        let up1 = fs::read_to_string(migration_dirs[0].join("up.sql")).unwrap();
+        assert!(up1.contains("users"), "First migration should contain users table");
+        assert!(!up1.contains("posts"), "First migration should NOT contain posts table");
+
+        // Second migration should CREATE posts only (not duplicate users)
+        let up2 = fs::read_to_string(migration_dirs[1].join("up.sql")).unwrap();
+        assert!(up2.contains("posts"), "Second migration should contain posts table");
+        assert!(!up2.contains("users"), "Second migration should NOT duplicate users table");
+    }
+
     // ヘルパー関数
 
     /// テストプロジェクトをセットアップ
