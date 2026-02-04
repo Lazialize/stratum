@@ -59,15 +59,13 @@ impl GenerateCommandHandler {
 
         // マイグレーションディレクトリが存在する場合、per-migrationスナップショットを探す
         if migrations_dir.exists() {
-            let migrations =
-                migration_loader::load_available_migrations(&migrations_dir).with_context(
-                    || {
-                        format!(
-                            "Failed to load available migrations from: {:?}",
-                            migrations_dir
-                        )
-                    },
-                )?;
+            let migrations = migration_loader::load_available_migrations(&migrations_dir)
+                .with_context(|| {
+                    format!(
+                        "Failed to load available migrations from: {:?}",
+                        migrations_dir
+                    )
+                })?;
 
             // 最新のマイグレーションから順にper-migrationスナップショットを探す
             for (_version, _description, migration_path) in migrations.iter().rev() {
