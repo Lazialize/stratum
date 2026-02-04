@@ -46,6 +46,21 @@ impl TypeMapper for PostgresTypeMapper {
             }),
             "bytea" => Some(ColumnType::BLOB),
             "uuid" => Some(ColumnType::UUID),
+            "ARRAY" => {
+                // ARRAY型: udt_name から要素型を取得（例: "_text" -> "TEXT"）
+                if let Some(udt_name) = &metadata.udt_name {
+                    let element_type = udt_name
+                        .strip_prefix('_')
+                        .unwrap_or(udt_name)
+                        .to_uppercase();
+                    Some(ColumnType::DialectSpecific {
+                        kind: "ARRAY".to_string(),
+                        params: serde_json::json!({ "element_type": element_type }),
+                    })
+                } else {
+                    None
+                }
+            }
             "USER-DEFINED" => {
                 // ENUM型のチェック
                 if let (Some(enum_names), Some(udt_name)) =
@@ -119,6 +134,13 @@ impl TypeMapper for PostgresTypeMapper {
     }
 
     fn format_dialect_specific(&self, kind: &str, params: &serde_json::Value) -> String {
+        // ARRAY型: kind が "ARRAY" で element_type がある場合（例: TEXT[]）
+        if kind.eq_ignore_ascii_case("ARRAY") {
+            if let Some(element_type) = params.get("element_type").and_then(|v| v.as_str()) {
+                return format!("{}[]", element_type);
+            }
+        }
+
         // lengthパラメータがある場合（例: VARBIT(16)）
         if let Some(length) = params.get("length").and_then(|v| v.as_u64()) {
             return format!("{}({})", kind, length);
@@ -363,6 +385,80 @@ mod tests {
         };
 
         assert_eq!(service.to_sql_type(&col_type), "TEXT[]");
+    }
+
+    #[test]
+    fn test_postgres_array_kind_with_element_type() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "ARRAY".to_string(),
+            params: serde_json::json!({ "element_type": "TEXT" }),
+        };
+        assert_eq!(service.to_sql_type(&col_type), "TEXT[]");
+    }
+
+    #[test]
+    fn test_postgres_array_kind_with_integer_element_type() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "ARRAY".to_string(),
+            params: serde_json::json!({ "element_type": "INTEGER" }),
+        };
+        assert_eq!(service.to_sql_type(&col_type), "INTEGER[]");
+    }
+
+    #[test]
+    fn test_postgres_parse_array_type() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("_text".to_string()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("ARRAY", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "ARRAY");
+                assert_eq!(
+                    params.get("element_type").and_then(|v| v.as_str()),
+                    Some("TEXT")
+                );
+            }
+            _ => panic!("Expected DialectSpecific ARRAY type"),
+        }
+    }
+
+    #[test]
+    fn test_postgres_parse_array_integer_type() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("_int4".to_string()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("ARRAY", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "ARRAY");
+                assert_eq!(
+                    params.get("element_type").and_then(|v| v.as_str()),
+                    Some("INT4")
+                );
+            }
+            _ => panic!("Expected DialectSpecific ARRAY type"),
+        }
+    }
+
+    #[test]
+    fn test_postgres_array_roundtrip() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        // Parse ARRAY from DB
+        let meta = TypeMetadata {
+            udt_name: Some("_text".to_string()),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("ARRAY", &meta).unwrap();
+        // Format back to SQL
+        let sql = service.to_sql_type(&parsed);
+        assert_eq!(sql, "TEXT[]");
     }
 
     #[test]
