@@ -6,32 +6,6 @@ use super::TypeMetadata;
 use crate::adapters::sql_quote::quote_identifier_postgres;
 use crate::core::schema::ColumnType;
 
-/// PostgreSQL識別子がダブルクォートを必要とするか判定する。
-///
-/// PostgreSQLは非クォート識別子を小文字に折り畳むため、
-/// 大文字・特殊文字・数字始まりの識別子はクォートが必要。
-fn needs_pg_quoting(ident: &str) -> bool {
-    if ident.is_empty() {
-        return true;
-    }
-    let first = ident.as_bytes()[0];
-    if !(first.is_ascii_lowercase() || first == b'_') {
-        return true;
-    }
-    !ident
-        .bytes()
-        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
-}
-
-/// 必要に応じてPostgreSQL識別子をダブルクォートで囲む。
-fn quote_pg_if_needed(ident: &str) -> String {
-    if needs_pg_quoting(ident) {
-        format!("\"{}\"", ident.replace('"', "\"\""))
-    } else {
-        ident.to_string()
-    }
-}
-
 /// PostgreSQL用型マッパー
 pub struct PostgresTypeMapper;
 
@@ -73,11 +47,11 @@ impl TypeMapper for PostgresTypeMapper {
             "bytea" => Some(ColumnType::BLOB),
             "uuid" => Some(ColumnType::UUID),
             "ARRAY" => {
-                // ARRAY型: udt_name から要素型を取得（例: "_text" -> "text"）
-                // 元の大文字小文字を保持し、必要な場合のみダブルクォートで囲む
+                // ARRAY型: udt_name から要素型を取得（例: "_text" -> "\"text\""）
+                // 予約語や特殊文字を含む型名にも対応するため、常にクォートする
                 if let Some(udt_name) = &metadata.udt_name {
                     let raw = udt_name.strip_prefix('_').unwrap_or(udt_name);
-                    let element_type = quote_pg_if_needed(raw);
+                    let element_type = quote_identifier_postgres(raw);
                     Some(ColumnType::DialectSpecific {
                         kind: "ARRAY".to_string(),
                         params: serde_json::json!({ "element_type": element_type }),
@@ -443,10 +417,10 @@ mod tests {
         match result {
             ColumnType::DialectSpecific { kind, params } => {
                 assert_eq!(kind, "ARRAY");
-                // 小文字のみ → クォート不要、元のケースを保持
+                // udt_name 由来の型名は常にクォート（予約語対策）
                 assert_eq!(
                     params.get("element_type").and_then(|v| v.as_str()),
-                    Some("text")
+                    Some("\"text\"")
                 );
             }
             _ => panic!("Expected DialectSpecific ARRAY type"),
@@ -464,10 +438,9 @@ mod tests {
         match result {
             ColumnType::DialectSpecific { kind, params } => {
                 assert_eq!(kind, "ARRAY");
-                // 小文字のみ → クォート不要
                 assert_eq!(
                     params.get("element_type").and_then(|v| v.as_str()),
-                    Some("int4")
+                    Some("\"int4\"")
                 );
             }
             _ => panic!("Expected DialectSpecific ARRAY type"),
@@ -477,7 +450,6 @@ mod tests {
     #[test]
     fn test_postgres_parse_array_mixed_case_type() {
         let mapper = PostgresTypeMapper;
-        // 大文字を含むカスタム型 → ダブルクォートで囲まれる
         let meta = TypeMetadata {
             udt_name: Some("_MyCustomType".to_string()),
             ..Default::default()
@@ -498,7 +470,6 @@ mod tests {
     #[test]
     fn test_postgres_parse_array_special_char_type() {
         let mapper = PostgresTypeMapper;
-        // 特殊文字を含む型 → ダブルクォートで囲まれる
         let meta = TypeMetadata {
             udt_name: Some("_my-type".to_string()),
             ..Default::default()
@@ -519,19 +490,18 @@ mod tests {
     #[test]
     fn test_postgres_array_roundtrip() {
         let service = TypeMappingService::new(Dialect::PostgreSQL);
-        // Parse ARRAY from DB
         let meta = TypeMetadata {
             udt_name: Some("_text".to_string()),
             ..Default::default()
         };
         let parsed = service.from_sql_type("ARRAY", &meta).unwrap();
-        // Format back to SQL（小文字保持）
         let sql = service.to_sql_type(&parsed);
-        assert_eq!(sql, "text[]");
+        // udt_name 由来は常にクォートされるため "text"[] となる
+        assert_eq!(sql, r#""text"[]"#);
     }
 
     #[test]
-    fn test_postgres_array_roundtrip_quoted() {
+    fn test_postgres_array_roundtrip_mixed_case() {
         let service = TypeMappingService::new(Dialect::PostgreSQL);
         let meta = TypeMetadata {
             udt_name: Some("_MyEnum".to_string()),
