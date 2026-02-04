@@ -508,13 +508,25 @@ mod generate_command_tests {
 
         // First migration should CREATE users only
         let up1 = fs::read_to_string(migration_dirs[0].join("up.sql")).unwrap();
-        assert!(up1.contains("users"), "First migration should contain users table");
-        assert!(!up1.contains("posts"), "First migration should NOT contain posts table");
+        assert!(
+            up1.contains("users"),
+            "First migration should contain users table"
+        );
+        assert!(
+            !up1.contains("posts"),
+            "First migration should NOT contain posts table"
+        );
 
         // Second migration should CREATE posts only (not duplicate users)
         let up2 = fs::read_to_string(migration_dirs[1].join("up.sql")).unwrap();
-        assert!(up2.contains("posts"), "Second migration should contain posts table");
-        assert!(!up2.contains("users"), "Second migration should NOT duplicate users table");
+        assert!(
+            up2.contains("posts"),
+            "Second migration should contain posts table"
+        );
+        assert!(
+            !up2.contains("users"),
+            "Second migration should NOT duplicate users table"
+        );
     }
 
     // ヘルパー関数

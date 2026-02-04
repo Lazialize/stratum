@@ -62,8 +62,7 @@ impl GenerateCommandHandler {
             if let Ok(migrations) = migration_loader::load_available_migrations(&migrations_dir) {
                 // 最新のマイグレーションから順にper-migrationスナップショットを探す
                 for (_version, _description, migration_path) in migrations.iter().rev() {
-                    let per_migration_snapshot =
-                        migration_path.join(".schema_snapshot.yaml");
+                    let per_migration_snapshot = migration_path.join(".schema_snapshot.yaml");
                     if per_migration_snapshot.exists() {
                         debug!(
                             snapshot = %per_migration_snapshot.display(),
@@ -100,11 +99,7 @@ impl GenerateCommandHandler {
     ///
     /// 各マイグレーションディレクトリに `.schema_snapshot.yaml` を保存することで、
     /// マイグレーションディレクトリが削除された場合にも正しいスキーマ状態を復元できる。
-    fn save_migration_schema_snapshot(
-        &self,
-        migration_dir: &Path,
-        schema: &Schema,
-    ) -> Result<()> {
+    fn save_migration_schema_snapshot(&self, migration_dir: &Path, schema: &Schema) -> Result<()> {
         let snapshot_path = migration_dir.join(".schema_snapshot.yaml");
 
         let serializer = SchemaSerializerService::new();
