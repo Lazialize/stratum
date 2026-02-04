@@ -59,24 +59,32 @@ impl GenerateCommandHandler {
 
         // マイグレーションディレクトリが存在する場合、per-migrationスナップショットを探す
         if migrations_dir.exists() {
-            if let Ok(migrations) = migration_loader::load_available_migrations(&migrations_dir) {
-                // 最新のマイグレーションから順にper-migrationスナップショットを探す
-                for (_version, _description, migration_path) in migrations.iter().rev() {
-                    let per_migration_snapshot = migration_path.join(".schema_snapshot.yaml");
-                    if per_migration_snapshot.exists() {
-                        debug!(
-                            snapshot = %per_migration_snapshot.display(),
-                            "Loading previous schema from per-migration snapshot"
-                        );
-                        return parser
-                            .parse_schema_file(&per_migration_snapshot)
-                            .with_context(|| {
-                                format!(
-                                    "Failed to parse per-migration schema snapshot: {:?}",
-                                    per_migration_snapshot
-                                )
-                            });
-                    }
+            let migrations =
+                migration_loader::load_available_migrations(&migrations_dir).with_context(
+                    || {
+                        format!(
+                            "Failed to load available migrations from: {:?}",
+                            migrations_dir
+                        )
+                    },
+                )?;
+
+            // 最新のマイグレーションから順にper-migrationスナップショットを探す
+            for (_version, _description, migration_path) in migrations.iter().rev() {
+                let per_migration_snapshot = migration_path.join(".schema_snapshot.yaml");
+                if per_migration_snapshot.exists() {
+                    debug!(
+                        snapshot = %per_migration_snapshot.display(),
+                        "Loading previous schema from per-migration snapshot"
+                    );
+                    return parser
+                        .parse_schema_file(&per_migration_snapshot)
+                        .with_context(|| {
+                            format!(
+                                "Failed to parse per-migration schema snapshot: {:?}",
+                                per_migration_snapshot
+                            )
+                        });
                 }
             }
         }
