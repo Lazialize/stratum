@@ -33,6 +33,7 @@ fn mysql_get_optional_string(row: &sqlx::any::AnyRow, index: usize) -> Option<St
 
 /// MySQL の COLUMN_TYPE から ENUM 値を抽出する
 /// 例: "enum('draft','published','archived')" -> ["draft", "published", "archived"]
+/// 空文字列のENUM値もサポート: "enum('')" -> [""], "enum('a','','b')" -> ["a", "", "b"]
 fn parse_mysql_enum_values(column_type: &str) -> Option<Vec<String>> {
     // enum('value1','value2',...) の形式をパース
     let trimmed = column_type.trim();
@@ -51,12 +52,14 @@ fn parse_mysql_enum_values(column_type: &str) -> Option<Vec<String>> {
     let mut values = Vec::new();
     let mut current = String::new();
     let mut in_quote = false;
+    let mut value_closed = false; // クォートが閉じられたかを追跡（空文字列対応）
     let mut chars = content.chars().peekable();
 
     while let Some(c) = chars.next() {
         match c {
             '\'' if !in_quote => {
                 in_quote = true;
+                value_closed = false;
             }
             '\'' if in_quote => {
                 // エスケープされたシングルクォート ('')をチェック
@@ -65,12 +68,15 @@ fn parse_mysql_enum_values(column_type: &str) -> Option<Vec<String>> {
                     chars.next();
                 } else {
                     in_quote = false;
+                    value_closed = true;
                 }
             }
             ',' if !in_quote => {
-                if !current.is_empty() {
+                // クォートが閉じられた値のみ追加（空文字列も含む）
+                if value_closed {
                     values.push(current);
                     current = String::new();
+                    value_closed = false;
                 }
             }
             _ if in_quote => {
@@ -82,8 +88,8 @@ fn parse_mysql_enum_values(column_type: &str) -> Option<Vec<String>> {
         }
     }
 
-    // 最後の値を追加
-    if !current.is_empty() {
+    // 最後の値を追加（空文字列も含む）
+    if value_closed {
         values.push(current);
     }
 
@@ -1340,5 +1346,32 @@ mod tests {
     fn test_parse_mysql_enum_values_empty() {
         let result = super::parse_mysql_enum_values("enum()");
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_mysql_enum_values_empty_string_single() {
+        // 空文字列のみのENUM
+        let result = super::parse_mysql_enum_values("enum('')");
+        assert_eq!(result, Some(vec!["".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_mysql_enum_values_empty_string_mixed() {
+        // 空文字列を含む複数値のENUM
+        let result = super::parse_mysql_enum_values("enum('a','','b')");
+        assert_eq!(
+            result,
+            Some(vec!["a".to_string(), "".to_string(), "b".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_parse_mysql_enum_values_empty_string_at_end() {
+        // 末尾に空文字列
+        let result = super::parse_mysql_enum_values("enum('a','b','')");
+        assert_eq!(
+            result,
+            Some(vec!["a".to_string(), "b".to_string(), "".to_string()])
+        );
     }
 }
