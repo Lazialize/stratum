@@ -301,6 +301,20 @@ impl ApplyCommandHandler {
 
         // マイグレーションSQLを文単位で実行
         for statement in split_sql_statements(up_sql) {
+            // SQLite: 既にトランザクション内なので、ネストを防ぐために
+            // BEGIN TRANSACTION/COMMIT をスキップする
+            // (sqlite_table_recreator がこれらを生成するが、apply は既にトランザクションを開始している)
+            if dialect == Dialect::SQLite {
+                let stmt_upper = statement.trim().to_uppercase();
+                if stmt_upper == "BEGIN TRANSACTION" || stmt_upper == "COMMIT" {
+                    debug!(
+                        statement = %statement,
+                        "Skipping transaction control statement (already in transaction)"
+                    );
+                    continue;
+                }
+            }
+
             sqlx::query(&statement)
                 .execute(&mut *tx)
                 .await
