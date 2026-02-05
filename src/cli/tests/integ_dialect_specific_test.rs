@@ -434,3 +434,86 @@ async fn test_mysql_mixed_common_and_dialect_specific_types() {
     assert_eq!(age, Some(30));
     assert_eq!(description, Some("Test description".to_string()));
 }
+
+/// MySQL: AUTO_INCREMENT属性がイントロスペクトされることを確認する回帰テスト
+///
+/// Issue #11: MySQL `export` loses `auto_increment` attribute on columns
+/// この問題を修正するため、information_schema.columnsのEXTRAカラムから
+/// auto_increment属性を検出するようにした。
+#[tokio::test]
+#[ignore]
+async fn test_mysql_auto_increment_introspection() {
+    use strata::adapters::database_introspector::create_introspector;
+    use strata::core::config::Dialect;
+
+    let container = Mysql::default()
+        .start()
+        .await
+        .expect("Failed to start MySQL container");
+
+    let host_port = container
+        .get_host_port_ipv4(3306)
+        .await
+        .expect("Failed to get container port");
+
+    let connection_string = format!("mysql://root@127.0.0.1:{}/mysql", host_port);
+
+    let mut conn = MySqlConnection::connect(&connection_string)
+        .await
+        .expect("Failed to connect to MySQL");
+
+    // AUTO_INCREMENTを持つテーブルを作成
+    let create_table_sql = r#"
+        CREATE TABLE test_auto_increment (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            counter INT NOT NULL
+        )
+    "#;
+
+    sqlx::query(create_table_sql)
+        .execute(&mut conn)
+        .await
+        .expect("Failed to create table with AUTO_INCREMENT");
+
+    // AnyPoolを使用してイントロスペクターをテスト
+    sqlx::any::install_default_drivers();
+    let any_connection_string = format!("mysql://root@127.0.0.1:{}/mysql", host_port);
+    let pool = sqlx::any::AnyPoolOptions::new()
+        .max_connections(1)
+        .connect(&any_connection_string)
+        .await
+        .expect("Failed to create AnyPool");
+
+    // MySQLイントロスペクターを使用してカラム情報を取得
+    let introspector = create_introspector(Dialect::MySQL);
+    let columns = introspector
+        .get_columns(&pool, "test_auto_increment")
+        .await
+        .expect("Failed to get columns");
+
+    // カラムが3つあることを確認
+    assert_eq!(columns.len(), 3);
+
+    // idカラムのauto_incrementがSome(true)であることを確認
+    let id_column = columns.iter().find(|c| c.name == "id").unwrap();
+    assert_eq!(
+        id_column.auto_increment,
+        Some(true),
+        "id column should have auto_increment = Some(true)"
+    );
+
+    // nameカラムのauto_incrementがNone/Some(false)であることを確認
+    let name_column = columns.iter().find(|c| c.name == "name").unwrap();
+    assert!(
+        name_column.auto_increment.is_none() || name_column.auto_increment == Some(false),
+        "name column should not have auto_increment"
+    );
+
+    // counterカラムのauto_incrementがNone/Some(false)であることを確認
+    let counter_column = columns.iter().find(|c| c.name == "counter").unwrap();
+    assert!(
+        counter_column.auto_increment.is_none() || counter_column.auto_increment == Some(false),
+        "counter column should not have auto_increment"
+    );
+}
