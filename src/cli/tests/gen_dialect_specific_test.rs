@@ -71,7 +71,7 @@ mod postgres_dialect_specific_tests {
         );
     }
 
-    /// PostgreSQL ARRAY型のSQL生成
+    /// PostgreSQL ARRAY型のSQL生成（array: true パラメータ形式）
     #[test]
     fn test_postgres_generate_array_type() {
         let generator = PostgresSqlGenerator::new();
@@ -92,6 +92,29 @@ mod postgres_dialect_specific_tests {
         let sql = generator.generate_create_table(&table);
 
         // TEXT[]の形式で出力されているか確認（配列パラメータの処理）
+        assert!(sql.contains("TEXT[]"), "Expected 'TEXT[]' in SQL: {}", sql);
+    }
+
+    /// PostgreSQL ARRAY型のSQL生成（kind: ARRAY + element_type 形式）
+    #[test]
+    fn test_postgres_generate_array_kind_with_element_type() {
+        let generator = PostgresSqlGenerator::new();
+
+        let mut table = Table::new("tags_table".to_string());
+        table.add_column(Column {
+            name: "tags".to_string(),
+            column_type: ColumnType::DialectSpecific {
+                kind: "ARRAY".to_string(),
+                params: serde_json::json!({ "element_type": "TEXT" }),
+            },
+            nullable: true,
+            default_value: None,
+            auto_increment: None,
+            renamed_from: None,
+        });
+
+        let sql = generator.generate_create_table(&table);
+
         assert!(sql.contains("TEXT[]"), "Expected 'TEXT[]' in SQL: {}", sql);
     }
 }

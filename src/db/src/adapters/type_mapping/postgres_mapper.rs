@@ -6,6 +6,58 @@ use super::TypeMetadata;
 use crate::adapters::sql_quote::quote_identifier_postgres;
 use crate::core::schema::ColumnType;
 
+/// PostgreSQL内部型名（udt_name）から標準SQL型名への正規化マッピング
+///
+/// 既知の型は大文字の標準SQL型名に変換し、不明な型はそのまま返す。
+fn map_pg_udt_to_canonical(udt_name: &str) -> String {
+    match udt_name {
+        "text" => "TEXT".to_string(),
+        "int4" => "INTEGER".to_string(),
+        "int2" => "SMALLINT".to_string(),
+        "int8" => "BIGINT".to_string(),
+        "bool" => "BOOLEAN".to_string(),
+        "float4" => "REAL".to_string(),
+        "float8" => "DOUBLE PRECISION".to_string(),
+        "numeric" => "NUMERIC".to_string(),
+        "varchar" => "VARCHAR".to_string(),
+        "bpchar" => "CHAR".to_string(),
+        "timestamp" => "TIMESTAMP".to_string(),
+        "timestamptz" => "TIMESTAMPTZ".to_string(),
+        "json" => "JSON".to_string(),
+        "jsonb" => "JSONB".to_string(),
+        "uuid" => "UUID".to_string(),
+        "bytea" => "BYTEA".to_string(),
+        "date" => "DATE".to_string(),
+        "time" => "TIME".to_string(),
+        "timetz" => "TIMETZ".to_string(),
+        _ => udt_name.to_string(),
+    }
+}
+
+/// PostgreSQL型名がSQLでダブルクォートを必要とするかを判定する
+///
+/// 大文字小文字が混在する型名やASCII英数字・アンダースコア以外の文字を含む型名は
+/// PostgreSQLが小文字に正規化するため、ケースを保持するにはクォートが必要。
+fn needs_pg_type_quoting(name: &str) -> bool {
+    if name.is_empty() {
+        return true;
+    }
+    let mut chars = name.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return true;
+    }
+    for c in chars {
+        if !c.is_ascii_alphanumeric() && c != '_' {
+            return true;
+        }
+    }
+    // 大文字小文字混在はクォートが必要（PostgreSQLは未クォート識別子を小文字に正規化するため）
+    let has_upper = name.chars().any(|c| c.is_ascii_uppercase());
+    let has_lower = name.chars().any(|c| c.is_ascii_lowercase());
+    has_upper && has_lower
+}
+
 /// PostgreSQL用型マッパー
 pub struct PostgresTypeMapper;
 
@@ -46,6 +98,21 @@ impl TypeMapper for PostgresTypeMapper {
             }),
             "bytea" => Some(ColumnType::BLOB),
             "uuid" => Some(ColumnType::UUID),
+            "ARRAY" => {
+                // ARRAY型: udt_name から要素型を取得し、正規化された論理型名として保存
+                // 例: "_text" -> "TEXT", "_int4" -> "INTEGER", "_MyCustomType" -> "MyCustomType"
+                // SQLクォートはformat_dialect_specificで生成時に適用する
+                if let Some(udt_name) = &metadata.udt_name {
+                    let raw = udt_name.strip_prefix('_').unwrap_or(udt_name);
+                    let element_type = map_pg_udt_to_canonical(raw);
+                    Some(ColumnType::DialectSpecific {
+                        kind: "ARRAY".to_string(),
+                        params: serde_json::json!({ "element_type": element_type }),
+                    })
+                } else {
+                    None
+                }
+            }
             "USER-DEFINED" => {
                 // ENUM型のチェック
                 if let (Some(enum_names), Some(udt_name)) =
@@ -119,6 +186,21 @@ impl TypeMapper for PostgresTypeMapper {
     }
 
     fn format_dialect_specific(&self, kind: &str, params: &serde_json::Value) -> String {
+        // ARRAY型: kind が "ARRAY" の場合
+        // element_type がある場合はその型名を使用し、必要に応じてクォートする
+        // element_type がない場合は TEXT[] にフォールバック
+        if kind.eq_ignore_ascii_case("ARRAY") {
+            if let Some(element_type) = params.get("element_type").and_then(|v| v.as_str()) {
+                let formatted = if needs_pg_type_quoting(element_type) {
+                    quote_identifier_postgres(element_type)
+                } else {
+                    element_type.to_string()
+                };
+                return format!("{}[]", formatted);
+            }
+            return "TEXT[]".to_string();
+        }
+
         // lengthパラメータがある場合（例: VARBIT(16)）
         if let Some(length) = params.get("length").and_then(|v| v.as_u64()) {
             return format!("{}({})", kind, length);
@@ -362,6 +444,171 @@ mod tests {
             params,
         };
 
+        assert_eq!(service.to_sql_type(&col_type), "TEXT[]");
+    }
+
+    #[test]
+    fn test_postgres_array_kind_with_element_type() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "ARRAY".to_string(),
+            params: serde_json::json!({ "element_type": "TEXT" }),
+        };
+        assert_eq!(service.to_sql_type(&col_type), "TEXT[]");
+    }
+
+    #[test]
+    fn test_postgres_array_kind_with_integer_element_type() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "ARRAY".to_string(),
+            params: serde_json::json!({ "element_type": "INTEGER" }),
+        };
+        assert_eq!(service.to_sql_type(&col_type), "INTEGER[]");
+    }
+
+    #[test]
+    fn test_postgres_parse_array_type() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("_text".to_string()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("ARRAY", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "ARRAY");
+                // 既知のudt_nameは正規化された論理型名として保存
+                assert_eq!(
+                    params.get("element_type").and_then(|v| v.as_str()),
+                    Some("TEXT")
+                );
+            }
+            _ => panic!("Expected DialectSpecific ARRAY type"),
+        }
+    }
+
+    #[test]
+    fn test_postgres_parse_array_integer_type() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("_int4".to_string()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("ARRAY", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "ARRAY");
+                assert_eq!(
+                    params.get("element_type").and_then(|v| v.as_str()),
+                    Some("INTEGER")
+                );
+            }
+            _ => panic!("Expected DialectSpecific ARRAY type"),
+        }
+    }
+
+    #[test]
+    fn test_postgres_parse_array_mixed_case_type() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("_MyCustomType".to_string()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("ARRAY", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "ARRAY");
+                // 不明な型はそのまま保存（クォートはformat時に適用）
+                assert_eq!(
+                    params.get("element_type").and_then(|v| v.as_str()),
+                    Some("MyCustomType")
+                );
+            }
+            _ => panic!("Expected DialectSpecific ARRAY type"),
+        }
+    }
+
+    #[test]
+    fn test_postgres_parse_array_special_char_type() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("_my-type".to_string()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("ARRAY", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "ARRAY");
+                // 特殊文字を含む型名もそのまま保存
+                assert_eq!(
+                    params.get("element_type").and_then(|v| v.as_str()),
+                    Some("my-type")
+                );
+            }
+            _ => panic!("Expected DialectSpecific ARRAY type"),
+        }
+    }
+
+    #[test]
+    fn test_postgres_array_roundtrip() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata {
+            udt_name: Some("_text".to_string()),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("ARRAY", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        // 既知の型は正規化されるため TEXT[] となる
+        assert_eq!(sql, "TEXT[]");
+    }
+
+    #[test]
+    fn test_postgres_array_roundtrip_int4() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata {
+            udt_name: Some("_int4".to_string()),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("ARRAY", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        assert_eq!(sql, "INTEGER[]");
+    }
+
+    #[test]
+    fn test_postgres_array_roundtrip_mixed_case() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata {
+            udt_name: Some("_MyEnum".to_string()),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("ARRAY", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        // 大文字小文字混在の型名はformat時にクォートされる
+        assert_eq!(sql, r#""MyEnum"[]"#);
+    }
+
+    #[test]
+    fn test_postgres_array_roundtrip_special_char() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata {
+            udt_name: Some("_my-type".to_string()),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("ARRAY", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        // 特殊文字を含む型名はformat時にクォートされる
+        assert_eq!(sql, r#""my-type"[]"#);
+    }
+
+    #[test]
+    fn test_postgres_array_fallback_no_element_type() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "ARRAY".to_string(),
+            params: serde_json::json!({}),
+        };
+        // element_type がない場合は TEXT[] にフォールバック
         assert_eq!(service.to_sql_type(&col_type), "TEXT[]");
     }
 
