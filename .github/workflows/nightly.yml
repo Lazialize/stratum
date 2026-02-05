@@ -9,6 +9,12 @@ name: Nightly Release
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - ".claude/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE/**"
+      - ".kiro/**"
+      - "**.md"
 
 permissions:
   contents: write

@@ -37,6 +37,14 @@ conventional_commits = true
 filter_unconventional = true
 split_commits = false
 commit_parsers = [
+  # Skip non-code changes
+  { message = "^chore\\(skills\\)", skip = true },
+  { message = "^chore\\(template\\)", skip = true },
+  { message = "^chore\\(claude\\)", skip = true },
+  { message = "^chore\\(kiro\\)", skip = true },
+  { message = "^chore\\(deps\\)", skip = true },
+  { message = "^chore\\(ci\\)", skip = true },
+  # Group mappings
   { message = "^feat", group = "<!-- 0 -->Features" },
   { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
   { message = "^perf", group = "<!-- 2 -->Performance" },
