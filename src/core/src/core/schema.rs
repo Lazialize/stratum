@@ -520,6 +520,105 @@ pub enum ColumnType {
     },
 }
 
+impl std::fmt::Display for ColumnType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ColumnType::INTEGER { precision: None } => write!(f, "INTEGER"),
+            ColumnType::INTEGER {
+                precision: Some(p),
+            } => write!(f, "INTEGER({})", p),
+            ColumnType::VARCHAR { length } => write!(f, "VARCHAR({})", length),
+            ColumnType::TEXT => write!(f, "TEXT"),
+            ColumnType::BOOLEAN => write!(f, "BOOLEAN"),
+            ColumnType::TIMESTAMP {
+                with_time_zone: Some(true),
+            } => write!(f, "TIMESTAMP WITH TIME ZONE"),
+            ColumnType::TIMESTAMP { .. } => write!(f, "TIMESTAMP"),
+            ColumnType::JSON => write!(f, "JSON"),
+            ColumnType::DECIMAL { precision, scale } => write!(f, "DECIMAL({}, {})", precision, scale),
+            ColumnType::FLOAT => write!(f, "FLOAT"),
+            ColumnType::DOUBLE => write!(f, "DOUBLE"),
+            ColumnType::CHAR { length } => write!(f, "CHAR({})", length),
+            ColumnType::DATE => write!(f, "DATE"),
+            ColumnType::TIME {
+                with_time_zone: Some(true),
+            } => write!(f, "TIME WITH TIME ZONE"),
+            ColumnType::TIME { .. } => write!(f, "TIME"),
+            ColumnType::BLOB => write!(f, "BLOB"),
+            ColumnType::UUID => write!(f, "UUID"),
+            ColumnType::JSONB => write!(f, "JSONB"),
+            ColumnType::Enum { name } => write!(f, "ENUM({})", name),
+            ColumnType::DialectSpecific { kind, params } => {
+                format_dialect_specific(f, kind, params)
+            }
+        }
+    }
+}
+
+/// DialectSpecific 型を SQL 風のフォーマットで出力
+fn format_dialect_specific(
+    f: &mut std::fmt::Formatter<'_>,
+    kind: &str,
+    params: &serde_json::Value,
+) -> std::fmt::Result {
+    // ENUM 型の特別処理: values 配列から ENUM('val1', 'val2', ...) 形式に変換
+    if kind.eq_ignore_ascii_case("enum") {
+        if let Some(values) = params.get("values").and_then(|v| v.as_array()) {
+            let quoted_values: Vec<String> = values
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| format!("'{}'", s))
+                .collect();
+            return write!(f, "ENUM({})", quoted_values.join(", "));
+        }
+    }
+
+    // その他の型：kind のみ、または kind(param) 形式
+    match params {
+        serde_json::Value::Null => {
+            write!(f, "{}", kind.to_uppercase())
+        }
+        serde_json::Value::Object(m) if m.is_empty() => {
+            write!(f, "{}", kind.to_uppercase())
+        }
+        serde_json::Value::Object(m) => {
+            // 単一のパラメータの場合はシンプルに表示
+            if m.len() == 1 {
+                if let Some((key, val)) = m.iter().next() {
+                    // length, precision などの数値パラメータ
+                    if let Some(n) = val.as_u64() {
+                        return write!(f, "{}({})", kind.to_uppercase(), n);
+                    }
+                    // 文字列パラメータ
+                    if let Some(s) = val.as_str() {
+                        return write!(f, "{}({})", kind.to_uppercase(), s);
+                    }
+                    // 配列パラメータ
+                    if let Some(arr) = val.as_array() {
+                        let items: Vec<String> = arr
+                            .iter()
+                            .map(|v| {
+                                if let Some(s) = v.as_str() {
+                                    format!("'{}'", s)
+                                } else {
+                                    v.to_string()
+                                }
+                            })
+                            .collect();
+                        return write!(f, "{}({})", kind.to_uppercase(), items.join(", "));
+                    }
+                    // その他の場合はキー名を含めて表示
+                    return write!(f, "{}({}: {})", kind.to_uppercase(), key, val);
+                }
+            }
+            // 複数パラメータの場合はカンマ区切りで表示
+            let params_str: Vec<String> = m.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
+            write!(f, "{}({})", kind.to_uppercase(), params_str.join(", "))
+        }
+        _ => write!(f, "{}({})", kind.to_uppercase(), params),
+    }
+}
+
 /// インデックス定義
 ///
 /// テーブルのインデックスを表現します。
@@ -987,5 +1086,127 @@ mod tests {
         let schema = Schema::new("1.0".to_string());
         assert_eq!(schema.view_count(), 0);
         assert!(schema.views.is_empty());
+    }
+
+    // ==========================================
+    // ColumnType Display テスト
+    // ==========================================
+
+    #[test]
+    fn test_column_type_display_integer() {
+        assert_eq!(
+            format!("{}", ColumnType::INTEGER { precision: None }),
+            "INTEGER"
+        );
+        assert_eq!(
+            format!("{}", ColumnType::INTEGER { precision: Some(32) }),
+            "INTEGER(32)"
+        );
+    }
+
+    #[test]
+    fn test_column_type_display_varchar() {
+        assert_eq!(
+            format!("{}", ColumnType::VARCHAR { length: 255 }),
+            "VARCHAR(255)"
+        );
+    }
+
+    #[test]
+    fn test_column_type_display_simple_types() {
+        assert_eq!(format!("{}", ColumnType::TEXT), "TEXT");
+        assert_eq!(format!("{}", ColumnType::BOOLEAN), "BOOLEAN");
+        assert_eq!(format!("{}", ColumnType::JSON), "JSON");
+        assert_eq!(format!("{}", ColumnType::FLOAT), "FLOAT");
+        assert_eq!(format!("{}", ColumnType::DOUBLE), "DOUBLE");
+        assert_eq!(format!("{}", ColumnType::DATE), "DATE");
+        assert_eq!(format!("{}", ColumnType::BLOB), "BLOB");
+        assert_eq!(format!("{}", ColumnType::UUID), "UUID");
+        assert_eq!(format!("{}", ColumnType::JSONB), "JSONB");
+    }
+
+    #[test]
+    fn test_column_type_display_decimal() {
+        assert_eq!(
+            format!("{}", ColumnType::DECIMAL { precision: 10, scale: 2 }),
+            "DECIMAL(10, 2)"
+        );
+    }
+
+    #[test]
+    fn test_column_type_display_char() {
+        assert_eq!(format!("{}", ColumnType::CHAR { length: 1 }), "CHAR(1)");
+    }
+
+    #[test]
+    fn test_column_type_display_timestamp() {
+        assert_eq!(
+            format!("{}", ColumnType::TIMESTAMP { with_time_zone: None }),
+            "TIMESTAMP"
+        );
+        assert_eq!(
+            format!("{}", ColumnType::TIMESTAMP { with_time_zone: Some(false) }),
+            "TIMESTAMP"
+        );
+        assert_eq!(
+            format!("{}", ColumnType::TIMESTAMP { with_time_zone: Some(true) }),
+            "TIMESTAMP WITH TIME ZONE"
+        );
+    }
+
+    #[test]
+    fn test_column_type_display_time() {
+        assert_eq!(
+            format!("{}", ColumnType::TIME { with_time_zone: None }),
+            "TIME"
+        );
+        assert_eq!(
+            format!("{}", ColumnType::TIME { with_time_zone: Some(true) }),
+            "TIME WITH TIME ZONE"
+        );
+    }
+
+    #[test]
+    fn test_column_type_display_enum_reference() {
+        assert_eq!(
+            format!("{}", ColumnType::Enum { name: "status".to_string() }),
+            "ENUM(status)"
+        );
+    }
+
+    #[test]
+    fn test_column_type_display_dialect_specific_enum() {
+        let enum_type = ColumnType::DialectSpecific {
+            kind: "ENUM".to_string(),
+            params: serde_json::json!({"values": ["draft", "published", "archived"]}),
+        };
+        assert_eq!(
+            format!("{}", enum_type),
+            "ENUM('draft', 'published', 'archived')"
+        );
+    }
+
+    #[test]
+    fn test_column_type_display_dialect_specific_simple() {
+        let serial_type = ColumnType::DialectSpecific {
+            kind: "SERIAL".to_string(),
+            params: serde_json::Value::Null,
+        };
+        assert_eq!(format!("{}", serial_type), "SERIAL");
+
+        let tinyint_type = ColumnType::DialectSpecific {
+            kind: "tinyint".to_string(),
+            params: serde_json::json!({}),
+        };
+        assert_eq!(format!("{}", tinyint_type), "TINYINT");
+    }
+
+    #[test]
+    fn test_column_type_display_dialect_specific_with_length() {
+        let varbit_type = ColumnType::DialectSpecific {
+            kind: "VARBIT".to_string(),
+            params: serde_json::json!({"length": 64}),
+        };
+        assert_eq!(format!("{}", varbit_type), "VARBIT(64)");
     }
 }

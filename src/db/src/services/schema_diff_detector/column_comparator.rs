@@ -206,8 +206,8 @@ impl SchemaDiffDetectorService {
         // 型の変更を検出
         if old_column.column_type != new_column.column_type {
             changes.push(ColumnChange::TypeChanged {
-                old_type: format!("{:?}", old_column.column_type),
-                new_type: format!("{:?}", new_column.column_type),
+                old_type: format!("{}", old_column.column_type),
+                new_type: format!("{}", new_column.column_type),
             });
         }
 
