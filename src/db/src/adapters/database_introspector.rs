@@ -522,7 +522,8 @@ impl DatabaseIntrospector for MySqlIntrospector {
                 column_default,
                 character_maximum_length,
                 numeric_precision,
-                numeric_scale
+                numeric_scale,
+                extra
             FROM information_schema.columns
             WHERE table_name = ? AND table_schema = DATABASE()
             ORDER BY ordinal_position
@@ -532,16 +533,26 @@ impl DatabaseIntrospector for MySqlIntrospector {
 
         let columns = rows
             .iter()
-            .map(|row| RawColumnInfo {
-                name: mysql_get_string(row, 0),
-                data_type: mysql_get_string(row, 1),
-                is_nullable: mysql_get_string(row, 2) == "YES",
-                default_value: mysql_get_optional_string(row, 3),
-                char_max_length: row.get(4),
-                numeric_precision: row.get(5),
-                numeric_scale: row.get(6),
-                udt_name: None,
-                auto_increment: None,
+            .map(|row| {
+                // EXTRA カラムから auto_increment を検出
+                let extra = mysql_get_optional_string(row, 7);
+                let auto_increment = extra
+                    .as_ref()
+                    .map(|e| e.to_lowercase().contains("auto_increment"))
+                    .filter(|&b| b)
+                    .map(|_| true);
+
+                RawColumnInfo {
+                    name: mysql_get_string(row, 0),
+                    data_type: mysql_get_string(row, 1),
+                    is_nullable: mysql_get_string(row, 2) == "YES",
+                    default_value: mysql_get_optional_string(row, 3),
+                    char_max_length: row.get(4),
+                    numeric_precision: row.get(5),
+                    numeric_scale: row.get(6),
+                    udt_name: None,
+                    auto_increment,
+                }
             })
             .collect();
 
