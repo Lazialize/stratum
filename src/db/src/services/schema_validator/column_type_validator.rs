@@ -61,16 +61,24 @@ pub fn validate_column_types(schema: &Schema) -> ValidationResult {
             }
 
             // DialectSpecificのkind値の検証
-            if let ColumnType::DialectSpecific { kind, .. } = &column.column_type {
+            if let ColumnType::DialectSpecific { kind, params } = &column.column_type {
                 let kind_upper = kind.to_uppercase();
+
+                // MySQL ENUM with values is a valid dialect-specific type
+                // Skip warning if kind is "ENUM" and params contains "values"
+                let is_mysql_enum_with_values =
+                    kind_upper == "ENUM" && params.get("values").is_some_and(|v| v.is_array());
+
                 if KNOWN_COLUMN_TYPES.contains(&kind_upper.as_str()) {
-                    result.add_warning(ValidationWarning::possible_typo(
-                        format!(
-                            "Column '{}.{}' uses DialectSpecific with kind '{}' which matches a known type. Did you mean to use ColumnType::{}?",
-                            table_name, column.name, kind, kind_upper
-                        ),
-                        Some(ErrorLocation::with_table_and_column(table_name, &column.name)),
-                    ));
+                    if !is_mysql_enum_with_values {
+                        result.add_warning(ValidationWarning::possible_typo(
+                            format!(
+                                "Column '{}.{}' uses DialectSpecific with kind '{}' which matches a known type. Did you mean to use ColumnType::{}?",
+                                table_name, column.name, kind, kind_upper
+                            ),
+                            Some(ErrorLocation::with_table_and_column(table_name, &column.name)),
+                        ));
+                    }
                 } else {
                     // 未知の型名の場合、データベース実行時まで検証されない旨の警告を出す
                     result.add_warning(ValidationWarning::dialect_specific(
@@ -517,5 +525,58 @@ mod tests {
         assert!(result.warning_count() > 0);
         assert!(result.warnings[0].message.contains("dialect-specific type"));
         assert!(result.warnings[0].message.contains("not validated"));
+    }
+
+    #[test]
+    fn test_validate_mysql_enum_with_values_no_warning() {
+        // MySQL ENUM with values is a valid dialect-specific type
+        // and should NOT trigger the "matches a known type" warning
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("posts".to_string());
+        table.add_column(Column::new(
+            "status".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "ENUM".to_string(),
+                params: serde_json::json!({
+                    "values": ["draft", "published", "archived"]
+                }),
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let result = validate_column_types(&schema);
+
+        assert!(result.is_valid());
+        assert_eq!(
+            result.warning_count(),
+            0,
+            "MySQL ENUM with values should not trigger any warning"
+        );
+    }
+
+    #[test]
+    fn test_validate_dialect_specific_enum_without_values_warns() {
+        // DialectSpecific ENUM without values should still warn
+        // (this could be a typo for ColumnType::Enum)
+        let mut schema = Schema::new("1.0".to_string());
+
+        let mut table = Table::new("users".to_string());
+        table.add_column(Column::new(
+            "status".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "ENUM".to_string(),
+                params: serde_json::json!({}),
+            },
+            false,
+        ));
+        schema.add_table(table);
+
+        let result = validate_column_types(&schema);
+
+        assert!(result.is_valid());
+        assert!(result.warning_count() > 0);
+        assert!(result.warnings[0].message.contains("matches a known type"));
     }
 }
