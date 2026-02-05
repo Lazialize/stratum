@@ -517,3 +517,97 @@ async fn test_mysql_auto_increment_introspection() {
         "counter column should not have auto_increment"
     );
 }
+
+/// MySQL: ENUM値がイントロスペクトされることを確認する回帰テスト
+///
+/// Issue #12: MySQL `export` converts ENUM columns to TEXT, losing value constraints
+/// この問題を修正するため、information_schema.columnsのCOLUMN_TYPEカラムから
+/// ENUM値を抽出するようにした。
+#[tokio::test]
+#[ignore]
+async fn test_mysql_enum_introspection() {
+    use strata::adapters::database_introspector::create_introspector;
+    use strata::core::config::Dialect;
+
+    let container = Mysql::default()
+        .start()
+        .await
+        .expect("Failed to start MySQL container");
+
+    let host_port = container
+        .get_host_port_ipv4(3306)
+        .await
+        .expect("Failed to get container port");
+
+    let connection_string = format!("mysql://root@127.0.0.1:{}/mysql", host_port);
+
+    let mut conn = MySqlConnection::connect(&connection_string)
+        .await
+        .expect("Failed to connect to MySQL");
+
+    // ENUMカラムを持つテーブルを作成
+    let create_table_sql = r#"
+        CREATE TABLE test_enum_introspection (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            status ENUM('draft', 'published', 'archived') NOT NULL,
+            priority ENUM('low', 'medium', 'high') NULL
+        )
+    "#;
+
+    sqlx::query(create_table_sql)
+        .execute(&mut conn)
+        .await
+        .expect("Failed to create table with ENUM columns");
+
+    // AnyPoolを使用してイントロスペクターをテスト
+    sqlx::any::install_default_drivers();
+    let any_connection_string = format!("mysql://root@127.0.0.1:{}/mysql", host_port);
+    let pool = sqlx::any::AnyPoolOptions::new()
+        .max_connections(1)
+        .connect(&any_connection_string)
+        .await
+        .expect("Failed to create AnyPool");
+
+    // MySQLイントロスペクターを使用してカラム情報を取得
+    let introspector = create_introspector(Dialect::MySQL);
+    let columns = introspector
+        .get_columns(&pool, "test_enum_introspection")
+        .await
+        .expect("Failed to get columns");
+
+    // カラムが3つあることを確認
+    assert_eq!(columns.len(), 3);
+
+    // statusカラムのenum_valuesが正しく取得されていることを確認
+    let status_column = columns.iter().find(|c| c.name == "status").unwrap();
+    assert_eq!(status_column.data_type, "enum");
+    assert_eq!(
+        status_column.enum_values,
+        Some(vec![
+            "draft".to_string(),
+            "published".to_string(),
+            "archived".to_string()
+        ]),
+        "status column should have enum_values = ['draft', 'published', 'archived']"
+    );
+
+    // priorityカラムのenum_valuesも正しく取得されていることを確認
+    let priority_column = columns.iter().find(|c| c.name == "priority").unwrap();
+    assert_eq!(priority_column.data_type, "enum");
+    assert_eq!(
+        priority_column.enum_values,
+        Some(vec![
+            "low".to_string(),
+            "medium".to_string(),
+            "high".to_string()
+        ]),
+        "priority column should have enum_values = ['low', 'medium', 'high']"
+    );
+
+    // idカラムのenum_valuesがNoneであることを確認（非ENUMカラム）
+    let id_column = columns.iter().find(|c| c.name == "id").unwrap();
+    assert!(
+        id_column.enum_values.is_none(),
+        "id column should not have enum_values"
+    );
+}

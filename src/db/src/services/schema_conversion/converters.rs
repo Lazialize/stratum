@@ -21,6 +21,7 @@ impl SchemaConversionService {
             } else {
                 Some(self.enum_names.clone())
             },
+            enum_values: raw.enum_values.clone(),
         };
 
         let column_type = self

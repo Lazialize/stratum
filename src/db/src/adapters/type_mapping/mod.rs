@@ -32,6 +32,8 @@ pub struct TypeMetadata {
     pub udt_name: Option<String>,
     /// 既知のENUM型名のセット（PostgreSQL用）
     pub enum_names: Option<HashSet<String>>,
+    /// ENUM値のリスト（MySQL用）
+    pub enum_values: Option<Vec<String>>,
 }
 
 /// 方言固有の型マッピング拡張
