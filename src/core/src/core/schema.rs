@@ -524,9 +524,7 @@ impl std::fmt::Display for ColumnType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ColumnType::INTEGER { precision: None } => write!(f, "INTEGER"),
-            ColumnType::INTEGER {
-                precision: Some(p),
-            } => write!(f, "INTEGER({})", p),
+            ColumnType::INTEGER { precision: Some(p) } => write!(f, "INTEGER({})", p),
             ColumnType::VARCHAR { length } => write!(f, "VARCHAR({})", length),
             ColumnType::TEXT => write!(f, "TEXT"),
             ColumnType::BOOLEAN => write!(f, "BOOLEAN"),
@@ -535,7 +533,9 @@ impl std::fmt::Display for ColumnType {
             } => write!(f, "TIMESTAMP WITH TIME ZONE"),
             ColumnType::TIMESTAMP { .. } => write!(f, "TIMESTAMP"),
             ColumnType::JSON => write!(f, "JSON"),
-            ColumnType::DECIMAL { precision, scale } => write!(f, "DECIMAL({}, {})", precision, scale),
+            ColumnType::DECIMAL { precision, scale } => {
+                write!(f, "DECIMAL({}, {})", precision, scale)
+            }
             ColumnType::FLOAT => write!(f, "FLOAT"),
             ColumnType::DOUBLE => write!(f, "DOUBLE"),
             ColumnType::CHAR { length } => write!(f, "CHAR({})", length),
@@ -1099,7 +1099,12 @@ mod tests {
             "INTEGER"
         );
         assert_eq!(
-            format!("{}", ColumnType::INTEGER { precision: Some(32) }),
+            format!(
+                "{}",
+                ColumnType::INTEGER {
+                    precision: Some(32)
+                }
+            ),
             "INTEGER(32)"
         );
     }
@@ -1128,7 +1133,13 @@ mod tests {
     #[test]
     fn test_column_type_display_decimal() {
         assert_eq!(
-            format!("{}", ColumnType::DECIMAL { precision: 10, scale: 2 }),
+            format!(
+                "{}",
+                ColumnType::DECIMAL {
+                    precision: 10,
+                    scale: 2
+                }
+            ),
             "DECIMAL(10, 2)"
         );
     }
@@ -1141,15 +1152,30 @@ mod tests {
     #[test]
     fn test_column_type_display_timestamp() {
         assert_eq!(
-            format!("{}", ColumnType::TIMESTAMP { with_time_zone: None }),
+            format!(
+                "{}",
+                ColumnType::TIMESTAMP {
+                    with_time_zone: None
+                }
+            ),
             "TIMESTAMP"
         );
         assert_eq!(
-            format!("{}", ColumnType::TIMESTAMP { with_time_zone: Some(false) }),
+            format!(
+                "{}",
+                ColumnType::TIMESTAMP {
+                    with_time_zone: Some(false)
+                }
+            ),
             "TIMESTAMP"
         );
         assert_eq!(
-            format!("{}", ColumnType::TIMESTAMP { with_time_zone: Some(true) }),
+            format!(
+                "{}",
+                ColumnType::TIMESTAMP {
+                    with_time_zone: Some(true)
+                }
+            ),
             "TIMESTAMP WITH TIME ZONE"
         );
     }
@@ -1157,11 +1183,21 @@ mod tests {
     #[test]
     fn test_column_type_display_time() {
         assert_eq!(
-            format!("{}", ColumnType::TIME { with_time_zone: None }),
+            format!(
+                "{}",
+                ColumnType::TIME {
+                    with_time_zone: None
+                }
+            ),
             "TIME"
         );
         assert_eq!(
-            format!("{}", ColumnType::TIME { with_time_zone: Some(true) }),
+            format!(
+                "{}",
+                ColumnType::TIME {
+                    with_time_zone: Some(true)
+                }
+            ),
             "TIME WITH TIME ZONE"
         );
     }
@@ -1169,7 +1205,12 @@ mod tests {
     #[test]
     fn test_column_type_display_enum_reference() {
         assert_eq!(
-            format!("{}", ColumnType::Enum { name: "status".to_string() }),
+            format!(
+                "{}",
+                ColumnType::Enum {
+                    name: "status".to_string()
+                }
+            ),
             "ENUM(status)"
         );
     }
