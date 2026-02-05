@@ -31,6 +31,69 @@ fn mysql_get_optional_string(row: &sqlx::any::AnyRow, index: usize) -> Option<St
     None
 }
 
+/// MySQL の COLUMN_TYPE から ENUM 値を抽出する
+/// 例: "enum('draft','published','archived')" -> ["draft", "published", "archived"]
+fn parse_mysql_enum_values(column_type: &str) -> Option<Vec<String>> {
+    // enum('value1','value2',...) の形式をパース
+    let trimmed = column_type.trim();
+    if !trimmed.to_lowercase().starts_with("enum(") {
+        return None;
+    }
+
+    // 括弧内の内容を取得
+    let start = trimmed.find('(')?;
+    let end = trimmed.rfind(')')?;
+    if start >= end {
+        return None;
+    }
+
+    let content = &trimmed[start + 1..end];
+    let mut values = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+    let mut chars = content.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' if !in_quote => {
+                in_quote = true;
+            }
+            '\'' if in_quote => {
+                // エスケープされたシングルクォート ('')をチェック
+                if chars.peek() == Some(&'\'') {
+                    current.push('\'');
+                    chars.next();
+                } else {
+                    in_quote = false;
+                }
+            }
+            ',' if !in_quote => {
+                if !current.is_empty() {
+                    values.push(current);
+                    current = String::new();
+                }
+            }
+            _ if in_quote => {
+                current.push(c);
+            }
+            _ => {
+                // クォート外の空白はスキップ
+            }
+        }
+    }
+
+    // 最後の値を追加
+    if !current.is_empty() {
+        values.push(current);
+    }
+
+    if values.is_empty() {
+        None
+    } else {
+        Some(values)
+    }
+}
+
 /// 生のカラム情報（DB固有フォーマット）
 ///
 /// データベースから取得したカラム情報を保持する構造体。
@@ -55,6 +118,8 @@ pub struct RawColumnInfo {
     pub udt_name: Option<String>,
     /// 自動増分フラグ（SQLite AUTOINCREMENT検出用）
     pub auto_increment: Option<bool>,
+    /// ENUM値のリスト（MySQL用）
+    pub enum_values: Option<Vec<String>>,
 }
 
 /// 生のインデックス情報（DB固有フォーマット）
@@ -211,6 +276,7 @@ impl DatabaseIntrospector for PostgresIntrospector {
                 numeric_scale: row.get(6),
                 udt_name: row.get(7),
                 auto_increment: None,
+                enum_values: None, // PostgreSQLはget_enums()で別途取得
             })
             .collect();
 
@@ -523,7 +589,8 @@ impl DatabaseIntrospector for MySqlIntrospector {
                 character_maximum_length,
                 numeric_precision,
                 numeric_scale,
-                extra
+                extra,
+                column_type
             FROM information_schema.columns
             WHERE table_name = ? AND table_schema = DATABASE()
             ORDER BY ordinal_position
@@ -542,9 +609,18 @@ impl DatabaseIntrospector for MySqlIntrospector {
                     .filter(|&b| b)
                     .map(|_| true);
 
+                // data_type が enum の場合、column_type から値を抽出
+                let data_type = mysql_get_string(row, 1);
+                let enum_values = if data_type.to_lowercase() == "enum" {
+                    let column_type = mysql_get_string(row, 8);
+                    parse_mysql_enum_values(&column_type)
+                } else {
+                    None
+                };
+
                 RawColumnInfo {
                     name: mysql_get_string(row, 0),
-                    data_type: mysql_get_string(row, 1),
+                    data_type,
                     is_nullable: mysql_get_string(row, 2) == "YES",
                     default_value: mysql_get_optional_string(row, 3),
                     char_max_length: row.get(4),
@@ -552,6 +628,7 @@ impl DatabaseIntrospector for MySqlIntrospector {
                     numeric_scale: row.get(6),
                     udt_name: None,
                     auto_increment,
+                    enum_values,
                 }
             })
             .collect();
@@ -819,6 +896,7 @@ impl DatabaseIntrospector for SqliteIntrospector {
                     numeric_scale: None,
                     udt_name: None,
                     auto_increment,
+                    enum_values: None, // SQLiteはENUM型をサポートしない
                 }
             })
             .collect();
@@ -1023,6 +1101,7 @@ mod tests {
             numeric_scale: None,
             udt_name: None,
             auto_increment: None,
+            enum_values: None,
         };
         assert!(format!("{:?}", column).contains("id"));
     }
@@ -1039,6 +1118,7 @@ mod tests {
             numeric_scale: None,
             udt_name: None,
             auto_increment: None,
+            enum_values: None,
         };
         let cloned = column.clone();
         assert_eq!(cloned.name, "email");
@@ -1203,5 +1283,62 @@ mod tests {
         let sql = "CREATE VIEW my_view AS\tSELECT id FROM users";
         let definition = super::extract_view_definition_from_create_sql(sql);
         assert_eq!(definition, "SELECT id FROM users");
+    }
+
+    // =========================================================================
+    // parse_mysql_enum_values テスト
+    // =========================================================================
+
+    #[test]
+    fn test_parse_mysql_enum_values_simple() {
+        let result = super::parse_mysql_enum_values("enum('draft','published','archived')");
+        assert_eq!(
+            result,
+            Some(vec![
+                "draft".to_string(),
+                "published".to_string(),
+                "archived".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_mysql_enum_values_with_spaces() {
+        let result = super::parse_mysql_enum_values("enum('a', 'b', 'c')");
+        assert_eq!(
+            result,
+            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_parse_mysql_enum_values_case_insensitive() {
+        let result = super::parse_mysql_enum_values("ENUM('yes','no')");
+        assert_eq!(result, Some(vec!["yes".to_string(), "no".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_mysql_enum_values_escaped_quote() {
+        // MySQL では内部のシングルクォートを '' でエスケープ
+        let result = super::parse_mysql_enum_values("enum('it''s','ok')");
+        assert_eq!(result, Some(vec!["it's".to_string(), "ok".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_mysql_enum_values_single_value() {
+        let result = super::parse_mysql_enum_values("enum('only')");
+        assert_eq!(result, Some(vec!["only".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_mysql_enum_values_not_enum() {
+        let result = super::parse_mysql_enum_values("varchar(255)");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_mysql_enum_values_empty() {
+        let result = super::parse_mysql_enum_values("enum()");
+        assert_eq!(result, None);
     }
 }

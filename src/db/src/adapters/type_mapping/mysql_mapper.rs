@@ -51,6 +51,18 @@ impl TypeMapper for MySqlTypeMapper {
                 with_time_zone: None,
             }),
             "blob" | "longblob" | "mediumblob" => Some(ColumnType::BLOB),
+            "enum" => {
+                // MySQL の ENUM 型を DialectSpecific として返す
+                if let Some(ref values) = metadata.enum_values {
+                    Some(ColumnType::DialectSpecific {
+                        kind: "ENUM".to_string(),
+                        params: serde_json::json!({ "values": values }),
+                    })
+                } else {
+                    // ENUM値が取得できない場合は TEXT にフォールバック
+                    Some(ColumnType::TEXT)
+                }
+            }
             _ => None,
         }
     }
@@ -457,5 +469,40 @@ mod tests {
         let params = serde_json::json!({});
         let result = mapper.format_dialect_specific("TINYINT", &params);
         assert_eq!(result, "TINYINT");
+    }
+
+    #[test]
+    fn test_mysql_parse_enum_with_values() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            enum_values: Some(vec![
+                "draft".to_string(),
+                "published".to_string(),
+                "archived".to_string(),
+            ]),
+            ..Default::default()
+        };
+
+        let result = mapper.parse_sql_type("enum", &metadata).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "ENUM");
+                let values = params.get("values").unwrap().as_array().unwrap();
+                assert_eq!(values.len(), 3);
+                assert_eq!(values[0].as_str().unwrap(), "draft");
+                assert_eq!(values[1].as_str().unwrap(), "published");
+                assert_eq!(values[2].as_str().unwrap(), "archived");
+            }
+            _ => panic!("Expected DialectSpecific, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_mysql_parse_enum_without_values() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+
+        let result = mapper.parse_sql_type("enum", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::TEXT));
     }
 }

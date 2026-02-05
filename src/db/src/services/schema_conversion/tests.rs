@@ -41,6 +41,7 @@ fn test_convert_column_integer() {
         numeric_scale: None,
         udt_name: None,
         auto_increment: None,
+        enum_values: None,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -63,6 +64,7 @@ fn test_convert_column_varchar() {
         numeric_scale: None,
         udt_name: None,
         auto_increment: None,
+        enum_values: None,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -93,6 +95,7 @@ fn test_convert_column_enum() {
         numeric_scale: None,
         udt_name: Some("status".to_string()),
         auto_increment: None,
+        enum_values: None,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -116,6 +119,7 @@ fn test_convert_column_sqlite_integer() {
         numeric_scale: None,
         udt_name: None,
         auto_increment: None,
+        enum_values: None,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -137,6 +141,7 @@ fn test_convert_column_mysql_varchar() {
         numeric_scale: None,
         udt_name: None,
         auto_increment: None,
+        enum_values: None,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -319,6 +324,7 @@ fn test_convert_table_minimal() {
             numeric_scale: None,
             udt_name: None,
             auto_increment: None,
+            enum_values: None,
         }],
         indexes: vec![],
         constraints: vec![],
@@ -348,6 +354,7 @@ fn test_convert_table_with_all_elements() {
                 numeric_scale: None,
                 udt_name: None,
                 auto_increment: None,
+                enum_values: None,
             },
             RawColumnInfo {
                 name: "title".to_string(),
@@ -359,6 +366,7 @@ fn test_convert_table_with_all_elements() {
                 numeric_scale: None,
                 udt_name: None,
                 auto_increment: None,
+                enum_values: None,
             },
             RawColumnInfo {
                 name: "user_id".to_string(),
@@ -370,6 +378,7 @@ fn test_convert_table_with_all_elements() {
                 numeric_scale: None,
                 udt_name: None,
                 auto_increment: None,
+                enum_values: None,
             },
         ],
         indexes: vec![RawIndexInfo {
@@ -429,6 +438,7 @@ fn test_build_schema_with_tables() {
                 numeric_scale: None,
                 udt_name: None,
                 auto_increment: None,
+                enum_values: None,
             }],
             indexes: vec![],
             constraints: vec![],
@@ -445,6 +455,7 @@ fn test_build_schema_with_tables() {
                 numeric_scale: None,
                 udt_name: None,
                 auto_increment: None,
+                enum_values: None,
             }],
             indexes: vec![],
             constraints: vec![],
@@ -499,6 +510,7 @@ fn test_build_schema_complex() {
                 numeric_scale: None,
                 udt_name: None,
                 auto_increment: None,
+                enum_values: None,
             },
             RawColumnInfo {
                 name: "status".to_string(),
@@ -510,6 +522,7 @@ fn test_build_schema_complex() {
                 numeric_scale: None,
                 udt_name: Some("status".to_string()),
                 auto_increment: None,
+                enum_values: None,
             },
         ],
         indexes: vec![RawIndexInfo {
