@@ -25,3 +25,5 @@ Cargo.lock
 
 # Distribution directory
 dist/
+**/CLAUDE.md
+!./CLAUDE.md
