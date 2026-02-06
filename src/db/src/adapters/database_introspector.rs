@@ -12,8 +12,9 @@ use sqlx::AnyPool;
 use sqlx::Row;
 
 /// 識別子検出用の正規表現（コンパイル済みキャッシュ）
+/// Unicode 識別子 (XID_Start/XID_Continue) とアンダースコアを許可する。
 static IDENTIFIER_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b").unwrap());
+    LazyLock::new(|| Regex::new(r"\b([\p{XID_Start}_][\p{XID_Continue}_]*)\b").unwrap());
 
 /// MySQL の information_schema は多くのカラムを BLOB/VARBINARY 型で返す。
 /// sqlx の Any ドライバは String として直接デコードできないため、
