@@ -100,6 +100,32 @@ fn parse_mysql_enum_values(column_type: &str) -> Option<Vec<String>> {
     }
 }
 
+/// MySQL の CHECK 式からカラム名を推定する
+///
+/// MySQL の check_clause にはバッククォートで囲まれたカラム名が含まれる。
+/// 例: "(`balance` >= 0)" -> ["balance"]
+fn extract_columns_from_check_expression(expression: &str, _table_name: &str) -> Vec<String> {
+    let mut columns = Vec::new();
+    let mut chars = expression.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '`' {
+            let mut name = String::new();
+            for c in chars.by_ref() {
+                if c == '`' {
+                    break;
+                }
+                name.push(c);
+            }
+            if !name.is_empty() && !columns.contains(&name) {
+                columns.push(name);
+            }
+        }
+    }
+
+    columns
+}
+
 /// 生のカラム情報（DB固有フォーマット）
 ///
 /// データベースから取得したカラム情報を保持する構造体。
@@ -468,6 +494,61 @@ impl DatabaseIntrospector for PostgresIntrospector {
             constraints.push(RawConstraintInfo::Unique { columns });
         }
 
+        // CHECK制約
+        // pg_constraintからCHECK制約を取得（contype = 'c'）
+        // string_agg でカラム名をカンマ区切りで返す（Any ドライバは配列非対応）
+        let check_sql = r#"
+            SELECT
+                con.conname::text,
+                pg_get_constraintdef(con.oid)::text AS check_expression,
+                string_agg(a.attname::text, ',' ORDER BY u.ord) AS columns
+            FROM pg_constraint con
+            JOIN pg_class c ON c.oid = con.conrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            CROSS JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
+            JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = u.attnum
+            WHERE con.contype = 'c'
+                AND c.relname = $1
+                AND n.nspname = 'public'
+            GROUP BY con.conname, con.oid
+            ORDER BY con.conname
+        "#;
+
+        let check_rows = sqlx::query(check_sql)
+            .bind(table_name)
+            .fetch_all(pool)
+            .await?;
+
+        for row in check_rows {
+            let _constraint_name: String = row.get(0);
+            let raw_expression: String = row.get(1);
+            let columns_str: String = row.get(2);
+            let columns: Vec<String> = columns_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+
+            // pg_get_constraintdef returns "CHECK ((expression))"
+            // Strip the outer "CHECK (" prefix and ")" suffix to get the actual expression
+            let expression = raw_expression
+                .strip_prefix("CHECK (")
+                .and_then(|s| s.strip_suffix(')'))
+                .unwrap_or(&raw_expression)
+                .to_string();
+
+            // PostgreSQL wraps expressions in extra parentheses, strip those too
+            let expression = expression
+                .strip_prefix('(')
+                .and_then(|s| s.strip_suffix(')'))
+                .unwrap_or(&expression)
+                .to_string();
+
+            constraints.push(RawConstraintInfo::Check {
+                columns,
+                expression,
+            });
+        }
+
         Ok(constraints)
     }
 
@@ -798,6 +879,51 @@ impl DatabaseIntrospector for MySqlIntrospector {
             constraints.push(RawConstraintInfo::Unique { columns });
         }
 
+        // CHECK制約 (MySQL 8.0.16+)
+        // information_schema.check_constraints と table_constraints を結合して取得
+        let check_sql = r#"
+            SELECT
+                cc.constraint_name,
+                cc.check_clause
+            FROM information_schema.check_constraints cc
+            JOIN information_schema.table_constraints tc
+                ON cc.constraint_name = tc.constraint_name
+                AND cc.constraint_schema = tc.constraint_schema
+            WHERE tc.table_name = ? AND tc.table_schema = DATABASE()
+                AND tc.constraint_type = 'CHECK'
+            ORDER BY cc.constraint_name
+        "#;
+
+        let check_rows = sqlx::query(check_sql)
+            .bind(table_name)
+            .fetch_all(pool)
+            .await?;
+
+        for row in &check_rows {
+            let constraint_name = mysql_get_string(row, 0);
+            let check_clause = mysql_get_string(row, 1);
+
+            // MySQL auto-generates NOT NULL-like constraints with names ending in "_chk_N"
+            // for ENUM columns. Filter out constraints that are just IS NOT NULL checks.
+            let trimmed = check_clause.trim();
+            if trimmed.ends_with("is not null")
+                || trimmed.ends_with("IS NOT NULL")
+                || constraint_name.ends_with("_chk_1")
+                    && (trimmed.contains("in (") || trimmed.contains("IN ("))
+            {
+                continue;
+            }
+
+            // Try to extract column names from the expression
+            // For simple single-column checks like "(balance >= 0)", extract column name
+            let columns = extract_columns_from_check_expression(&check_clause, table_name);
+
+            constraints.push(RawConstraintInfo::Check {
+                columns,
+                expression: check_clause,
+            });
+        }
+
         Ok(constraints)
     }
 
@@ -1012,6 +1138,22 @@ impl DatabaseIntrospector for SqliteIntrospector {
             });
         }
 
+        // CHECK制約
+        // sqlite_masterからCREATE TABLE文を取得してCHECK制約をパースする
+        let create_sql_query = format!(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = {}",
+            quoted_table
+        );
+        let create_rows = sqlx::query(&create_sql_query).fetch_all(pool).await?;
+
+        if let Some(row) = create_rows.first() {
+            let create_sql: Option<String> = row.get(0);
+            if let Some(sql) = create_sql {
+                let check_constraints = parse_sqlite_check_constraints(&sql);
+                constraints.extend(check_constraints);
+            }
+        }
+
         Ok(constraints)
     }
 
@@ -1064,6 +1206,86 @@ fn extract_view_definition_from_create_sql(create_sql: &str) -> String {
         // フォールバック: そのまま返す
         create_sql.to_string()
     }
+}
+
+/// SQLite の CREATE TABLE 文からCHECK制約をパースする
+///
+/// テーブルレベルのCHECK制約を抽出する。
+/// 例: `CREATE TABLE t (id INTEGER, balance REAL, CHECK (balance >= 0))`
+fn parse_sqlite_check_constraints(create_sql: &str) -> Vec<RawConstraintInfo> {
+    let mut results = Vec::new();
+
+    // 大文字小文字を無視して CHECK キーワードを検索
+    // テーブルレベルの CHECK 制約: CHECK (expression) の形式
+    let re = regex::Regex::new(r"(?i)\bCHECK\s*\(").unwrap();
+
+    for m in re.find_iter(create_sql) {
+        let start = m.end(); // '(' の直後
+                             // 対応する閉じ括弧を見つける（ネスト対応）
+        let mut depth = 1;
+        let mut end = start;
+        for (i, ch) in create_sql[start..].char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = start + i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if depth == 0 {
+            let expression = create_sql[start..end].trim().to_string();
+
+            // 式からカラム名を推定（識別子として使われている単語を抽出）
+            let columns = extract_columns_from_sqlite_check(&expression);
+
+            results.push(RawConstraintInfo::Check {
+                columns,
+                expression,
+            });
+        }
+    }
+
+    results
+}
+
+/// SQLite CHECK式からカラム名を推定する
+///
+/// SQLのキーワードや数値リテラルを除外し、識別子と思われる単語を抽出する
+fn extract_columns_from_sqlite_check(expression: &str) -> Vec<String> {
+    let keywords = [
+        "AND",
+        "OR",
+        "NOT",
+        "IN",
+        "IS",
+        "NULL",
+        "LIKE",
+        "BETWEEN",
+        "EXISTS",
+        "TRUE",
+        "FALSE",
+        "CHECK",
+        "CONSTRAINT",
+    ];
+
+    let re = regex::Regex::new(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b").unwrap();
+    let mut columns = Vec::new();
+
+    for cap in re.captures_iter(expression) {
+        let word = &cap[1];
+        let upper = word.to_uppercase();
+        if !keywords.contains(&upper.as_str()) && !columns.contains(&word.to_string()) {
+            columns.push(word.to_string());
+        }
+    }
+
+    columns
 }
 
 #[cfg(test)]
@@ -1372,6 +1594,112 @@ mod tests {
         assert_eq!(
             result,
             Some(vec!["a".to_string(), "b".to_string(), "".to_string()])
+        );
+    }
+
+    // =========================================================================
+    // parse_sqlite_check_constraints テスト
+    // =========================================================================
+
+    #[test]
+    fn test_parse_sqlite_check_simple() {
+        let sql = "CREATE TABLE t (id INTEGER, balance REAL, CHECK (balance >= 0))";
+        let checks = super::parse_sqlite_check_constraints(sql);
+        assert_eq!(checks.len(), 1);
+        match &checks[0] {
+            RawConstraintInfo::Check {
+                columns,
+                expression,
+            } => {
+                assert_eq!(expression, "balance >= 0");
+                assert!(columns.contains(&"balance".to_string()));
+            }
+            _ => panic!("Expected Check constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sqlite_check_multiple() {
+        let sql = "CREATE TABLE t (id INTEGER, age INTEGER, balance REAL, CHECK (age >= 0), CHECK (balance > 0))";
+        let checks = super::parse_sqlite_check_constraints(sql);
+        assert_eq!(checks.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_sqlite_check_nested_parens() {
+        let sql = "CREATE TABLE t (id INTEGER, val INTEGER, CHECK ((val >= 0) AND (val <= 100)))";
+        let checks = super::parse_sqlite_check_constraints(sql);
+        assert_eq!(checks.len(), 1);
+        match &checks[0] {
+            RawConstraintInfo::Check { expression, .. } => {
+                assert_eq!(expression, "(val >= 0) AND (val <= 100)");
+            }
+            _ => panic!("Expected Check constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sqlite_check_case_insensitive() {
+        let sql = "CREATE TABLE t (id INTEGER, x INTEGER, check (x > 0))";
+        let checks = super::parse_sqlite_check_constraints(sql);
+        assert_eq!(checks.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_sqlite_check_no_checks() {
+        let sql = "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)";
+        let checks = super::parse_sqlite_check_constraints(sql);
+        assert!(checks.is_empty());
+    }
+
+    // =========================================================================
+    // extract_columns_from_check_expression テスト (MySQL)
+    // =========================================================================
+
+    #[test]
+    fn test_extract_columns_from_mysql_check_single() {
+        let columns = super::extract_columns_from_check_expression("`balance` >= 0", "t");
+        assert_eq!(columns, vec!["balance".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_mysql_check_multiple() {
+        let columns =
+            super::extract_columns_from_check_expression("`start_date` < `end_date`", "t");
+        assert_eq!(
+            columns,
+            vec!["start_date".to_string(), "end_date".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_extract_columns_from_mysql_check_no_backticks() {
+        let columns = super::extract_columns_from_check_expression("balance >= 0", "t");
+        assert!(columns.is_empty());
+    }
+
+    // =========================================================================
+    // extract_columns_from_sqlite_check テスト
+    // =========================================================================
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_simple() {
+        let columns = super::extract_columns_from_sqlite_check("balance >= 0");
+        assert_eq!(columns, vec!["balance".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_with_and() {
+        let columns = super::extract_columns_from_sqlite_check("age >= 0 AND age <= 150");
+        assert_eq!(columns, vec!["age".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_multiple_columns() {
+        let columns = super::extract_columns_from_sqlite_check("start_date < end_date");
+        assert_eq!(
+            columns,
+            vec!["start_date".to_string(), "end_date".to_string()]
         );
     }
 }
