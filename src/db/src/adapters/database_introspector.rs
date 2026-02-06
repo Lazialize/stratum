@@ -511,17 +511,18 @@ impl DatabaseIntrospector for PostgresIntrospector {
 
         // CHECK制約
         // pg_constraintからCHECK制約を取得（contype = 'c'）
+        // LEFT JOIN で式のみの制約（conkey が空）にも対応
         // string_agg でカラム名をカンマ区切りで返す（Any ドライバは配列非対応）
         let check_sql = r#"
             SELECT
                 con.conname::text,
                 pg_get_constraintdef(con.oid)::text AS check_expression,
-                string_agg(a.attname::text, ',' ORDER BY u.ord) AS columns
+                COALESCE(string_agg(a.attname::text, ',' ORDER BY u.ord), '') AS columns
             FROM pg_constraint con
             JOIN pg_class c ON c.oid = con.conrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            CROSS JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord)
-            JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = u.attnum
+            LEFT JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord) ON true
+            LEFT JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = u.attnum
             WHERE con.contype = 'c'
                 AND c.relname = $1
                 AND n.nspname = 'public'
@@ -538,10 +539,14 @@ impl DatabaseIntrospector for PostgresIntrospector {
             let _constraint_name: String = row.get(0);
             let raw_expression: String = row.get(1);
             let columns_str: String = row.get(2);
-            let columns: Vec<String> = columns_str
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect();
+            let columns: Vec<String> = if columns_str.is_empty() {
+                Vec::new()
+            } else {
+                columns_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            };
 
             // pg_get_constraintdef returns "CHECK ((expression))"
             // Strip the outer "CHECK (" prefix and ")" suffix to get the actual expression
@@ -918,11 +923,20 @@ impl DatabaseIntrospector for MySqlIntrospector {
             // MySQL の自動生成制約をフィルタリング:
             // 1. NOT NULL チェック（ENUM カラムに自動付与される）
             // 2. ENUM バリデーション（_chk_N の名前で IN (...) を含む）
-            let trimmed = check_clause.trim();
-            let is_not_null_check =
-                trimmed.ends_with("is not null") || trimmed.ends_with("IS NOT NULL");
-            let is_enum_validation = constraint_name.ends_with("_chk_1")
-                && (trimmed.contains("in (") || trimmed.contains("IN ("));
+            let lower = check_clause.trim().to_lowercase();
+            let is_not_null_check = lower.ends_with("is not null");
+            let is_enum_validation = {
+                // MySQL は _chk_1, _chk_2, ... の名前で ENUM バリデーションを自動生成する
+                let has_chk_suffix = constraint_name
+                    .rfind("_chk_")
+                    .map(|pos| {
+                        constraint_name[pos + 5..]
+                            .chars()
+                            .all(|c| c.is_ascii_digit())
+                    })
+                    .unwrap_or(false);
+                has_chk_suffix && (lower.contains("in (") || lower.contains("in("))
+            };
             if is_not_null_check || is_enum_validation {
                 continue;
             }
@@ -1152,11 +1166,11 @@ impl DatabaseIntrospector for SqliteIntrospector {
 
         // CHECK制約
         // sqlite_masterからCREATE TABLE文を取得してCHECK制約をパースする
-        let create_sql_query = format!(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = {}",
-            quoted_table
-        );
-        let create_rows = sqlx::query(&create_sql_query).fetch_all(pool).await?;
+        let create_sql_query = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?";
+        let create_rows = sqlx::query(create_sql_query)
+            .bind(table_name)
+            .fetch_all(pool)
+            .await?;
 
         if let Some(row) = create_rows.first() {
             let create_sql: Option<String> = row.get(0);
@@ -1439,14 +1453,6 @@ fn extract_columns_from_sqlite_check(expression: &str) -> Vec<String> {
         "NULL",
         "TRUE",
         "FALSE",
-        // データ型
-        "INTEGER",
-        "REAL",
-        "TEXT",
-        "BLOB",
-        "NUMERIC",
-        "DATE",
-        "TIME",
         // 関数
         "LENGTH",
         "LOWER",
