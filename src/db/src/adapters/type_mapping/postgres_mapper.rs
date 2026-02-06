@@ -58,6 +58,20 @@ fn needs_pg_type_quoting(name: &str) -> bool {
     has_upper && has_lower
 }
 
+/// PostgreSQL内部型名（udt_name）からDialectSpecific型名へのマッピング
+///
+/// information_schemaで "USER-DEFINED" として報告されるPostgreSQL固有型を
+/// DialectSpecific型名に変換する。該当しない場合はNoneを返す。
+fn map_pg_udt_to_dialect_specific(udt_name: &str) -> Option<String> {
+    match udt_name {
+        "inet" => Some("INET".to_string()),
+        "cidr" => Some("CIDR".to_string()),
+        "macaddr" => Some("MACADDR".to_string()),
+        "macaddr8" => Some("MACADDR8".to_string()),
+        _ => None,
+    }
+}
+
 /// PostgreSQL用型マッパー
 pub struct PostgresTypeMapper;
 
@@ -98,6 +112,17 @@ impl TypeMapper for PostgresTypeMapper {
             }),
             "bytea" => Some(ColumnType::BLOB),
             "uuid" => Some(ColumnType::UUID),
+            "bit varying" => {
+                // VARBIT型: PostgreSQL固有のビット可変長型
+                let mut params = serde_json::Map::new();
+                if let Some(length) = metadata.char_max_length {
+                    params.insert("length".to_string(), serde_json::json!(length));
+                }
+                Some(ColumnType::DialectSpecific {
+                    kind: "VARBIT".to_string(),
+                    params: serde_json::Value::Object(params),
+                })
+            }
             "ARRAY" => {
                 // ARRAY型: udt_name から要素型を取得し、正規化された論理型名として保存
                 // 例: "_text" -> "TEXT", "_int4" -> "INTEGER", "_MyCustomType" -> "MyCustomType"
@@ -124,6 +149,19 @@ impl TypeMapper for PostgresTypeMapper {
                         });
                     }
                 }
+
+                // PostgreSQL固有のネットワーク型など
+                // information_schemaでは "USER-DEFINED" として報告されるが、
+                // udt_name にPostgreSQL固有の型名が格納されている
+                if let Some(udt_name) = &metadata.udt_name {
+                    if let Some(kind) = map_pg_udt_to_dialect_specific(udt_name) {
+                        return Some(ColumnType::DialectSpecific {
+                            kind,
+                            params: serde_json::json!({}),
+                        });
+                    }
+                }
+
                 None
             }
             _ => None,
@@ -833,7 +871,7 @@ mod tests {
     #[test]
     fn test_postgres_user_defined_not_enum() {
         let mapper = PostgresTypeMapper;
-        // USER-DEFINED but no enum_names match
+        // USER-DEFINED but unknown type (not ENUM, not known dialect-specific)
         let meta = TypeMetadata {
             udt_name: Some("geometry".to_string()),
             enum_names: Some(HashSet::new()),
@@ -844,5 +882,139 @@ mod tests {
         // USER-DEFINED with no metadata
         let meta_empty = TypeMetadata::default();
         assert!(mapper.parse_sql_type("USER-DEFINED", &meta_empty).is_none());
+    }
+
+    // =========================================================================
+    // PostgreSQL固有型 (INET, CIDR, VARBIT) のパース・ラウンドトリップテスト
+    // Fixes #23: export時にINET/CIDR/VARBITがTEXTに変換される問題
+    // =========================================================================
+
+    #[test]
+    fn test_postgres_parse_inet() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("inet".to_string()),
+            enum_names: Some(HashSet::new()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("USER-DEFINED", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, .. } => {
+                assert_eq!(kind, "INET");
+            }
+            _ => panic!("Expected DialectSpecific INET type, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_postgres_parse_cidr() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("cidr".to_string()),
+            enum_names: Some(HashSet::new()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("USER-DEFINED", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, .. } => {
+                assert_eq!(kind, "CIDR");
+            }
+            _ => panic!("Expected DialectSpecific CIDR type, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_postgres_parse_varbit() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            char_max_length: Some(16),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("bit varying", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "VARBIT");
+                assert_eq!(params.get("length").and_then(|v| v.as_u64()), Some(16));
+            }
+            _ => panic!("Expected DialectSpecific VARBIT type, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_postgres_parse_varbit_no_length() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata::default();
+        let result = mapper.parse_sql_type("bit varying", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "VARBIT");
+                assert!(params.get("length").is_none());
+            }
+            _ => panic!("Expected DialectSpecific VARBIT type, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_postgres_parse_macaddr() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("macaddr".to_string()),
+            enum_names: Some(HashSet::new()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("USER-DEFINED", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, .. } => {
+                assert_eq!(kind, "MACADDR");
+            }
+            _ => panic!("Expected DialectSpecific MACADDR type, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_postgres_inet_roundtrip() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata {
+            udt_name: Some("inet".to_string()),
+            enum_names: Some(HashSet::new()),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("USER-DEFINED", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        assert_eq!(sql, "INET");
+    }
+
+    #[test]
+    fn test_postgres_cidr_roundtrip() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata {
+            udt_name: Some("cidr".to_string()),
+            enum_names: Some(HashSet::new()),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("USER-DEFINED", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        assert_eq!(sql, "CIDR");
+    }
+
+    #[test]
+    fn test_postgres_varbit_roundtrip() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata {
+            char_max_length: Some(16),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("bit varying", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        assert_eq!(sql, "VARBIT(16)");
+    }
+
+    #[test]
+    fn test_postgres_varbit_no_length_roundtrip() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata::default();
+        let parsed = service.from_sql_type("bit varying", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        assert_eq!(sql, "VARBIT");
     }
 }
