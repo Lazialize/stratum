@@ -1036,7 +1036,14 @@ impl DatabaseIntrospector for MySqlIntrospector {
                     break;
                 }
             }
-            let is_not_null_check = normalized.ends_with("is not null");
+            // 単純な `<col> is not null` パターンのみをフィルタ（複合式は除外しない）
+            // 例: "`col` is not null" → フィルタ, "`a` > 0 and `b` is not null" → 保持
+            let is_not_null_check = {
+                let trimmed_norm = normalized.trim();
+                trimmed_norm.ends_with("is not null")
+                    && !trimmed_norm.contains(" and ")
+                    && !trimmed_norm.contains(" or ")
+            };
             let is_enum_validation = {
                 // MySQL は _chk_1, _chk_2, ... の名前で ENUM バリデーションを自動生成する
                 let has_chk_suffix = constraint_name
@@ -1640,14 +1647,34 @@ fn extract_columns_from_sqlite_check(expression: &str) -> Vec<String> {
         "CONSTRAINT",
     ];
 
+    // CAST(... AS <type>) パターンで <type> の位置を収集
+    // 例: "CAST(x AS INTEGER)" → "INTEGER" のバイト開始位置を記録し、カラム名から除外する
+    // これによりデータ型名をキーワードリストに含めずとも、CAST 式内の型名を安全に除外できる
+    let upper_stripped = stripped.to_uppercase();
+    let mut cast_type_positions = std::collections::HashSet::new();
+    for m in upper_stripped.match_indices(" AS ") {
+        let after_as = m.0 + m.1.len();
+        // AS の直後の空白をスキップ
+        let type_start = upper_stripped[after_as..]
+            .find(|c: char| !c.is_whitespace())
+            .map(|p| after_as + p)
+            .unwrap_or(after_as);
+        cast_type_positions.insert(type_start);
+    }
+
     let mut columns = Vec::new();
 
     for cap in IDENTIFIER_REGEX.captures_iter(&stripped) {
         let word = &cap[1];
         let upper = word.to_uppercase();
-        if !keywords.contains(&upper.as_str()) && !columns.contains(&word.to_string()) {
-            columns.push(word.to_string());
+        let start = cap.get(1).unwrap().start();
+        if keywords.contains(&upper.as_str())
+            || columns.contains(&word.to_string())
+            || cast_type_positions.contains(&start)
+        {
+            continue;
         }
+        columns.push(word.to_string());
     }
 
     columns
@@ -2179,6 +2206,137 @@ mod tests {
         let columns =
             super::extract_columns_from_sqlite_check("CASE WHEN val > 0 THEN 1 ELSE 0 END = 1");
         assert_eq!(columns, vec!["val".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_cast_as_type() {
+        // CAST(x AS INTEGER) の INTEGER はカラム名として抽出しない
+        let columns = super::extract_columns_from_sqlite_check("CAST(val AS INTEGER) > 0");
+        assert_eq!(columns, vec!["val".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_date_column() {
+        // date はデータ型名だがカラム名としても使われるため、除外しない
+        let columns = super::extract_columns_from_sqlite_check("date >= '2020-01-01'");
+        assert_eq!(columns, vec!["date".to_string()]);
+    }
+
+    // =========================================================================
+    // MySQL 自動生成制約フィルタ テスト（ユニット的検証）
+    // =========================================================================
+
+    /// MySQL の NOT NULL / ENUM フィルタロジックを再現するヘルパー
+    fn should_filter_mysql_check(constraint_name: &str, check_clause: &str) -> bool {
+        let lower = check_clause.trim().to_lowercase();
+        let mut normalized = lower.as_str();
+        loop {
+            if normalized.starts_with('(') && normalized.ends_with(')') {
+                let inner = &normalized[1..normalized.len() - 1];
+                let mut depth = 0i32;
+                let mut matched = true;
+                for (i, ch) in inner.char_indices() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth < 0 && i < inner.len() - 1 {
+                                matched = false;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if matched && depth == 0 {
+                    normalized = inner.trim();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        let is_not_null_check = {
+            let trimmed_norm = normalized.trim();
+            trimmed_norm.ends_with("is not null")
+                && !trimmed_norm.contains(" and ")
+                && !trimmed_norm.contains(" or ")
+        };
+        let is_enum_validation = {
+            let has_chk_suffix = constraint_name
+                .rfind("_chk_")
+                .map(|pos| {
+                    constraint_name[pos + 5..]
+                        .chars()
+                        .all(|c| c.is_ascii_digit())
+                })
+                .unwrap_or(false);
+            has_chk_suffix && (normalized.contains("in (") || normalized.contains("in("))
+        };
+        is_not_null_check || is_enum_validation
+    }
+
+    #[test]
+    fn test_mysql_filter_not_null_simple() {
+        // 単純な NOT NULL は自動生成としてフィルタされる
+        assert!(should_filter_mysql_check(
+            "users_chk_1",
+            "(`role` is not null)"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_not_null_without_parens() {
+        assert!(should_filter_mysql_check(
+            "users_chk_1",
+            "`col` is not null"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_compound_not_null_preserved() {
+        // 複合式は NOT NULL で終わっていてもフィルタしない
+        assert!(!should_filter_mysql_check(
+            "users_chk_1",
+            "(`a` > 0 AND `b` IS NOT NULL)"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_enum_validation() {
+        // ENUM バリデーション制約は _chk_N + IN (...) でフィルタ
+        assert!(should_filter_mysql_check(
+            "users_chk_2",
+            "(`role` in ('admin','user','guest'))"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_enum_validation_chk_3() {
+        // _chk_3 パターンもフィルタされる
+        assert!(should_filter_mysql_check(
+            "table_chk_3",
+            "(`status` in('active','inactive'))"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_user_defined_preserved() {
+        // ユーザー定義の CHECK 制約はフィルタしない
+        assert!(!should_filter_mysql_check(
+            "users_balance_check",
+            "(`balance` >= 0)"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_user_defined_with_in_preserved() {
+        // _chk_ パターンでなければ IN を含んでいてもフィルタしない
+        assert!(!should_filter_mysql_check(
+            "custom_check",
+            "(`val` in (1, 2, 3))"
+        ));
     }
 
     // =========================================================================
