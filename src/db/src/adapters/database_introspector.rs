@@ -621,13 +621,10 @@ impl DatabaseIntrospector for PostgresIntrospector {
                     .collect()
             };
 
-            // pg_get_constraintdef returns "CHECK ((expression))"
-            // Strip the outer "CHECK (" prefix and ")" suffix to get the actual expression
-            let expression = raw_expression
-                .strip_prefix("CHECK (")
-                .and_then(|s| s.strip_suffix(')'))
-                .unwrap_or(&raw_expression)
-                .to_string();
+            // pg_get_constraintdef returns "CHECK ((expression))" or
+            // "CHECK ((expression)) NOT VALID" / "CHECK (...) NO INHERIT"
+            // "CHECK (" 以降の括弧ペアをバランス取りで抽出し、末尾トークンに対応する
+            let expression = extract_pg_check_expression(&raw_expression);
 
             // PostgreSQL wraps simple expressions in extra parentheses.
             // Only strip if the entire expression is wrapped in a single matching pair.
@@ -1011,8 +1008,35 @@ impl DatabaseIntrospector for MySqlIntrospector {
             // MySQL の自動生成制約をフィルタリング:
             // 1. NOT NULL チェック（ENUM カラムに自動付与される）
             // 2. ENUM バリデーション（_chk_N の名前で IN (...) を含む）
+            // NOT NULL チェックは `(`col` is not null)` のように括弧で囲まれることがあるため、
+            // 外側の括弧を剥がした上で判定する
             let lower = check_clause.trim().to_lowercase();
-            let is_not_null_check = lower.ends_with("is not null");
+            let mut normalized = lower.as_str();
+            while normalized.starts_with('(') && normalized.ends_with(')') {
+                let inner = &normalized[1..normalized.len() - 1];
+                // strip_outer_parens と同様に、先頭の ( と末尾の ) が対応しているか確認
+                let mut depth = 0i32;
+                let mut matched = true;
+                for (i, ch) in inner.char_indices() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth < 0 && i < inner.len() - 1 {
+                                matched = false;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if matched && depth == 0 {
+                    normalized = inner.trim();
+                } else {
+                    break;
+                }
+            }
+            let is_not_null_check = normalized.ends_with("is not null");
             let is_enum_validation = {
                 // MySQL は _chk_1, _chk_2, ... の名前で ENUM バリデーションを自動生成する
                 let has_chk_suffix = constraint_name
@@ -1023,7 +1047,7 @@ impl DatabaseIntrospector for MySqlIntrospector {
                             .all(|c| c.is_ascii_digit())
                     })
                     .unwrap_or(false);
-                has_chk_suffix && (lower.contains("in (") || lower.contains("in("))
+                has_chk_suffix && (normalized.contains("in (") || normalized.contains("in("))
             };
             if is_not_null_check || is_enum_validation {
                 continue;
@@ -1032,9 +1056,13 @@ impl DatabaseIntrospector for MySqlIntrospector {
             // バッククォートで囲まれたカラム名を抽出
             let columns = extract_columns_from_check_expression(&check_clause);
 
+            // MySQL の check_clause は外側に括弧が付く (例: "(`balance` >= 0)")
+            // 他方言と統一するため strip_outer_parens で正規化する
+            let expression = strip_outer_parens(&check_clause);
+
             constraints.push(RawConstraintInfo::Check {
                 columns,
-                expression: check_clause,
+                expression,
             });
         }
 
@@ -1257,12 +1285,12 @@ impl DatabaseIntrospector for SqliteIntrospector {
         // CHECK制約
         // sqlite_masterからCREATE TABLE文を取得してCHECK制約をパースする
         let create_sql_query = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?";
-        let create_rows = sqlx::query(create_sql_query)
+        let create_row = sqlx::query(create_sql_query)
             .bind(table_name)
-            .fetch_all(pool)
+            .fetch_optional(pool)
             .await?;
 
-        if let Some(row) = create_rows.first() {
+        if let Some(row) = create_row {
             let create_sql: Option<String> = row.get(0);
             if let Some(sql) = create_sql {
                 let check_constraints = parse_sqlite_check_constraints(&sql);
@@ -1309,6 +1337,42 @@ impl DatabaseIntrospector for SqliteIntrospector {
             .collect();
 
         Ok(views)
+    }
+}
+
+/// PostgreSQL の pg_get_constraintdef() 出力から CHECK 式を抽出する
+///
+/// "CHECK ((expression))" から expression 部分を取り出す。
+/// "CHECK (...) NOT VALID" や "CHECK (...) NO INHERIT" のように
+/// 末尾にトークンが付くケースにも対応する（括弧のバランスで式の範囲を特定）。
+fn extract_pg_check_expression(raw: &str) -> String {
+    let prefix = "CHECK (";
+    let Some(start) = raw.find(prefix) else {
+        return raw.to_string();
+    };
+    let after_prefix = start + prefix.len();
+
+    // "CHECK (" の直後の '(' を含む位置から括弧のバランスを追跡
+    // depth は既に 1（"CHECK (" の '(' を含む）
+    let mut depth = 1i32;
+    let mut end = None;
+    for (i, ch) in raw[after_prefix..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(after_prefix + i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    match end {
+        Some(pos) => raw[after_prefix..pos].to_string(),
+        None => raw.to_string(),
     }
 }
 
@@ -1359,9 +1423,10 @@ fn extract_view_definition_from_create_sql(create_sql: &str) -> String {
 
 /// SQLite の CREATE TABLE 文からCHECK制約をパースする
 ///
-/// テーブルレベルのCHECK制約を抽出する。
+/// テーブルレベルおよびカラム定義内の両方のCHECK制約を抽出する。
 /// 文字列リテラル（'...'）およびダブルクォート識別子（"..."）内の CHECK は無視する。
-/// 例: `CREATE TABLE t (id INTEGER, balance REAL, CHECK (balance >= 0))`
+/// 例（テーブルレベル）: `CREATE TABLE t (id INTEGER, balance REAL, CHECK (balance >= 0))`
+/// 例（カラムレベル）  : `CREATE TABLE t (id INTEGER CHECK (id > 0), balance REAL)`
 fn parse_sqlite_check_constraints(create_sql: &str) -> Vec<RawConstraintInfo> {
     let mut results = Vec::new();
     let chars: Vec<(usize, char)> = create_sql.char_indices().collect();
@@ -2136,6 +2201,50 @@ mod tests {
     #[test]
     fn test_strip_string_literals_no_strings() {
         assert_eq!(super::strip_string_literals("balance >= 0"), "balance >= 0");
+    }
+
+    // =========================================================================
+    // extract_pg_check_expression テスト
+    // =========================================================================
+
+    #[test]
+    fn test_extract_pg_check_expression_simple() {
+        assert_eq!(
+            super::extract_pg_check_expression("CHECK ((balance >= 0))"),
+            "(balance >= 0)"
+        );
+    }
+
+    #[test]
+    fn test_extract_pg_check_expression_not_valid() {
+        // NOT VALID 末尾トークンがあっても式部分だけ抽出
+        assert_eq!(
+            super::extract_pg_check_expression("CHECK ((balance >= 0)) NOT VALID"),
+            "(balance >= 0)"
+        );
+    }
+
+    #[test]
+    fn test_extract_pg_check_expression_no_inherit() {
+        assert_eq!(
+            super::extract_pg_check_expression("CHECK ((val > 0)) NO INHERIT"),
+            "(val > 0)"
+        );
+    }
+
+    #[test]
+    fn test_extract_pg_check_expression_complex() {
+        assert_eq!(
+            super::extract_pg_check_expression("CHECK (((val >= 0) AND (val <= 100))) NOT VALID"),
+            "((val >= 0) AND (val <= 100))"
+        );
+    }
+
+    #[test]
+    fn test_extract_pg_check_expression_no_prefix() {
+        // CHECK プレフィックスがない場合はそのまま返す
+        let raw = "something else";
+        assert_eq!(super::extract_pg_check_expression(raw), raw);
     }
 
     // =========================================================================
