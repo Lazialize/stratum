@@ -17,6 +17,13 @@ impl TypeMapper for MySqlTypeMapper {
             "smallint" => Some(ColumnType::INTEGER { precision: Some(2) }),
             "bigint" => Some(ColumnType::INTEGER { precision: Some(8) }),
             "tinyint" => {
+                // UNSIGNED 修飾子がある場合は DialectSpecific として返す
+                if metadata.is_unsigned {
+                    return Some(ColumnType::DialectSpecific {
+                        kind: "TINYINT".to_string(),
+                        params: serde_json::json!({ "unsigned": true }),
+                    });
+                }
                 // MySQL の BOOLEAN は TINYINT(1) として格納される。
                 // information_schema では data_type="tinyint", numeric_precision=3。
                 // precision が 3 の場合は BOOLEAN として認識する。
@@ -27,6 +34,17 @@ impl TypeMapper for MySqlTypeMapper {
                         precision: metadata.numeric_precision,
                     })
                 }
+            }
+            "mediumint" => {
+                // MEDIUMINT は MySQL 固有の型
+                let mut params = serde_json::Map::new();
+                if metadata.is_unsigned {
+                    params.insert("unsigned".to_string(), serde_json::json!(true));
+                }
+                Some(ColumnType::DialectSpecific {
+                    kind: "MEDIUMINT".to_string(),
+                    params: serde_json::Value::Object(params),
+                })
             }
             "varchar" => Some(ColumnType::VARCHAR {
                 length: metadata.char_max_length.unwrap_or(255),
@@ -50,7 +68,14 @@ impl TypeMapper for MySqlTypeMapper {
             "time" => Some(ColumnType::TIME {
                 with_time_zone: None,
             }),
-            "blob" | "longblob" | "mediumblob" => Some(ColumnType::BLOB),
+            "year" => {
+                // YEAR は MySQL 固有の型
+                Some(ColumnType::DialectSpecific {
+                    kind: "YEAR".to_string(),
+                    params: serde_json::json!({}),
+                })
+            }
+            "blob" | "longblob" | "mediumblob" | "tinyblob" => Some(ColumnType::BLOB),
             "enum" => {
                 // MySQL の ENUM 型を DialectSpecific として返す
                 if let Some(ref values) = metadata.enum_values {
@@ -60,6 +85,18 @@ impl TypeMapper for MySqlTypeMapper {
                     })
                 } else {
                     // ENUM値が取得できない場合は TEXT にフォールバック
+                    Some(ColumnType::TEXT)
+                }
+            }
+            "set" => {
+                // MySQL の SET 型を DialectSpecific として返す
+                if let Some(ref values) = metadata.set_values {
+                    Some(ColumnType::DialectSpecific {
+                        kind: "SET".to_string(),
+                        params: serde_json::json!({ "values": values }),
+                    })
+                } else {
+                    // SET値が取得できない場合は TEXT にフォールバック
                     Some(ColumnType::TEXT)
                 }
             }
@@ -504,5 +541,174 @@ mod tests {
 
         let result = mapper.parse_sql_type("enum", &metadata).unwrap();
         assert!(matches!(result, ColumnType::TEXT));
+    }
+
+    // =========================================================================
+    // Issue #25: MySQL dialect-specific type regression tests
+    // =========================================================================
+
+    #[test]
+    fn test_mysql_parse_tinyint_unsigned() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            numeric_precision: Some(3),
+            is_unsigned: true,
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("tinyint", &metadata).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "TINYINT");
+                assert_eq!(params.get("unsigned").and_then(|v| v.as_bool()), Some(true));
+            }
+            _ => panic!("Expected DialectSpecific TINYINT, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_mysql_parse_tinyint_signed_is_boolean() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            numeric_precision: Some(3),
+            is_unsigned: false,
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("tinyint", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::BOOLEAN));
+    }
+
+    #[test]
+    fn test_mysql_parse_mediumint() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("mediumint", &metadata).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "MEDIUMINT");
+                assert!(params.get("unsigned").is_none());
+            }
+            _ => panic!("Expected DialectSpecific MEDIUMINT, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_mysql_parse_mediumint_unsigned() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            is_unsigned: true,
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("mediumint", &metadata).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "MEDIUMINT");
+                assert_eq!(params.get("unsigned").and_then(|v| v.as_bool()), Some(true));
+            }
+            _ => panic!(
+                "Expected DialectSpecific MEDIUMINT UNSIGNED, got {:?}",
+                result
+            ),
+        }
+    }
+
+    #[test]
+    fn test_mysql_parse_set_with_values() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            set_values: Some(vec![
+                "read".to_string(),
+                "write".to_string(),
+                "execute".to_string(),
+                "admin".to_string(),
+            ]),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("set", &metadata).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, params } => {
+                assert_eq!(kind, "SET");
+                let values = params.get("values").unwrap().as_array().unwrap();
+                assert_eq!(values.len(), 4);
+                assert_eq!(values[0].as_str().unwrap(), "read");
+                assert_eq!(values[1].as_str().unwrap(), "write");
+                assert_eq!(values[2].as_str().unwrap(), "execute");
+                assert_eq!(values[3].as_str().unwrap(), "admin");
+            }
+            _ => panic!("Expected DialectSpecific SET, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_mysql_parse_set_without_values() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("set", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::TEXT));
+    }
+
+    #[test]
+    fn test_mysql_parse_year() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata::default();
+        let result = mapper.parse_sql_type("year", &metadata).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, .. } => {
+                assert_eq!(kind, "YEAR");
+            }
+            _ => panic!("Expected DialectSpecific YEAR, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_mysql_tinyint_unsigned_roundtrip() {
+        let service = TypeMappingService::new(Dialect::MySQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "TINYINT".to_string(),
+            params: serde_json::json!({ "unsigned": true }),
+        };
+        assert_eq!(service.to_sql_type(&col_type), "TINYINT UNSIGNED");
+    }
+
+    #[test]
+    fn test_mysql_mediumint_unsigned_roundtrip() {
+        let service = TypeMappingService::new(Dialect::MySQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "MEDIUMINT".to_string(),
+            params: serde_json::json!({ "unsigned": true }),
+        };
+        assert_eq!(service.to_sql_type(&col_type), "MEDIUMINT UNSIGNED");
+    }
+
+    #[test]
+    fn test_mysql_set_roundtrip() {
+        let service = TypeMappingService::new(Dialect::MySQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "SET".to_string(),
+            params: serde_json::json!({ "values": ["read", "write", "execute"] }),
+        };
+        assert_eq!(
+            service.to_sql_type(&col_type),
+            "SET('read', 'write', 'execute')"
+        );
+    }
+
+    #[test]
+    fn test_mysql_year_roundtrip() {
+        let service = TypeMappingService::new(Dialect::MySQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "YEAR".to_string(),
+            params: serde_json::json!({}),
+        };
+        assert_eq!(service.to_sql_type(&col_type), "YEAR");
+    }
+
+    #[test]
+    fn test_mysql_mediumint_signed_roundtrip() {
+        let service = TypeMappingService::new(Dialect::MySQL);
+        let col_type = ColumnType::DialectSpecific {
+            kind: "MEDIUMINT".to_string(),
+            params: serde_json::json!({}),
+        };
+        assert_eq!(service.to_sql_type(&col_type), "MEDIUMINT");
     }
 }

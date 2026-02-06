@@ -42,6 +42,8 @@ fn test_convert_column_integer() {
         udt_name: None,
         auto_increment: None,
         enum_values: None,
+        set_values: None,
+        is_unsigned: false,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -65,6 +67,8 @@ fn test_convert_column_varchar() {
         udt_name: None,
         auto_increment: None,
         enum_values: None,
+        set_values: None,
+        is_unsigned: false,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -96,6 +100,8 @@ fn test_convert_column_enum() {
         udt_name: Some("status".to_string()),
         auto_increment: None,
         enum_values: None,
+        set_values: None,
+        is_unsigned: false,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -120,6 +126,8 @@ fn test_convert_column_sqlite_integer() {
         udt_name: None,
         auto_increment: None,
         enum_values: None,
+        set_values: None,
+        is_unsigned: false,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -142,6 +150,8 @@ fn test_convert_column_mysql_varchar() {
         udt_name: None,
         auto_increment: None,
         enum_values: None,
+        set_values: None,
+        is_unsigned: false,
     };
 
     let column = service.convert_column(&raw).unwrap();
@@ -151,6 +161,188 @@ fn test_convert_column_mysql_varchar() {
         column.column_type,
         ColumnType::VARCHAR { length: 100 }
     ));
+}
+
+// =========================================================================
+// Issue #25: MySQL dialect-specific type conversion tests
+// =========================================================================
+
+#[test]
+fn test_convert_column_mysql_boolean_default_true_normalized() {
+    let service = SchemaConversionService::new(Dialect::MySQL);
+    let raw = RawColumnInfo {
+        name: "is_active".to_string(),
+        data_type: "tinyint".to_string(),
+        is_nullable: false,
+        default_value: Some("1".to_string()),
+        char_max_length: None,
+        numeric_precision: Some(3),
+        numeric_scale: None,
+        udt_name: None,
+        auto_increment: None,
+        enum_values: None,
+        set_values: None,
+        is_unsigned: false,
+    };
+
+    let column = service.convert_column(&raw).unwrap();
+
+    assert!(matches!(column.column_type, ColumnType::BOOLEAN));
+    assert_eq!(column.default_value, Some("true".to_string()));
+}
+
+#[test]
+fn test_convert_column_mysql_boolean_default_false_normalized() {
+    let service = SchemaConversionService::new(Dialect::MySQL);
+    let raw = RawColumnInfo {
+        name: "is_active".to_string(),
+        data_type: "tinyint".to_string(),
+        is_nullable: false,
+        default_value: Some("0".to_string()),
+        char_max_length: None,
+        numeric_precision: Some(3),
+        numeric_scale: None,
+        udt_name: None,
+        auto_increment: None,
+        enum_values: None,
+        set_values: None,
+        is_unsigned: false,
+    };
+
+    let column = service.convert_column(&raw).unwrap();
+
+    assert!(matches!(column.column_type, ColumnType::BOOLEAN));
+    assert_eq!(column.default_value, Some("false".to_string()));
+}
+
+#[test]
+fn test_convert_column_mysql_tinyint_unsigned() {
+    let service = SchemaConversionService::new(Dialect::MySQL);
+    let raw = RawColumnInfo {
+        name: "age".to_string(),
+        data_type: "tinyint".to_string(),
+        is_nullable: true,
+        default_value: None,
+        char_max_length: None,
+        numeric_precision: Some(3),
+        numeric_scale: Some(0),
+        udt_name: None,
+        auto_increment: None,
+        enum_values: None,
+        set_values: None,
+        is_unsigned: true,
+    };
+
+    let column = service.convert_column(&raw).unwrap();
+
+    match &column.column_type {
+        ColumnType::DialectSpecific { kind, params } => {
+            assert_eq!(kind, "TINYINT");
+            assert_eq!(params.get("unsigned").and_then(|v| v.as_bool()), Some(true));
+        }
+        _ => panic!(
+            "Expected DialectSpecific TINYINT, got {:?}",
+            column.column_type
+        ),
+    }
+}
+
+#[test]
+fn test_convert_column_mysql_set() {
+    let service = SchemaConversionService::new(Dialect::MySQL);
+    let raw = RawColumnInfo {
+        name: "permissions".to_string(),
+        data_type: "set".to_string(),
+        is_nullable: true,
+        default_value: None,
+        char_max_length: None,
+        numeric_precision: None,
+        numeric_scale: None,
+        udt_name: None,
+        auto_increment: None,
+        enum_values: None,
+        set_values: Some(vec![
+            "read".to_string(),
+            "write".to_string(),
+            "execute".to_string(),
+            "admin".to_string(),
+        ]),
+        is_unsigned: false,
+    };
+
+    let column = service.convert_column(&raw).unwrap();
+
+    match &column.column_type {
+        ColumnType::DialectSpecific { kind, params } => {
+            assert_eq!(kind, "SET");
+            let values = params.get("values").unwrap().as_array().unwrap();
+            assert_eq!(values.len(), 4);
+        }
+        _ => panic!("Expected DialectSpecific SET, got {:?}", column.column_type),
+    }
+}
+
+#[test]
+fn test_convert_column_mysql_mediumint_unsigned() {
+    let service = SchemaConversionService::new(Dialect::MySQL);
+    let raw = RawColumnInfo {
+        name: "score".to_string(),
+        data_type: "mediumint".to_string(),
+        is_nullable: true,
+        default_value: None,
+        char_max_length: None,
+        numeric_precision: Some(7),
+        numeric_scale: Some(0),
+        udt_name: None,
+        auto_increment: None,
+        enum_values: None,
+        set_values: None,
+        is_unsigned: true,
+    };
+
+    let column = service.convert_column(&raw).unwrap();
+
+    match &column.column_type {
+        ColumnType::DialectSpecific { kind, params } => {
+            assert_eq!(kind, "MEDIUMINT");
+            assert_eq!(params.get("unsigned").and_then(|v| v.as_bool()), Some(true));
+        }
+        _ => panic!(
+            "Expected DialectSpecific MEDIUMINT, got {:?}",
+            column.column_type
+        ),
+    }
+}
+
+#[test]
+fn test_convert_column_mysql_year() {
+    let service = SchemaConversionService::new(Dialect::MySQL);
+    let raw = RawColumnInfo {
+        name: "join_year".to_string(),
+        data_type: "year".to_string(),
+        is_nullable: true,
+        default_value: None,
+        char_max_length: None,
+        numeric_precision: None,
+        numeric_scale: None,
+        udt_name: None,
+        auto_increment: None,
+        enum_values: None,
+        set_values: None,
+        is_unsigned: false,
+    };
+
+    let column = service.convert_column(&raw).unwrap();
+
+    match &column.column_type {
+        ColumnType::DialectSpecific { kind, .. } => {
+            assert_eq!(kind, "YEAR");
+        }
+        _ => panic!(
+            "Expected DialectSpecific YEAR, got {:?}",
+            column.column_type
+        ),
+    }
 }
 
 // =========================================================================
@@ -325,6 +517,8 @@ fn test_convert_table_minimal() {
             udt_name: None,
             auto_increment: None,
             enum_values: None,
+            set_values: None,
+            is_unsigned: false,
         }],
         indexes: vec![],
         constraints: vec![],
@@ -355,6 +549,8 @@ fn test_convert_table_with_all_elements() {
                 udt_name: None,
                 auto_increment: None,
                 enum_values: None,
+                set_values: None,
+                is_unsigned: false,
             },
             RawColumnInfo {
                 name: "title".to_string(),
@@ -367,6 +563,8 @@ fn test_convert_table_with_all_elements() {
                 udt_name: None,
                 auto_increment: None,
                 enum_values: None,
+                set_values: None,
+                is_unsigned: false,
             },
             RawColumnInfo {
                 name: "user_id".to_string(),
@@ -379,6 +577,8 @@ fn test_convert_table_with_all_elements() {
                 udt_name: None,
                 auto_increment: None,
                 enum_values: None,
+                set_values: None,
+                is_unsigned: false,
             },
         ],
         indexes: vec![RawIndexInfo {
@@ -439,6 +639,8 @@ fn test_build_schema_with_tables() {
                 udt_name: None,
                 auto_increment: None,
                 enum_values: None,
+                set_values: None,
+                is_unsigned: false,
             }],
             indexes: vec![],
             constraints: vec![],
@@ -456,6 +658,8 @@ fn test_build_schema_with_tables() {
                 udt_name: None,
                 auto_increment: None,
                 enum_values: None,
+                set_values: None,
+                is_unsigned: false,
             }],
             indexes: vec![],
             constraints: vec![],
@@ -511,6 +715,8 @@ fn test_build_schema_complex() {
                 udt_name: None,
                 auto_increment: None,
                 enum_values: None,
+                set_values: None,
+                is_unsigned: false,
             },
             RawColumnInfo {
                 name: "status".to_string(),
@@ -523,6 +729,8 @@ fn test_build_schema_complex() {
                 udt_name: Some("status".to_string()),
                 auto_increment: None,
                 enum_values: None,
+                set_values: None,
+                is_unsigned: false,
             },
         ],
         indexes: vec![RawIndexInfo {
