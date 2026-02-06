@@ -3,7 +3,9 @@ use crate::adapters::database_introspector::{
     RawColumnInfo, RawConstraintInfo, RawEnumInfo, RawIndexInfo,
 };
 use crate::adapters::type_mapping::TypeMetadata;
-use crate::core::schema::{Column, Constraint, EnumDefinition, Index, ReferentialAction};
+use crate::core::schema::{
+    Column, ColumnType, Constraint, EnumDefinition, Index, ReferentialAction,
+};
 use anyhow::{Context, Result};
 
 impl SchemaConversionService {
@@ -22,6 +24,8 @@ impl SchemaConversionService {
                 Some(self.enum_names.clone())
             },
             enum_values: raw.enum_values.clone(),
+            set_values: raw.set_values.clone(),
+            is_unsigned: raw.is_unsigned,
         };
 
         let column_type = self
@@ -29,6 +33,7 @@ impl SchemaConversionService {
             .from_sql_type(&raw.data_type, &metadata)
             .with_context(|| format!("Failed to parse column type for '{}'", raw.name))?;
 
+        let is_boolean = matches!(column_type, ColumnType::BOOLEAN);
         let mut column = Column::new(raw.name.clone(), column_type, raw.is_nullable);
 
         // PostgreSQL の SERIAL カラムは nextval('...') をデフォルト値として持つ
@@ -37,7 +42,18 @@ impl SchemaConversionService {
             if default.contains("nextval(") {
                 column.auto_increment = Some(true);
             } else {
-                column.default_value = Some(default.clone());
+                // MySQL の BOOLEAN は TINYINT(1) として格納され、デフォルト値が
+                // "1"/"0" として返される。これを "true"/"false" に正規化する。
+                let normalized = if is_boolean {
+                    match default.as_str() {
+                        "1" => "true".to_string(),
+                        "0" => "false".to_string(),
+                        _ => default.clone(),
+                    }
+                } else {
+                    default.clone()
+                };
+                column.default_value = Some(normalized);
             }
         }
 
