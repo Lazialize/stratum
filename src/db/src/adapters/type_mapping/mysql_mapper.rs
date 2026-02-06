@@ -12,7 +12,9 @@ impl TypeMapper for MySqlTypeMapper {
     fn parse_sql_type(&self, sql_type: &str, metadata: &TypeMetadata) -> Option<ColumnType> {
         match sql_type {
             "int" | "integer" => Some(ColumnType::INTEGER {
-                precision: metadata.numeric_precision,
+                // MySQL の display width（INT(10) 等）はストリップする。
+                // Strata の precision は意味的な精度であり、表示幅ではない。
+                precision: None,
             }),
             "smallint" => Some(ColumnType::INTEGER { precision: Some(2) }),
             "bigint" => Some(ColumnType::INTEGER { precision: Some(8) }),
@@ -31,7 +33,8 @@ impl TypeMapper for MySqlTypeMapper {
                     Some(ColumnType::BOOLEAN)
                 } else {
                     Some(ColumnType::INTEGER {
-                        precision: metadata.numeric_precision,
+                        // MySQL の display width をストリップする
+                        precision: None,
                     })
                 }
             }
@@ -288,7 +291,8 @@ mod tests {
             ..Default::default()
         };
         let result = mapper.parse_sql_type("tinyint", &metadata).unwrap();
-        assert!(matches!(result, ColumnType::INTEGER { precision: Some(1) }));
+        // display width はストリップされるので precision: None になる
+        assert!(matches!(result, ColumnType::INTEGER { precision: None }));
     }
 
     #[test]
@@ -541,6 +545,79 @@ mod tests {
 
         let result = mapper.parse_sql_type("enum", &metadata).unwrap();
         assert!(matches!(result, ColumnType::TEXT));
+    }
+
+    // =========================================================================
+    // Issue #26: MySQL INTEGER display width regression tests
+    // =========================================================================
+
+    #[test]
+    fn test_mysql_parse_int_strips_display_width() {
+        // MySQL の information_schema は INT に numeric_precision=10 を返す。
+        // Strata ではこの display width をストリップして precision: None にすべき。
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            numeric_precision: Some(10),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("int", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::INTEGER { precision: None }));
+    }
+
+    #[test]
+    fn test_mysql_parse_integer_strips_display_width() {
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            numeric_precision: Some(10),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("integer", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::INTEGER { precision: None }));
+    }
+
+    #[test]
+    fn test_mysql_parse_int_11_strips_display_width() {
+        // INT(11) (signed INT のデフォルト display width) もストリップされる
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            numeric_precision: Some(11),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("int", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::INTEGER { precision: None }));
+    }
+
+    #[test]
+    fn test_mysql_parse_tinyint_non_boolean_strips_display_width() {
+        // TINYINT で precision != 3 の場合も display width をストリップする
+        let mapper = MySqlTypeMapper;
+        let metadata = TypeMetadata {
+            numeric_precision: Some(4),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("tinyint", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::INTEGER { precision: None }));
+    }
+
+    #[test]
+    fn test_mysql_int_roundtrip_no_spurious_precision() {
+        // INT → export → re-import で precision が付与されないことを確認
+        let service = TypeMappingService::new(Dialect::MySQL);
+        let mapper = MySqlTypeMapper;
+
+        // MySQL introspection が返す metadata をシミュレート
+        let metadata = TypeMetadata {
+            numeric_precision: Some(10),
+            ..Default::default()
+        };
+
+        // parse: "int" + precision=10 → INTEGER { precision: None }
+        let parsed = mapper.parse_sql_type("int", &metadata).unwrap();
+        assert!(matches!(parsed, ColumnType::INTEGER { precision: None }));
+
+        // format: INTEGER { precision: None } → "INT"
+        let sql = service.to_sql_type(&parsed);
+        assert_eq!(sql, "INT");
     }
 
     // =========================================================================
