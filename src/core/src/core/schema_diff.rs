@@ -540,8 +540,8 @@ impl ColumnDiff {
         // 型の変更を検出
         if old_column.column_type != new_column.column_type {
             changes.push(ColumnChange::TypeChanged {
-                old_type: format!("{:?}", old_column.column_type),
-                new_type: format!("{:?}", new_column.column_type),
+                old_type: format!("{}", old_column.column_type),
+                new_type: format!("{}", new_column.column_type),
             });
         }
 
@@ -1238,5 +1238,42 @@ mod tests {
         let json = serde_json::to_string(&table_diff).unwrap();
         // skip_serializing_if により空の場合はシリアライズされない
         assert!(!json.contains("modified_indexes"));
+    }
+
+    #[test]
+    fn test_column_diff_type_change_uses_display_format() {
+        // DialectSpecific型がDebug表記ではなくDisplay表記（SQL風）で出力されることを検証
+        let old_column = Column::new(
+            "status".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "ENUM".to_string(),
+                params: serde_json::json!({"values": ["draft", "published", "archived"]}),
+            },
+            false,
+        );
+        let new_column = Column::new(
+            "status".to_string(),
+            ColumnType::DialectSpecific {
+                kind: "ENUM".to_string(),
+                params: serde_json::json!({"values": ["draft", "published", "archived", "deleted"]}),
+            },
+            false,
+        );
+
+        let diff = ColumnDiff::new("status".to_string(), old_column, new_column);
+
+        assert_eq!(diff.changes.len(), 1);
+        if let ColumnChange::TypeChanged { old_type, new_type } = &diff.changes[0] {
+            assert_eq!(old_type, "ENUM('draft', 'published', 'archived')");
+            assert_eq!(
+                new_type,
+                "ENUM('draft', 'published', 'archived', 'deleted')"
+            );
+            // Debug表記が含まれていないことを確認
+            assert!(!old_type.contains("DialectSpecific"));
+            assert!(!new_type.contains("DialectSpecific"));
+        } else {
+            panic!("Expected TypeChanged");
+        }
     }
 }
