@@ -972,6 +972,23 @@ mod tests {
     }
 
     #[test]
+    fn test_postgres_parse_macaddr8() {
+        let mapper = PostgresTypeMapper;
+        let meta = TypeMetadata {
+            udt_name: Some("macaddr8".to_string()),
+            enum_names: Some(HashSet::new()),
+            ..Default::default()
+        };
+        let result = mapper.parse_sql_type("USER-DEFINED", &meta).unwrap();
+        match result {
+            ColumnType::DialectSpecific { kind, .. } => {
+                assert_eq!(kind, "MACADDR8");
+            }
+            _ => panic!("Expected DialectSpecific MACADDR8 type, got {:?}", result),
+        }
+    }
+
+    #[test]
     fn test_postgres_inet_roundtrip() {
         let service = TypeMappingService::new(Dialect::PostgreSQL);
         let meta = TypeMetadata {
@@ -1016,5 +1033,31 @@ mod tests {
         let parsed = service.from_sql_type("bit varying", &meta).unwrap();
         let sql = service.to_sql_type(&parsed);
         assert_eq!(sql, "VARBIT");
+    }
+
+    #[test]
+    fn test_postgres_macaddr_roundtrip() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata {
+            udt_name: Some("macaddr".to_string()),
+            enum_names: Some(HashSet::new()),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("USER-DEFINED", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        assert_eq!(sql, "MACADDR");
+    }
+
+    #[test]
+    fn test_postgres_macaddr8_roundtrip() {
+        let service = TypeMappingService::new(Dialect::PostgreSQL);
+        let meta = TypeMetadata {
+            udt_name: Some("macaddr8".to_string()),
+            enum_names: Some(HashSet::new()),
+            ..Default::default()
+        };
+        let parsed = service.from_sql_type("USER-DEFINED", &meta).unwrap();
+        let sql = service.to_sql_type(&parsed);
+        assert_eq!(sql, "MACADDR8");
     }
 }
