@@ -100,6 +100,73 @@ fn parse_mysql_enum_values(column_type: &str) -> Option<Vec<String>> {
     }
 }
 
+/// MySQL の COLUMN_TYPE から SET 値を抽出する
+/// 例: "set('read','write','execute')" -> ["read", "write", "execute"]
+fn parse_mysql_set_values(column_type: &str) -> Option<Vec<String>> {
+    let trimmed = column_type.trim();
+    if !trimmed.to_lowercase().starts_with("set(") {
+        return None;
+    }
+
+    let start = trimmed.find('(')?;
+    let end = trimmed.rfind(')')?;
+    if start >= end {
+        return None;
+    }
+
+    let content = &trimmed[start + 1..end];
+    let mut values = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+    let mut value_closed = false;
+    let mut chars = content.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' if !in_quote => {
+                in_quote = true;
+                value_closed = false;
+            }
+            '\'' if in_quote => {
+                if chars.peek() == Some(&'\'') {
+                    current.push('\'');
+                    chars.next();
+                } else {
+                    in_quote = false;
+                    value_closed = true;
+                }
+            }
+            ',' if !in_quote => {
+                if value_closed {
+                    values.push(current.clone());
+                    current.clear();
+                    value_closed = false;
+                }
+            }
+            _ if in_quote => {
+                current.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    if value_closed {
+        values.push(current);
+    }
+
+    if values.is_empty() {
+        None
+    } else {
+        Some(values)
+    }
+}
+
+/// MySQL の COLUMN_TYPE から UNSIGNED 修飾子を検出する
+/// 例: "tinyint(3) unsigned" -> true, "int(11)" -> false
+fn is_mysql_unsigned(column_type: &str) -> bool {
+    column_type.to_lowercase().contains("unsigned")
+}
+
 /// 生のカラム情報（DB固有フォーマット）
 ///
 /// データベースから取得したカラム情報を保持する構造体。
@@ -126,6 +193,10 @@ pub struct RawColumnInfo {
     pub auto_increment: Option<bool>,
     /// ENUM値のリスト（MySQL用）
     pub enum_values: Option<Vec<String>>,
+    /// SET値のリスト（MySQL用）
+    pub set_values: Option<Vec<String>>,
+    /// UNSIGNED修飾子（MySQL用）
+    pub is_unsigned: bool,
 }
 
 /// 生のインデックス情報（DB固有フォーマット）
@@ -283,6 +354,8 @@ impl DatabaseIntrospector for PostgresIntrospector {
                 udt_name: row.get(7),
                 auto_increment: None,
                 enum_values: None, // PostgreSQLはget_enums()で別途取得
+                set_values: None,
+                is_unsigned: false,
             })
             .collect();
 
@@ -615,14 +688,27 @@ impl DatabaseIntrospector for MySqlIntrospector {
                     .filter(|&b| b)
                     .map(|_| true);
 
-                // data_type が enum の場合、column_type から値を抽出
+                // column_type から追加情報を抽出
                 let data_type = mysql_get_string(row, 1);
-                let enum_values = if data_type.to_lowercase() == "enum" {
-                    let column_type = mysql_get_string(row, 8);
+                let column_type = mysql_get_string(row, 8);
+                let data_type_lower = data_type.to_lowercase();
+
+                // data_type が enum の場合、column_type から値を抽出
+                let enum_values = if data_type_lower == "enum" {
                     parse_mysql_enum_values(&column_type)
                 } else {
                     None
                 };
+
+                // data_type が set の場合、column_type から値を抽出
+                let set_values = if data_type_lower == "set" {
+                    parse_mysql_set_values(&column_type)
+                } else {
+                    None
+                };
+
+                // column_type から UNSIGNED 修飾子を検出
+                let is_unsigned = is_mysql_unsigned(&column_type);
 
                 RawColumnInfo {
                     name: mysql_get_string(row, 0),
@@ -635,6 +721,8 @@ impl DatabaseIntrospector for MySqlIntrospector {
                     udt_name: None,
                     auto_increment,
                     enum_values,
+                    set_values,
+                    is_unsigned,
                 }
             })
             .collect();
@@ -903,6 +991,8 @@ impl DatabaseIntrospector for SqliteIntrospector {
                     udt_name: None,
                     auto_increment,
                     enum_values: None, // SQLiteはENUM型をサポートしない
+                    set_values: None,
+                    is_unsigned: false,
                 }
             })
             .collect();
@@ -1108,6 +1198,8 @@ mod tests {
             udt_name: None,
             auto_increment: None,
             enum_values: None,
+            set_values: None,
+            is_unsigned: false,
         };
         assert!(format!("{:?}", column).contains("id"));
     }
@@ -1125,6 +1217,8 @@ mod tests {
             udt_name: None,
             auto_increment: None,
             enum_values: None,
+            set_values: None,
+            is_unsigned: false,
         };
         let cloned = column.clone();
         assert_eq!(cloned.name, "email");
@@ -1373,5 +1467,80 @@ mod tests {
             result,
             Some(vec!["a".to_string(), "b".to_string(), "".to_string()])
         );
+    }
+
+    // =========================================================================
+    // parse_mysql_set_values テスト
+    // =========================================================================
+
+    #[test]
+    fn test_parse_mysql_set_values_simple() {
+        let result = super::parse_mysql_set_values("set('read','write','execute','admin')");
+        assert_eq!(
+            result,
+            Some(vec![
+                "read".to_string(),
+                "write".to_string(),
+                "execute".to_string(),
+                "admin".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_mysql_set_values_with_spaces() {
+        let result = super::parse_mysql_set_values("set('a', 'b', 'c')");
+        assert_eq!(
+            result,
+            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_parse_mysql_set_values_case_insensitive() {
+        let result = super::parse_mysql_set_values("SET('yes','no')");
+        assert_eq!(result, Some(vec!["yes".to_string(), "no".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_mysql_set_values_not_set() {
+        let result = super::parse_mysql_set_values("varchar(255)");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_mysql_set_values_empty() {
+        let result = super::parse_mysql_set_values("set()");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_mysql_set_values_single() {
+        let result = super::parse_mysql_set_values("set('only')");
+        assert_eq!(result, Some(vec!["only".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_mysql_set_values_escaped_quote() {
+        let result = super::parse_mysql_set_values("set('it''s','ok')");
+        assert_eq!(result, Some(vec!["it's".to_string(), "ok".to_string()]));
+    }
+
+    // =========================================================================
+    // is_mysql_unsigned テスト
+    // =========================================================================
+
+    #[test]
+    fn test_is_mysql_unsigned_true() {
+        assert!(super::is_mysql_unsigned("tinyint(3) unsigned"));
+        assert!(super::is_mysql_unsigned("mediumint(7) unsigned"));
+        assert!(super::is_mysql_unsigned("int(10) unsigned"));
+    }
+
+    #[test]
+    fn test_is_mysql_unsigned_false() {
+        assert!(!super::is_mysql_unsigned("tinyint(3)"));
+        assert!(!super::is_mysql_unsigned("int(11)"));
+        assert!(!super::is_mysql_unsigned("varchar(255)"));
     }
 }

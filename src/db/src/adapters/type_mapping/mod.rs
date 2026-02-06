@@ -34,6 +34,10 @@ pub struct TypeMetadata {
     pub enum_names: Option<HashSet<String>>,
     /// ENUM値のリスト（MySQL用）
     pub enum_values: Option<Vec<String>>,
+    /// SET値のリスト（MySQL用）
+    pub set_values: Option<Vec<String>>,
+    /// UNSIGNED修飾子（MySQL用）
+    pub is_unsigned: bool,
 }
 
 /// 方言固有の型マッピング拡張
