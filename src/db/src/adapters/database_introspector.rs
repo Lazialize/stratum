@@ -1143,17 +1143,6 @@ impl DatabaseIntrospector for SqliteIntrospector {
         use crate::adapters::sql_quote::quote_identifier_sqlite;
         use sqlx::Row;
 
-        // CREATE TABLE SQL を取得して AUTOINCREMENT を検出
-        let create_sql_query = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?";
-        let create_sql_row = sqlx::query(create_sql_query)
-            .bind(table_name)
-            .fetch_optional(pool)
-            .await?;
-        let has_autoincrement = create_sql_row
-            .and_then(|row| row.try_get::<Option<String>, _>(0).ok().flatten())
-            .map(|sql| sql.to_uppercase().contains("AUTOINCREMENT"))
-            .unwrap_or(false);
-
         let quoted_name = quote_identifier_sqlite(table_name);
         let sql = format!("PRAGMA table_info({})", quoted_name);
         let rows = sqlx::query(&sql).fetch_all(pool).await?;
@@ -1164,13 +1153,15 @@ impl DatabaseIntrospector for SqliteIntrospector {
                 let not_null: i32 = row.get(3);
                 let is_pk: i32 = row.get(5);
                 let data_type: String = row.get(2);
-                // SQLite の INTEGER PRIMARY KEY AUTOINCREMENT を検出
-                let auto_increment =
-                    if has_autoincrement && is_pk > 0 && data_type.to_uppercase() == "INTEGER" {
-                        Some(true)
-                    } else {
-                        None
-                    };
+                // SQLite の INTEGER PRIMARY KEY を検出
+                // SQLite では INTEGER PRIMARY KEY は暗黙的に ROWID のエイリアスとなり
+                // 自動増分する。明示的な AUTOINCREMENT キーワードの有無に関わらず、
+                // INTEGER 型かつ PRIMARY KEY であれば auto_increment: true とする。
+                let auto_increment = if is_pk > 0 && data_type.to_uppercase() == "INTEGER" {
+                    Some(true)
+                } else {
+                    None
+                };
                 RawColumnInfo {
                     name: row.get(1),
                     data_type,
