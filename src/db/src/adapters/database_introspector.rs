@@ -3,10 +3,18 @@
 // データベースからスキーマ情報を取得するための抽象化レイヤー。
 // 各方言固有のINFORMATION_SCHEMA/PRAGMAクエリを実装します。
 
+use std::sync::LazyLock;
+
 use anyhow::Result;
 use async_trait::async_trait;
+use regex::Regex;
 use sqlx::AnyPool;
 use sqlx::Row;
+
+/// 識別子検出用の正規表現（コンパイル済みキャッシュ）
+/// Unicode 識別子 (XID_Start/XID_Continue) とアンダースコアを許可する。
+static IDENTIFIER_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b([\p{XID_Start}_][\p{XID_Continue}_]*)\b").unwrap());
 
 /// MySQL の information_schema は多くのカラムを BLOB/VARBINARY 型で返す。
 /// sqlx の Any ドライバは String として直接デコードできないため、
@@ -98,6 +106,40 @@ fn parse_mysql_enum_values(column_type: &str) -> Option<Vec<String>> {
     } else {
         Some(values)
     }
+}
+
+/// MySQL の CHECK 式からカラム名を推定する
+///
+/// MySQL の check_clause にはバッククォートで囲まれたカラム名が含まれる。
+/// エスケープされたバッククォート（``）にも対応する。
+/// 例: "(`balance` >= 0)" -> ["balance"]
+fn extract_columns_from_check_expression(expression: &str) -> Vec<String> {
+    let mut columns = Vec::new();
+    let mut chars = expression.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '`' {
+            let mut name = String::new();
+            // バッククォート内の識別子をパース（`` エスケープ対応）
+            while let Some(c) = chars.next() {
+                if c == '`' {
+                    // 連続バッククォートはエスケープ: リテラルの ` として追加
+                    if chars.peek() == Some(&'`') {
+                        chars.next();
+                        name.push('`');
+                        continue;
+                    }
+                    break;
+                }
+                name.push(c);
+            }
+            if !name.is_empty() && !columns.contains(&name) {
+                columns.push(name);
+            }
+        }
+    }
+
+    columns
 }
 
 /// MySQL の COLUMN_TYPE から SET 値を抽出する
@@ -541,6 +583,60 @@ impl DatabaseIntrospector for PostgresIntrospector {
             constraints.push(RawConstraintInfo::Unique { columns });
         }
 
+        // CHECK制約
+        // pg_constraintからCHECK制約を取得（contype = 'c'）
+        // LEFT JOIN で式のみの制約（conkey が空）にも対応
+        // string_agg で Unit Separator (U+001F) 区切りで返す（カラム名にカンマが含まれる場合に備える）
+        let check_sql = r#"
+            SELECT
+                con.conname::text,
+                pg_get_constraintdef(con.oid)::text AS check_expression,
+                COALESCE(string_agg(a.attname::text, E'\x1f' ORDER BY u.ord), '') AS columns
+            FROM pg_constraint con
+            JOIN pg_class c ON c.oid = con.conrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            LEFT JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS u(attnum, ord) ON true
+            LEFT JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = u.attnum
+            WHERE con.contype = 'c'
+                AND c.relname = $1
+                AND n.nspname = 'public'
+            GROUP BY con.conname, con.oid
+            ORDER BY con.conname
+        "#;
+
+        let check_rows = sqlx::query(check_sql)
+            .bind(table_name)
+            .fetch_all(pool)
+            .await?;
+
+        for row in check_rows {
+            let _constraint_name: String = row.get(0);
+            let raw_expression: String = row.get(1);
+            let columns_str: String = row.get(2);
+            let columns: Vec<String> = if columns_str.is_empty() {
+                Vec::new()
+            } else {
+                columns_str
+                    .split('\x1f')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            };
+
+            // pg_get_constraintdef returns "CHECK ((expression))" or
+            // "CHECK ((expression)) NOT VALID" / "CHECK (...) NO INHERIT"
+            // "CHECK (" 以降の括弧ペアをバランス取りで抽出し、末尾トークンに対応する
+            let expression = extract_pg_check_expression(&raw_expression);
+
+            // PostgreSQL wraps simple expressions in extra parentheses.
+            // Only strip if the entire expression is wrapped in a single matching pair.
+            let expression = strip_outer_parens(&expression);
+
+            constraints.push(RawConstraintInfo::Check {
+                columns,
+                expression,
+            });
+        }
+
         Ok(constraints)
     }
 
@@ -886,6 +982,101 @@ impl DatabaseIntrospector for MySqlIntrospector {
             constraints.push(RawConstraintInfo::Unique { columns });
         }
 
+        // CHECK制約 (MySQL 8.0.16+)
+        // information_schema.check_constraints と table_constraints を結合して取得
+        let check_sql = r#"
+            SELECT
+                cc.constraint_name,
+                cc.check_clause
+            FROM information_schema.check_constraints cc
+            JOIN information_schema.table_constraints tc
+                ON cc.constraint_name = tc.constraint_name
+                AND cc.constraint_schema = tc.constraint_schema
+            WHERE tc.table_name = ? AND tc.table_schema = DATABASE()
+                AND tc.constraint_type = 'CHECK'
+            ORDER BY cc.constraint_name
+        "#;
+
+        let check_rows = sqlx::query(check_sql)
+            .bind(table_name)
+            .fetch_all(pool)
+            .await?;
+
+        for row in &check_rows {
+            let constraint_name = mysql_get_string(row, 0);
+            let check_clause = mysql_get_string(row, 1);
+
+            // MySQL の自動生成制約をフィルタリング:
+            // 1. NOT NULL チェック（ENUM カラムに自動付与される）
+            // 2. ENUM バリデーション（_chk_N の名前で IN (...) を含む）
+            // NOT NULL チェックは `(`col` is not null)` のように括弧で囲まれることがあるため、
+            // 外側の括弧を剥がした上で判定する
+            let lower = check_clause.trim().to_lowercase();
+            let mut normalized = lower.as_str();
+            while normalized.starts_with('(') && normalized.ends_with(')') {
+                let inner = &normalized[1..normalized.len() - 1];
+                // strip_outer_parens と同様に、先頭の ( と末尾の ) が対応しているか確認
+                let mut depth = 0i32;
+                let mut matched = true;
+                for (i, ch) in inner.char_indices() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth < 0 && i < inner.len() - 1 {
+                                matched = false;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if matched && depth == 0 {
+                    normalized = inner.trim();
+                } else {
+                    break;
+                }
+            }
+            // MySQL は _chk_1, _chk_2, ... の名前で NOT NULL / ENUM バリデーションを自動生成する
+            // ユーザー定義の制約名（_chk_N パターンでない）は常に保持する
+            let has_chk_suffix = constraint_name
+                .rfind("_chk_")
+                .map(|pos| {
+                    constraint_name[pos + 5..]
+                        .chars()
+                        .all(|c| c.is_ascii_digit())
+                })
+                .unwrap_or(false);
+            // 単純な `<col> is not null` パターン + 自動生成名のみをフィルタ（複合式は除外しない）
+            // 例: "`col` is not null" + _chk_N名 → フィルタ
+            //     "`a` > 0 and `b` is not null" → 保持（複合式）
+            //     "`col` is not null" + カスタム名 → 保持（ユーザー定義）
+            let is_not_null_check = {
+                let trimmed_norm = normalized.trim();
+                has_chk_suffix
+                    && trimmed_norm.ends_with("is not null")
+                    && !trimmed_norm.contains(" and ")
+                    && !trimmed_norm.contains(" or ")
+            };
+            let is_enum_validation =
+                has_chk_suffix && (normalized.contains("in (") || normalized.contains("in("));
+            if is_not_null_check || is_enum_validation {
+                continue;
+            }
+
+            // バッククォートで囲まれたカラム名を抽出
+            let columns = extract_columns_from_check_expression(&check_clause);
+
+            // MySQL の check_clause は外側に括弧が付く (例: "(`balance` >= 0)")
+            // 他方言と統一するため strip_outer_parens で正規化する
+            let expression = strip_outer_parens(&check_clause);
+
+            constraints.push(RawConstraintInfo::Check {
+                columns,
+                expression,
+            });
+        }
+
         Ok(constraints)
     }
 
@@ -1102,6 +1293,26 @@ impl DatabaseIntrospector for SqliteIntrospector {
             });
         }
 
+        // CHECK制約
+        // sqlite_masterからCREATE TABLE文を取得してCHECK制約をパースする
+        // PRAGMA table_info の結果から全カラム名を抽出し、カラム名照合に使用する
+        let all_column_names: Vec<String> =
+            rows.iter().map(|row| row.get::<String, _>(1)).collect();
+
+        let create_sql_query = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?";
+        let create_row = sqlx::query(create_sql_query)
+            .bind(table_name)
+            .fetch_optional(pool)
+            .await?;
+
+        if let Some(row) = create_row {
+            let create_sql: Option<String> = row.get(0);
+            if let Some(sql) = create_sql {
+                let check_constraints = parse_sqlite_check_constraints(&sql, &all_column_names);
+                constraints.extend(check_constraints);
+            }
+        }
+
         Ok(constraints)
     }
 
@@ -1144,6 +1355,75 @@ impl DatabaseIntrospector for SqliteIntrospector {
     }
 }
 
+/// PostgreSQL の pg_get_constraintdef() 出力から CHECK 式を抽出する
+///
+/// "CHECK ((expression))" から expression 部分を取り出す。
+/// "CHECK (...) NOT VALID" や "CHECK (...) NO INHERIT" のように
+/// 末尾にトークンが付くケースにも対応する（括弧のバランスで式の範囲を特定）。
+fn extract_pg_check_expression(raw: &str) -> String {
+    let prefix = "CHECK (";
+    let Some(start) = raw.find(prefix) else {
+        return raw.to_string();
+    };
+    let after_prefix = start + prefix.len();
+
+    // "CHECK (" の直後の '(' を含む位置から括弧のバランスを追跡
+    // depth は既に 1（"CHECK (" の '(' を含む）
+    let mut depth = 1i32;
+    let mut end = None;
+    for (i, ch) in raw[after_prefix..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(after_prefix + i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    match end {
+        Some(pos) => raw[after_prefix..pos].to_string(),
+        None => raw.to_string(),
+    }
+}
+
+/// 式全体が一対の括弧で囲まれている場合のみ外側の括弧を除去する
+///
+/// `(balance >= 0)` → `balance >= 0` (除去)
+/// `(val >= 0) AND (val <= 100)` → そのまま (除去しない: 先頭の `(` と末尾の `)` が対応していない)
+fn strip_outer_parens(expr: &str) -> String {
+    let trimmed = expr.trim();
+    if !trimmed.starts_with('(') || !trimmed.ends_with(')') {
+        return trimmed.to_string();
+    }
+
+    // 先頭の '(' に対応する ')' が末尾であることを確認
+    let mut depth = 0;
+    for (i, ch) in trimmed.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    // 先頭の '(' の対応が末尾の ')' と一致するか
+                    return if i == trimmed.len() - 1 {
+                        trimmed[1..i].trim().to_string()
+                    } else {
+                        trimmed.to_string()
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    trimmed.to_string()
+}
+
 /// CREATE VIEW 文からビュー定義（AS以降）を抽出する
 fn extract_view_definition_from_create_sql(create_sql: &str) -> String {
     // 大文字小文字を無視して \s+AS\s+ パターンを検索（改行・タブにも対応）
@@ -1154,6 +1434,227 @@ fn extract_view_definition_from_create_sql(create_sql: &str) -> String {
         // フォールバック: そのまま返す
         create_sql.to_string()
     }
+}
+
+/// SQLite の CREATE TABLE 文からCHECK制約をパースする
+///
+/// テーブルレベルおよびカラム定義内の両方のCHECK制約を抽出する。
+/// 文字列リテラル（'...'）およびダブルクォート識別子（"..."）内の CHECK は無視する。
+/// 例（テーブルレベル）: `CREATE TABLE t (id INTEGER, balance REAL, CHECK (balance >= 0))`
+/// 例（カラムレベル）  : `CREATE TABLE t (id INTEGER CHECK (id > 0), balance REAL)`
+fn parse_sqlite_check_constraints(
+    create_sql: &str,
+    table_columns: &[String],
+) -> Vec<RawConstraintInfo> {
+    let mut results = Vec::new();
+    let chars: Vec<(usize, char)> = create_sql.char_indices().collect();
+    let len = chars.len();
+
+    let mut i = 0;
+    while i < len {
+        let (_, ch) = chars[i];
+
+        // シングルクォート文字列リテラルをスキップ（'' エスケープ対応）
+        if ch == '\'' {
+            i += 1;
+            while i < len {
+                if chars[i].1 == '\'' {
+                    i += 1;
+                    // '' はエスケープ: 文字列継続
+                    if i < len && chars[i].1 == '\'' {
+                        i += 1;
+                        continue;
+                    }
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        // ダブルクォート識別子をスキップ（"" エスケープ対応）
+        if ch == '"' {
+            i += 1;
+            while i < len {
+                if chars[i].1 == '"' {
+                    i += 1;
+                    if i < len && chars[i].1 == '"' {
+                        i += 1;
+                        continue;
+                    }
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        // CHECK キーワードを検出（大文字小文字無視、単語境界チェック）
+        if ch.eq_ignore_ascii_case(&'C') && i + 4 < len {
+            let is_check = chars[i + 1].1.eq_ignore_ascii_case(&'H')
+                && chars[i + 2].1.eq_ignore_ascii_case(&'E')
+                && chars[i + 3].1.eq_ignore_ascii_case(&'C')
+                && chars[i + 4].1.eq_ignore_ascii_case(&'K');
+
+            if is_check {
+                // 単語境界の確認
+                let prev_is_ident = i > 0 && {
+                    let prev = chars[i - 1].1;
+                    prev == '_' || prev.is_ascii_alphanumeric()
+                };
+                let next_is_ident = i + 5 < len && {
+                    let next_ch = chars[i + 5].1;
+                    next_ch == '_' || next_ch.is_ascii_alphanumeric()
+                };
+
+                if !prev_is_ident && !next_is_ident {
+                    // CHECK の後の空白をスキップして '(' を探す
+                    let mut k = i + 5;
+                    while k < len && chars[k].1.is_whitespace() {
+                        k += 1;
+                    }
+
+                    if k < len && chars[k].1 == '(' {
+                        let paren_start = chars[k].0 + chars[k].1.len_utf8();
+
+                        // 対応する閉じ括弧を見つける（ネスト・クォート対応）
+                        let mut depth = 1;
+                        let mut expr_end = None;
+                        let mut m = k + 1;
+                        let mut in_sq = false;
+                        let mut in_dq = false;
+
+                        while m < len {
+                            let (m_byte, mch) = chars[m];
+
+                            if mch == '\'' && !in_dq {
+                                if in_sq {
+                                    if m + 1 < len && chars[m + 1].1 == '\'' {
+                                        m += 2;
+                                        continue;
+                                    }
+                                    in_sq = false;
+                                } else {
+                                    in_sq = true;
+                                }
+                                m += 1;
+                                continue;
+                            } else if mch == '"' && !in_sq {
+                                if in_dq {
+                                    if m + 1 < len && chars[m + 1].1 == '"' {
+                                        m += 2;
+                                        continue;
+                                    }
+                                    in_dq = false;
+                                } else {
+                                    in_dq = true;
+                                }
+                                m += 1;
+                                continue;
+                            }
+
+                            if in_sq || in_dq {
+                                m += 1;
+                                continue;
+                            }
+
+                            match mch {
+                                '(' => depth += 1,
+                                ')' => {
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        expr_end = Some(m_byte);
+                                        break;
+                                    }
+                                }
+                                _ => {}
+                            }
+
+                            m += 1;
+                        }
+
+                        if let Some(end_byte) = expr_end {
+                            let expression = create_sql[paren_start..end_byte].trim().to_string();
+                            let columns =
+                                extract_columns_from_sqlite_check(&expression, table_columns);
+
+                            results.push(RawConstraintInfo::Check {
+                                columns,
+                                expression,
+                            });
+                        }
+
+                        i = m + 1;
+                        continue;
+                    }
+                }
+
+                i += 5;
+                continue;
+            }
+        }
+
+        i += 1;
+    }
+
+    results
+}
+
+/// SQLite CHECK式からカラム名を抽出する
+///
+/// 文字列リテラル（'...'）内の単語は無視し、
+/// PRAGMA table_info から取得した実カラム名一覧と照合して
+/// 式中に出現するカラム名のみを返す。
+fn extract_columns_from_sqlite_check(expression: &str, table_columns: &[String]) -> Vec<String> {
+    // 文字列リテラルを除去してからパース
+    let stripped = strip_string_literals(expression);
+
+    let mut columns = Vec::new();
+
+    for cap in IDENTIFIER_REGEX.captures_iter(&stripped) {
+        let word = &cap[1];
+        if table_columns.iter().any(|c| c.eq_ignore_ascii_case(word))
+            && !columns
+                .iter()
+                .any(|c: &String| c.eq_ignore_ascii_case(word))
+        {
+            columns.push(word.to_string());
+        }
+    }
+
+    columns
+}
+
+/// SQL文字列リテラル（シングルクォート）を除去する
+///
+/// `status IN ('pending', 'active')` → `status IN (, )`
+fn strip_string_literals(sql: &str) -> String {
+    let mut result = String::with_capacity(sql.len());
+    let mut chars = sql.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\'' {
+            // 文字列リテラルをスキップ
+            loop {
+                match chars.next() {
+                    Some('\'') => {
+                        // '' エスケープのチェック
+                        if chars.peek() == Some(&'\'') {
+                            chars.next();
+                            continue;
+                        }
+                        break;
+                    }
+                    None => break,
+                    _ => {}
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -1467,6 +1968,428 @@ mod tests {
             result,
             Some(vec!["a".to_string(), "b".to_string(), "".to_string()])
         );
+    }
+
+    // =========================================================================
+    // parse_sqlite_check_constraints テスト
+    // =========================================================================
+
+    #[test]
+    fn test_parse_sqlite_check_simple() {
+        let sql = "CREATE TABLE t (id INTEGER, balance REAL, CHECK (balance >= 0))";
+        let cols = vec!["id".to_string(), "balance".to_string()];
+        let checks = super::parse_sqlite_check_constraints(sql, &cols);
+        assert_eq!(checks.len(), 1);
+        match &checks[0] {
+            RawConstraintInfo::Check {
+                columns,
+                expression,
+            } => {
+                assert_eq!(expression, "balance >= 0");
+                assert!(columns.contains(&"balance".to_string()));
+            }
+            _ => panic!("Expected Check constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sqlite_check_multiple() {
+        let sql = "CREATE TABLE t (id INTEGER, age INTEGER, balance REAL, CHECK (age >= 0), CHECK (balance > 0))";
+        let cols = vec!["id".to_string(), "age".to_string(), "balance".to_string()];
+        let checks = super::parse_sqlite_check_constraints(sql, &cols);
+        assert_eq!(checks.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_sqlite_check_nested_parens() {
+        let sql = "CREATE TABLE t (id INTEGER, val INTEGER, CHECK ((val >= 0) AND (val <= 100)))";
+        let cols = vec!["id".to_string(), "val".to_string()];
+        let checks = super::parse_sqlite_check_constraints(sql, &cols);
+        assert_eq!(checks.len(), 1);
+        match &checks[0] {
+            RawConstraintInfo::Check { expression, .. } => {
+                assert_eq!(expression, "(val >= 0) AND (val <= 100)");
+            }
+            _ => panic!("Expected Check constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sqlite_check_case_insensitive() {
+        let sql = "CREATE TABLE t (id INTEGER, x INTEGER, check (x > 0))";
+        let cols = vec!["id".to_string(), "x".to_string()];
+        let checks = super::parse_sqlite_check_constraints(sql, &cols);
+        assert_eq!(checks.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_sqlite_check_no_checks() {
+        let sql = "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)";
+        let cols = vec!["id".to_string(), "name".to_string()];
+        let checks = super::parse_sqlite_check_constraints(sql, &cols);
+        assert!(checks.is_empty());
+    }
+
+    // =========================================================================
+    // parse_sqlite_check_constraints 追加テスト（クォート対応）
+    // =========================================================================
+
+    #[test]
+    fn test_parse_sqlite_check_ignores_check_in_string_literal() {
+        // 文字列リテラル内の 'CHECK' は無視する
+        let sql = "CREATE TABLE t (val TEXT, CHECK (val != 'CHECK'))";
+        let cols = vec!["val".to_string()];
+        let checks = super::parse_sqlite_check_constraints(sql, &cols);
+        assert_eq!(checks.len(), 1);
+        match &checks[0] {
+            RawConstraintInfo::Check { expression, .. } => {
+                assert_eq!(expression, "val != 'CHECK'");
+            }
+            _ => panic!("Expected Check constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sqlite_check_column_named_check_prefix() {
+        // check_date のようなカラム名は CHECK として誤検出しない
+        let sql = "CREATE TABLE t (check_date TEXT, CHECK (check_date IS NOT NULL))";
+        let cols = vec!["check_date".to_string()];
+        let checks = super::parse_sqlite_check_constraints(sql, &cols);
+        assert_eq!(checks.len(), 1);
+    }
+
+    // =========================================================================
+    // strip_outer_parens テスト
+    // =========================================================================
+
+    #[test]
+    fn test_strip_outer_parens_simple() {
+        assert_eq!(super::strip_outer_parens("(balance >= 0)"), "balance >= 0");
+    }
+
+    #[test]
+    fn test_strip_outer_parens_no_parens() {
+        assert_eq!(super::strip_outer_parens("balance >= 0"), "balance >= 0");
+    }
+
+    #[test]
+    fn test_strip_outer_parens_non_matching() {
+        // 先頭の ( と末尾の ) が対応していないケース
+        let expr = "(val >= 0) AND (val <= 100)";
+        assert_eq!(super::strip_outer_parens(expr), expr);
+    }
+
+    #[test]
+    fn test_strip_outer_parens_nested_matching() {
+        // 全体が一対の括弧で囲まれたネスト式
+        assert_eq!(
+            super::strip_outer_parens("((a >= 0) AND (b <= 100))"),
+            "(a >= 0) AND (b <= 100)"
+        );
+    }
+
+    // =========================================================================
+    // extract_columns_from_check_expression テスト (MySQL)
+    // =========================================================================
+
+    #[test]
+    fn test_extract_columns_from_mysql_check_single() {
+        let columns = super::extract_columns_from_check_expression("`balance` >= 0");
+        assert_eq!(columns, vec!["balance".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_mysql_check_multiple() {
+        let columns = super::extract_columns_from_check_expression("`start_date` < `end_date`");
+        assert_eq!(
+            columns,
+            vec!["start_date".to_string(), "end_date".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_extract_columns_from_mysql_check_no_backticks() {
+        let columns = super::extract_columns_from_check_expression("balance >= 0");
+        assert!(columns.is_empty());
+    }
+
+    #[test]
+    fn test_extract_columns_from_mysql_check_escaped_backtick() {
+        // エスケープされたバッククォート（``）を含むカラム名
+        let columns = super::extract_columns_from_check_expression("`my``col` >= 0");
+        assert_eq!(columns, vec!["my`col".to_string()]);
+    }
+
+    // =========================================================================
+    // extract_columns_from_sqlite_check テスト
+    // =========================================================================
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_simple() {
+        let table_cols = vec!["balance".to_string()];
+        let columns = super::extract_columns_from_sqlite_check("balance >= 0", &table_cols);
+        assert_eq!(columns, vec!["balance".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_with_and() {
+        let table_cols = vec!["age".to_string()];
+        let columns =
+            super::extract_columns_from_sqlite_check("age >= 0 AND age <= 150", &table_cols);
+        assert_eq!(columns, vec!["age".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_multiple_columns() {
+        let table_cols = vec!["start_date".to_string(), "end_date".to_string()];
+        let columns =
+            super::extract_columns_from_sqlite_check("start_date < end_date", &table_cols);
+        assert_eq!(
+            columns,
+            vec!["start_date".to_string(), "end_date".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_ignores_string_literals() {
+        // 文字列リテラル内の単語はカラム名として抽出しない
+        let table_cols = vec!["status".to_string()];
+        let columns = super::extract_columns_from_sqlite_check(
+            "status IN ('pending', 'active')",
+            &table_cols,
+        );
+        assert_eq!(columns, vec!["status".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_ignores_keywords() {
+        // CASE/WHEN/THEN/ELSE/END はテーブルカラムでないため抽出しない
+        let table_cols = vec!["val".to_string()];
+        let columns = super::extract_columns_from_sqlite_check(
+            "CASE WHEN val > 0 THEN 1 ELSE 0 END = 1",
+            &table_cols,
+        );
+        assert_eq!(columns, vec!["val".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_cast_as_type() {
+        // CAST(x AS INTEGER) の INTEGER はテーブルカラムでないため抽出しない
+        let table_cols = vec!["val".to_string()];
+        let columns =
+            super::extract_columns_from_sqlite_check("CAST(val AS INTEGER) > 0", &table_cols);
+        assert_eq!(columns, vec!["val".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_date_column() {
+        // date はテーブルカラムとして存在するため抽出される
+        let table_cols = vec!["date".to_string()];
+        let columns = super::extract_columns_from_sqlite_check("date >= '2020-01-01'", &table_cols);
+        assert_eq!(columns, vec!["date".to_string()]);
+    }
+
+    #[test]
+    fn test_extract_columns_from_sqlite_check_function_name_excluded() {
+        // 関数名 (STRFTIME, JSON_VALID) はテーブルカラムでないため除外される
+        let table_cols = vec!["created_at".to_string()];
+        let columns = super::extract_columns_from_sqlite_check(
+            "STRFTIME('%Y', created_at) > '2020'",
+            &table_cols,
+        );
+        assert_eq!(columns, vec!["created_at".to_string()]);
+    }
+
+    // =========================================================================
+    // MySQL 自動生成制約フィルタ テスト（ユニット的検証）
+    // =========================================================================
+
+    /// MySQL の NOT NULL / ENUM フィルタロジックを再現するヘルパー
+    fn should_filter_mysql_check(constraint_name: &str, check_clause: &str) -> bool {
+        let lower = check_clause.trim().to_lowercase();
+        let mut normalized = lower.as_str();
+        loop {
+            if normalized.starts_with('(') && normalized.ends_with(')') {
+                let inner = &normalized[1..normalized.len() - 1];
+                let mut depth = 0i32;
+                let mut matched = true;
+                for (i, ch) in inner.char_indices() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth < 0 && i < inner.len() - 1 {
+                                matched = false;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if matched && depth == 0 {
+                    normalized = inner.trim();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        let has_chk_suffix = constraint_name
+            .rfind("_chk_")
+            .map(|pos| {
+                constraint_name[pos + 5..]
+                    .chars()
+                    .all(|c| c.is_ascii_digit())
+            })
+            .unwrap_or(false);
+        let is_not_null_check = {
+            let trimmed_norm = normalized.trim();
+            has_chk_suffix
+                && trimmed_norm.ends_with("is not null")
+                && !trimmed_norm.contains(" and ")
+                && !trimmed_norm.contains(" or ")
+        };
+        let is_enum_validation =
+            has_chk_suffix && (normalized.contains("in (") || normalized.contains("in("));
+        is_not_null_check || is_enum_validation
+    }
+
+    #[test]
+    fn test_mysql_filter_not_null_simple() {
+        // 単純な NOT NULL は自動生成としてフィルタされる
+        assert!(should_filter_mysql_check(
+            "users_chk_1",
+            "(`role` is not null)"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_not_null_without_parens() {
+        assert!(should_filter_mysql_check(
+            "users_chk_1",
+            "`col` is not null"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_compound_not_null_preserved() {
+        // 複合式は NOT NULL で終わっていてもフィルタしない
+        assert!(!should_filter_mysql_check(
+            "users_chk_1",
+            "(`a` > 0 AND `b` IS NOT NULL)"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_enum_validation() {
+        // ENUM バリデーション制約は _chk_N + IN (...) でフィルタ
+        assert!(should_filter_mysql_check(
+            "users_chk_2",
+            "(`role` in ('admin','user','guest'))"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_enum_validation_chk_3() {
+        // _chk_3 パターンもフィルタされる
+        assert!(should_filter_mysql_check(
+            "table_chk_3",
+            "(`status` in('active','inactive'))"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_user_defined_preserved() {
+        // ユーザー定義の CHECK 制約はフィルタしない
+        assert!(!should_filter_mysql_check(
+            "users_balance_check",
+            "(`balance` >= 0)"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_user_defined_with_in_preserved() {
+        // _chk_ パターンでなければ IN を含んでいてもフィルタしない
+        assert!(!should_filter_mysql_check(
+            "custom_check",
+            "(`val` in (1, 2, 3))"
+        ));
+    }
+
+    #[test]
+    fn test_mysql_filter_user_defined_not_null_preserved() {
+        // ユーザー定義の制約名で IS NOT NULL はフィルタしない
+        assert!(!should_filter_mysql_check(
+            "require_col_not_null",
+            "(`col` is not null)"
+        ));
+    }
+
+    // =========================================================================
+    // strip_string_literals テスト
+    // =========================================================================
+
+    #[test]
+    fn test_strip_string_literals_simple() {
+        assert_eq!(
+            super::strip_string_literals("status IN ('pending', 'active')"),
+            "status IN (, )"
+        );
+    }
+
+    #[test]
+    fn test_strip_string_literals_escaped_quote() {
+        assert_eq!(super::strip_string_literals("val != 'it''s'"), "val != ");
+    }
+
+    #[test]
+    fn test_strip_string_literals_no_strings() {
+        assert_eq!(super::strip_string_literals("balance >= 0"), "balance >= 0");
+    }
+
+    // =========================================================================
+    // extract_pg_check_expression テスト
+    // =========================================================================
+
+    #[test]
+    fn test_extract_pg_check_expression_simple() {
+        assert_eq!(
+            super::extract_pg_check_expression("CHECK ((balance >= 0))"),
+            "(balance >= 0)"
+        );
+    }
+
+    #[test]
+    fn test_extract_pg_check_expression_not_valid() {
+        // NOT VALID 末尾トークンがあっても式部分だけ抽出
+        assert_eq!(
+            super::extract_pg_check_expression("CHECK ((balance >= 0)) NOT VALID"),
+            "(balance >= 0)"
+        );
+    }
+
+    #[test]
+    fn test_extract_pg_check_expression_no_inherit() {
+        assert_eq!(
+            super::extract_pg_check_expression("CHECK ((val > 0)) NO INHERIT"),
+            "(val > 0)"
+        );
+    }
+
+    #[test]
+    fn test_extract_pg_check_expression_complex() {
+        assert_eq!(
+            super::extract_pg_check_expression("CHECK (((val >= 0) AND (val <= 100))) NOT VALID"),
+            "((val >= 0) AND (val <= 100))"
+        );
+    }
+
+    #[test]
+    fn test_extract_pg_check_expression_no_prefix() {
+        // CHECK プレフィックスがない場合はそのまま返す
+        let raw = "something else";
+        assert_eq!(super::extract_pg_check_expression(raw), raw);
     }
 
     // =========================================================================
