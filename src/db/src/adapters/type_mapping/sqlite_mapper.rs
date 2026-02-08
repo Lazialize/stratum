@@ -25,6 +25,8 @@ impl TypeMapper for SqliteTypeMapper {
             Some(ColumnType::VARCHAR { length: 255 })
         } else if upper == "TEXT" {
             Some(ColumnType::TEXT)
+        } else if upper == "DOUBLE" {
+            Some(ColumnType::DOUBLE)
         } else if upper == "REAL" {
             Some(ColumnType::FLOAT)
         } else if upper == "BLOB" {
@@ -47,7 +49,7 @@ impl TypeMapper for SqliteTypeMapper {
             ColumnType::JSONB => "TEXT".to_string(),
             ColumnType::DECIMAL { .. } => "TEXT".to_string(),
             ColumnType::FLOAT => "REAL".to_string(),
-            ColumnType::DOUBLE => "REAL".to_string(),
+            ColumnType::DOUBLE => "DOUBLE".to_string(),
             ColumnType::CHAR { .. } => "TEXT".to_string(),
             ColumnType::DATE => "TEXT".to_string(),
             ColumnType::TIME { .. } => "TEXT".to_string(),
@@ -127,7 +129,7 @@ mod tests {
     fn test_sqlite_float_double() {
         let service = TypeMappingService::new(Dialect::SQLite);
         assert_eq!(service.to_sql_type(&ColumnType::FLOAT), "REAL");
-        assert_eq!(service.to_sql_type(&ColumnType::DOUBLE), "REAL");
+        assert_eq!(service.to_sql_type(&ColumnType::DOUBLE), "DOUBLE");
     }
 
     #[test]
@@ -167,11 +169,39 @@ mod tests {
     }
 
     #[test]
+    fn test_sqlite_parse_double() {
+        let service = TypeMappingService::new(Dialect::SQLite);
+        let metadata = TypeMetadata::default();
+
+        let result = service.from_sql_type("DOUBLE", &metadata).unwrap();
+        assert!(matches!(result, ColumnType::DOUBLE));
+    }
+
+    #[test]
     fn test_sqlite_parse_blob() {
         let service = TypeMappingService::new(Dialect::SQLite);
         let metadata = TypeMetadata::default();
 
         let result = service.from_sql_type("BLOB", &metadata).unwrap();
         assert!(matches!(result, ColumnType::BLOB));
+    }
+
+    /// Regression test for #27: DOUBLE round-trip through SQLite
+    #[test]
+    fn test_sqlite_double_round_trip() {
+        let service = TypeMappingService::new(Dialect::SQLite);
+        let metadata = TypeMetadata::default();
+
+        // DOUBLE → "DOUBLE" → ColumnType::DOUBLE
+        let sql_type = service.to_sql_type(&ColumnType::DOUBLE);
+        assert_eq!(sql_type, "DOUBLE");
+        let parsed = service.from_sql_type(&sql_type, &metadata).unwrap();
+        assert!(matches!(parsed, ColumnType::DOUBLE));
+
+        // FLOAT → "REAL" → ColumnType::FLOAT (existing behavior preserved)
+        let sql_type = service.to_sql_type(&ColumnType::FLOAT);
+        assert_eq!(sql_type, "REAL");
+        let parsed = service.from_sql_type(&sql_type, &metadata).unwrap();
+        assert!(matches!(parsed, ColumnType::FLOAT));
     }
 }

@@ -494,8 +494,8 @@ mod sqlite_sql_generator_tests {
         ));
 
         let sql = generator.generate_create_table(&table);
-        // SQLite では FLOAT も DOUBLE も REAL にマッピング
-        assert!(sql.contains(r#""latitude" REAL NOT NULL"#));
+        // SQLite では DOUBLE はそのまま DOUBLE として出力（REAL アフィニティ）
+        assert!(sql.contains(r#""latitude" DOUBLE NOT NULL"#));
     }
 
     #[test]
