@@ -230,6 +230,75 @@ async fn test_export_to_stdout() {
     assert!(output.contains("users:"));
 }
 
+/// INTEGER PRIMARY KEY（AUTOINCREMENTキーワードなし）で auto_increment が検出されるテスト
+///
+/// SQLiteでは INTEGER PRIMARY KEY は暗黙的に ROWID のエイリアスとなり自動増分する。
+/// AUTOINCREMENT キーワードがなくても auto_increment: true としてエクスポートされるべき。
+/// Regression test for #28
+#[tokio::test]
+#[ignore] // 統合テスト - 実際のデータベースが必要
+async fn test_export_sqlite_integer_primary_key_auto_increment() {
+    install_default_drivers();
+    let (_temp_dir, project_path) =
+        common::setup_test_project(Dialect::SQLite, None, false).unwrap();
+
+    // データベースファイルのパス
+    let db_path = project_path.join("test.db");
+    fs::File::create(&db_path).unwrap();
+
+    // 設定ファイルにデータベース接続情報を追加
+    let config = common::create_test_config(Dialect::SQLite, Some(&db_path.to_string_lossy()));
+    let config_path = project_path.join(strata::core::config::Config::DEFAULT_CONFIG_PATH);
+    let config_yaml = ConfigSerializer::to_yaml(&config).unwrap();
+    fs::write(&config_path, config_yaml).unwrap();
+
+    use strata::adapters::database::DatabaseConnectionService;
+
+    let db_service = DatabaseConnectionService::new();
+    let db_config = config.get_database_config("development").unwrap();
+    let pool = db_service
+        .create_pool(Dialect::SQLite, &db_config)
+        .await
+        .unwrap();
+
+    // INTEGER PRIMARY KEY のみ（AUTOINCREMENT キーワードなし）でテーブルを作成
+    sqlx::query(
+        r#"
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // 標準出力へのエクスポート
+    let handler = ExportCommandHandler::new();
+    let command = ExportCommand {
+        project_path,
+        config_path: None,
+        env: "development".to_string(),
+        output_dir: None,
+        force: false,
+        format: strata::cli::OutputFormat::Text,
+        split: false,
+        tables: vec![],
+        exclude_tables: vec![],
+    };
+
+    let result = handler.execute(&command).await;
+    assert!(result.is_ok(), "Export failed: {:?}", result);
+
+    let output = result.unwrap();
+    assert!(
+        output.contains("auto_increment: true"),
+        "Expected auto_increment: true in output, got:\n{}",
+        output
+    );
+}
+
 #[test]
 fn test_format_export_summary() {
     let handler = ExportCommandHandler::new();
